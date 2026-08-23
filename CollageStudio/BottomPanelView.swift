@@ -113,11 +113,20 @@ struct BottomPanelView: View {
             // Fixed button bar — does not scroll with the page list
             HStack(spacing: 8) {
                 PhotosPicker(selection: $photoItems, maxSelectionCount: 30, matching: .images) {
-                    Label("Image", systemImage: "plus")
-                        .font(.footnote.weight(.medium))
-                        .lineLimit(1)
-                        .minimumScaleFactor(0.7)
-                        .padding(.horizontal, 8)
+                    Image(systemName: "photo.badge.plus")
+                        .font(.system(size: 17, weight: .medium))
+                        .frame(maxWidth: .infinity)
+                        .padding(.vertical, 10)
+                        .foregroundColor(.white)
+                        .background(Color.accentColor)
+                        .cornerRadius(10)
+                }
+                .buttonStyle(.plain)
+
+                // Adds a transparent placeholder — an intentional empty slot.
+                Button { state.addEmptyImage() } label: {
+                    Image(systemName: "rectangle.dashed.badge.record")
+                        .font(.system(size: 17, weight: .medium))
                         .frame(maxWidth: .infinity)
                         .padding(.vertical, 10)
                         .foregroundColor(.white)
@@ -184,9 +193,11 @@ struct BottomPanelView: View {
     var layoutTab: some View {
         VStack(spacing: 10) {
             LabeledSlider(label: "Columns", value: Binding(
-                get: { Double(state.numCols) },
+                get: { Double(min(state.numCols, state.maxSelectableCols)) },
                 set: { v in state.numCols = Int(v); state.rebuildLayout(resetGrows: true) }
-            ), range: 1...Double(max(1, min(6, state.images.count))), step: 1, format: "%.0f", resetValue: 2)
+            ), range: 1...Double(state.maxSelectableCols), step: 1, format: "%.0f", resetValue: 2)
+                .disabled(state.maxSelectableCols <= 1)
+                .opacity(state.maxSelectableCols <= 1 ? 0.4 : 1)
 
             LabeledSlider(label: "Spacing", value: $state.gap, range: 0...70, step: 1, format: "%.0f",
                           resetValue: 10, swatchColor: $state.backgroundColor)

@@ -70,6 +70,10 @@ struct CollageImage: Identifiable, Equatable {
     var proxy: PlatformImage
     /// Tiny copy for the thumbnail strips.
     var thumb: PlatformImage
+    /// True for the transparent "empty image" placeholder — it flows through
+    /// layout and gestures like any image, but its pixels are fully
+    /// transparent so the collage shows an intentional empty space.
+    var isPlaceholder: Bool = false
     var panOffset: CGSize = .zero
     var zoom: CGFloat = 1.0
     /// Rotation of the image within its box, in radians.
@@ -89,11 +93,31 @@ struct CollageImage: Identifiable, Equatable {
         self.thumb = image.downsampled(longEdge: Self.thumbLongEdge)
     }
 
-    /// Swaps in a new picture, regenerating the working copies.
+    /// Swaps in a new picture, regenerating the working copies. Replacing a
+    /// placeholder with a real photo makes it a normal image again.
     mutating func setImage(_ newImage: PlatformImage) {
         image = newImage
         proxy = newImage.downsampled(longEdge: Self.proxyLongEdge)
         thumb = newImage.downsampled(longEdge: Self.thumbLongEdge)
+        isPlaceholder = false
+    }
+
+    /// An "empty image": a fully transparent square placeholder that users
+    /// place to leave deliberate gaps in a collage.
+    static func emptyPlaceholder(side: CGFloat = 300) -> CollageImage {
+        let size = CGSize(width: side, height: side)
+        #if canImport(UIKit)
+        let format = UIGraphicsImageRendererFormat()
+        format.scale = 1
+        format.opaque = false
+        // Rendering nothing yields a fully transparent bitmap.
+        let img = UIGraphicsImageRenderer(size: size, format: format).image { _ in }
+        #else
+        let img = NSImage(size: size)
+        #endif
+        var collage = CollageImage(image: img)
+        collage.isPlaceholder = true
+        return collage
     }
 
     /// All layout math (aspect-fill, pan clamping) uses the original's

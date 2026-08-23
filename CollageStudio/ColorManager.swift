@@ -34,9 +34,9 @@ public enum ColorManager {
         #endif
     }
     
-    /// Main application background — a soft warm cream (RGB 240,230,210).
+    /// Main application background — pure white.
     public static var canvasAreaBackground: Color {
-        Color(.sRGB, red: 240.0 / 255.0, green: 230.0 / 255.0, blue: 210.0 / 255.0, opacity: 1)
+        Color.white
     }
 
     /// Canvas background shown before any images are added. Adapts to

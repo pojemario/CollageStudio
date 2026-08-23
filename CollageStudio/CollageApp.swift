@@ -52,6 +52,11 @@ struct CollageApp: App {
                     Button("Add to Current Collage") {
                         state.importPendingShared(replacingCurrent: false)
                     }
+                    if state.pages.count < CollageState.maxPages {
+                        Button("Add as New Page") {
+                            state.importPendingSharedAsNewPage()
+                        }
+                    }
                     if state.pages.count > 1 || state.pendingSharedImages.count > 4 {
                         Button("Burst Across Pages") {
                             state.importPendingSharedBurst()

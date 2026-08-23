@@ -271,6 +271,25 @@ struct ContentView: View {
                 Color.clear.frame(width: 77, height: 1)
                 Spacer()
 
+                // Ratio selector — always available, even before images exist.
+                Button {
+                    if state.isRatioOpen { state.closeRatio() } else { state.openRatio() }
+                } label: {
+                    HStack(spacing: 5) {
+                        Image(systemName: "aspectratio")
+                            .font(.system(size: 15, weight: .medium))
+                        Text(state.ratio.rawValue.replacingOccurrences(of: ":", with: "×"))
+                            .font(.footnote.weight(.bold))
+                            .lineLimit(1)
+                    }
+                    .foregroundColor(.white)
+                    .padding(.horizontal, 10)
+                    .frame(height: 32)
+                    .background(Capsule().fill(Color.white.opacity(0.18)))
+                    .contentShape(Capsule())
+                }
+                .buttonStyle(.plain)
+
                 // Full-screen toggle and Share — only once there are images.
                 if state.hasAnyImages {
                     Button {
@@ -304,9 +323,14 @@ struct ContentView: View {
                     .buttonStyle(.plain)
                 }
             }
+            // Fixed height so the bar doesn't collapse before any images are
+            // added (the icons only appear once images exist) — keeps the logo
+            // clear of the system clock.
+            .frame(height: 40)
             .padding(.horizontal, 14)
             .padding(.vertical, 4)
-            .background(ColorManager.canvasAreaBackground)
+            // Black bar extending up behind the status bar; icons are white.
+            .background(Color.black.ignoresSafeArea(edges: .top))
             // Logo overlay: larger than the toolbar and unclipped, so it
             // spills below the bar's bottom edge.
             .overlay(alignment: .bottomLeading) {
@@ -316,7 +340,7 @@ struct ContentView: View {
                     .frame(height: 48)
                     .shimmering(state.isBusy)
                     .padding(.leading, 12)
-                    .offset(y: 8)
+                    .offset(y: 3)
                     .allowsHitTesting(false)
             }
             // Keep the toolbar (and its spilling logo) above the canvas below
@@ -334,8 +358,6 @@ struct ContentView: View {
                             .overlay(Rectangle().strokeBorder(Color.white.opacity(0.18), lineWidth: 1))
                             .shadow(color: .black.opacity(0.15), radius: 12, y: 2)
                     }
-                    // Sit lower so the floating Ratio widget doesn't overlap it.
-                    .padding(.top, 40)
                     .transition(.move(edge: .top).combined(with: .opacity))
             }
 
@@ -372,38 +394,6 @@ struct ContentView: View {
         // One background tone across the whole app, including behind the
         // toolbar and status bar
         .background(ColorManager.canvasAreaBackground.ignoresSafeArea())
-        // Ratio "widget" fused with the Dynamic Island: a black rounded
-        // rectangle whose top overlaps up over the island (same black → the
-        // seam disappears and the system island merges in), so it reads as the
-        // island expanded downward into a little icon + ratio widget.
-        .overlay(alignment: .top) {
-            Button {
-                if state.isRatioOpen { state.closeRatio() } else { state.openRatio() }
-            } label: {
-                HStack(spacing: 8) {
-                    Image(systemName: "square.grid.2x2.fill")
-                        .font(.system(size: 15, weight: .semibold))
-                    Text(state.ratio.rawValue.replacingOccurrences(of: ":", with: "×"))
-                        .font(.subheadline.weight(.bold))
-                        .lineLimit(1)
-                        .minimumScaleFactor(0.7)
-                }
-                .foregroundColor(.white)
-                .frame(width: 150)
-                // Top padding clears the island's compact pill so the content
-                // sits in the visible lower half of the widget.
-                .padding(.top, 40)
-                .padding(.bottom, 14)
-                .background(
-                    RoundedRectangle(cornerRadius: 26, style: .continuous)
-                        .fill(Color.black)
-                )
-            }
-            .buttonStyle(.plain)
-            // Align the widget's top with the Dynamic Island's top edge.
-            .padding(.top, 9)
-            .ignoresSafeArea(edges: .top)
-        }
         .sheet(isPresented: $state.showExportSheet) { ExportSheetView().environmentObject(state) }
         .overlay {
             if state.isExporting {

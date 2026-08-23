@@ -22,8 +22,8 @@ struct CanvasContainerView: View {
 
     var body: some View {
         GeometryReader { geo in
-            // Keep the margin minimal so the canvas fills as much space as possible
-            let padding: CGFloat = 4
+            // No margin at all — the canvas spreads edge to edge.
+            let padding: CGFloat = 0
             let available = CGSize(
                 width: geo.size.width - padding * 2,
                 height: geo.size.height - padding * 2
@@ -55,7 +55,10 @@ struct CanvasContainerView: View {
                         // Before any images are added the canvas is transparent
                         // so the app background shows behind the "add" button.
                         .background(state.images.isEmpty ? AnyShapeStyle(.clear) : AnyShapeStyle(state.gapColor))
-                        .clipShape(RoundedRectangle(cornerRadius: 4))
+                        // Flatten the canvas into one layer first — otherwise
+                        // .shadow draws a separate shadow under every image box
+                        // (visible in the gaps) instead of just the outer edge.
+                        .compositingGroup()
                         .shadow(color: state.images.isEmpty ? .clear : .black.opacity(0.25), radius: 20, x: 0, y: 8)
                         // When the canvas is empty, the whole canvas acts as an
                         // "Add Images" button. Once at least one image exists,
@@ -138,41 +141,8 @@ struct CanvasContainerView: View {
             .onChange(of: photoItems) { _, newItems in
                 loadPhotos(newItems)
             }
-            // Long-press action menu for an image box
-            .confirmationDialog("Image",
-                                isPresented: $state.showBoxActionMenu,
-                                titleVisibility: .hidden) {
-                Button("Replace") {
-                    state.showReplacePicker = true
-                }
-                if let targetId = state.boxActionTargetId {
-                    let source = state.pageIndex(containing: targetId)
-                    ForEach(state.pages.indices, id: \.self) { pi in
-                        if pi != source,
-                           state.pages[pi].images.count < CollageState.maxImagesPerPage {
-                            Button("Move to Page \(pi + 1)") {
-                                state.moveImage(id: targetId, toPage: pi)
-                                state.boxActionTargetId = nil
-                            }
-                        }
-                    }
-                    if state.pages.count < CollageState.maxPages {
-                        Button("Move to New Page") {
-                            state.moveImageToNewPage(id: targetId)
-                            state.boxActionTargetId = nil
-                        }
-                    }
-                }
-                Button("Delete", role: .destructive) {
-                    if let id = state.boxActionTargetId {
-                        state.removeImage(id: id)
-                    }
-                    state.boxActionTargetId = nil
-                }
-                Button("Cancel", role: .cancel) {
-                    state.boxActionTargetId = nil
-                }
-            }
+            // The long-press action menu is a popover anchored at the pressed
+            // point — see ImageBoxView. Only the Replace picker lives here.
             // Single-image picker for the "Replace" action
             .photosPicker(isPresented: $state.showReplacePicker,
                           selection: $replaceItems,

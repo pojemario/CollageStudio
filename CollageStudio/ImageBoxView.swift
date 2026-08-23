@@ -11,6 +11,9 @@ struct ImageBoxView: View {
     var scale: CGFloat = 1.0
 
     @State private var livePanOffset: CGSize = .zero
+    /// Last touch point in this box's local space — anchors the long-press
+    /// action menu popover right where the finger is.
+    @State private var pressLocation: CGPoint = .zero
     // Live pinch/rotate deltas. @GestureState is GUARANTEED to reset to its
     // initial value when the gesture ends or is cancelled, so the manipulation
     // can never leave the input layer stuck.
@@ -75,6 +78,18 @@ struct ImageBoxView: View {
                     // Decoration only — never intercept gestures on the image.
                     .allowsHitTesting(false)
                 )
+                // Faint dashed outline marking an "empty image" placeholder so
+                // it stays findable while editing. Not drawn during export.
+                .overlay(
+                    Group {
+                        if let img = imgData, img.isPlaceholder, !state.renderFullResolution {
+                            RoundedRectangle(cornerRadius: state.cornerRadius * scale)
+                                .strokeBorder(Color.gray.opacity(0.35),
+                                              style: StrokeStyle(lineWidth: 1.5, dash: [6, 4]))
+                        }
+                    }
+                    .allowsHitTesting(false)
+                )
                 .overlay(alignment: .topLeading) {
                     if Self.showDebug {
                         Text(debugText(boxSize: boxSize))
@@ -113,7 +128,25 @@ struct ImageBoxView: View {
                 .zIndex(state.draggingId == imageId ? 10 : 0)
                 .highPriorityGesture(panGesture(boxSize: boxSize))
                 .simultaneousGesture(pinchGesture(boxSize: boxSize))
+                // Records the touch point (box-local) without ever claiming
+                // the gesture, so the action menu can anchor at the finger.
+                .simultaneousGesture(
+                    DragGesture(minimumDistance: 0, coordinateSpace: .local)
+                        .onChanged { value in
+                            if !state.showBoxActionMenu { pressLocation = value.location }
+                        }
+                )
                 .simultaneousGesture(replaceLongPressGesture)
+                // Long-press action menu, shown as a popover at the pressed
+                // point instead of a bottom sheet.
+                .popover(isPresented: actionMenuShown,
+                         attachmentAnchor: .rect(.rect(CGRect(x: pressLocation.x,
+                                                              y: pressLocation.y,
+                                                              width: 1, height: 1)))) {
+                    BoxActionMenu(imageId: imageId)
+                        .environmentObject(state)
+                        .presentationCompactAdaptation(.popover)
+                }
                 // Double-tap resets this image. Simultaneous (not high
                 // priority) so it never delays the pan drag from starting.
                 .simultaneousGesture(
@@ -290,6 +323,21 @@ struct ImageBoxView: View {
 
     // MARK: - Box actions via long press
 
+    /// The action menu popover is presented on the box that was pressed.
+    /// Dismissing it (tap outside) clears the target unless the Replace
+    /// picker took over.
+    private var actionMenuShown: Binding<Bool> {
+        Binding(
+            get: { state.showBoxActionMenu && state.boxActionTargetId == imageId },
+            set: { shown in
+                if !shown {
+                    state.showBoxActionMenu = false
+                    if !state.showReplacePicker { state.boxActionTargetId = nil }
+                }
+            }
+        )
+    }
+
     /// Holding still on a box for 1 second opens the Replace / Delete menu
     /// for this image.
     var replaceLongPressGesture: some Gesture {
@@ -334,6 +382,75 @@ struct ImageBoxView: View {
             }
     }
 
+}
+
+// MARK: - Box action menu (long-press popover)
+
+/// Replace / Move / Delete menu shown in a popover anchored at the pressed
+/// point on an image box. Mirrors the options of the old bottom dialog.
+struct BoxActionMenu: View {
+    @EnvironmentObject var state: CollageState
+    let imageId: UUID
+
+    var body: some View {
+        let source = state.pageIndex(containing: imageId)
+        let movablePages = state.pages.indices.filter { pi in
+            pi != source && state.pages[pi].images.count < CollageState.maxImagesPerPage
+        }
+
+        ScrollView {
+            VStack(alignment: .leading, spacing: 0) {
+                menuButton("Replace", sf: "photo.on.rectangle.angled") {
+                    state.showReplacePicker = true
+                    state.showBoxActionMenu = false
+                }
+                ForEach(movablePages, id: \.self) { pi in
+                    Divider()
+                    menuButton("Move to Page \(pi + 1)", sf: "arrow.right.square") {
+                        state.moveImage(id: imageId, toPage: pi)
+                        dismissMenu()
+                    }
+                }
+                if state.pages.count < CollageState.maxPages {
+                    Divider()
+                    menuButton("Move to New Page", sf: "plus.square.on.square") {
+                        state.moveImageToNewPage(id: imageId)
+                        dismissMenu()
+                    }
+                }
+                Divider()
+                menuButton("Delete", sf: "trash", destructive: true) {
+                    state.removeImage(id: imageId)
+                    dismissMenu()
+                }
+            }
+        }
+        .frame(width: 220)
+        // Hug the content, but never grow taller than a comfortable popover.
+        .frame(maxHeight: min(CGFloat(3 + movablePages.count) * 44 + 8, 320))
+    }
+
+    private func dismissMenu() {
+        state.boxActionTargetId = nil
+        state.showBoxActionMenu = false
+    }
+
+    private func menuButton(_ title: String, sf: String, destructive: Bool = false,
+                            action: @escaping () -> Void) -> some View {
+        Button(action: action) {
+            HStack {
+                Text(title)
+                Spacer()
+                Image(systemName: sf)
+            }
+            .font(.subheadline)
+            .foregroundColor(destructive ? .red : .primary)
+            .padding(.horizontal, 14)
+            .frame(height: 44)
+            .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
+    }
 }
 
 // MARK: - Image content (Equatable for performance)

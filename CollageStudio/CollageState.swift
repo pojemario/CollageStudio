@@ -55,6 +55,12 @@ class CollageState: ObservableObject {
         get { currentPage.style.numCols }
         set { currentPage.style.numCols = newValue }
     }
+    /// Highest column count that makes sense for the current page — one column
+    /// per image, capped at 6. Drives the Columns slider's range; the slider is
+    /// disabled entirely when this is 1 (0 or 1 images on the page).
+    var maxSelectableCols: Int {
+        max(1, min(6, images.count))
+    }
     var gap: Double {
         get { currentPage.style.gap }
         set { currentPage.style.gap = newValue }
@@ -392,6 +398,12 @@ class CollageState: ObservableObject {
         addPreparedImages(newImages.map { CollageImage(image: $0) })
     }
 
+    /// Adds a transparent 300×300 "empty image" placeholder that occupies a
+    /// slot like any other image, leaving a deliberate gap in the collage.
+    func addEmptyImage() {
+        addPreparedImages([CollageImage.emptyPlaceholder()])
+    }
+
     /// Adds images whose proxies were already generated off the main thread.
     /// Fills the current page up to the per-page limit, then spills into new
     /// pages (up to the page limit; any excess beyond that is dropped).
@@ -456,6 +468,18 @@ class CollageState: ObservableObject {
         if replacingCurrent {
             clear()
         }
+        addImages(shared)
+    }
+
+    /// Adds the pending shared photos to the existing collage on a fresh page
+    /// appended at the end, and navigates to it. Overflow beyond the per-page
+    /// limit spills onto further new pages, like a normal import.
+    func importPendingSharedAsNewPage() {
+        let shared = pendingSharedImages
+        pendingSharedImages = []
+        guard !shared.isEmpty, pages.count < Self.maxPages else { return }
+        pages.append(CollagePage(style: currentPage.style))
+        currentPageIndex = pages.count - 1
         addImages(shared)
     }
 

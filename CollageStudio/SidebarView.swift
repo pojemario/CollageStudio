@@ -61,11 +61,20 @@ struct SidebarView: View {
         SidebarSection(title: "Images") {
             HStack(spacing: 8) {
                 PhotosPicker(selection: $photoItems, maxSelectionCount: 30, matching: .images) {
-                    Label("Image", systemImage: "plus")
-                        .font(.footnote.weight(.medium))
-                        .lineLimit(1)
-                        .minimumScaleFactor(0.7)
-                        .padding(.horizontal, 8)
+                    Image(systemName: "photo.badge.plus")
+                        .font(.system(size: 17, weight: .medium))
+                        .frame(maxWidth: .infinity)
+                        .padding(.vertical, 10)
+                        .foregroundColor(.white)
+                        .background(Color.accentColor)
+                        .cornerRadius(10)
+                }
+                .buttonStyle(.plain)
+
+                // Adds a transparent placeholder — an intentional empty slot.
+                Button { state.addEmptyImage() } label: {
+                    Image(systemName: "rectangle.dashed.badge.record")
+                        .font(.system(size: 17, weight: .medium))
                         .frame(maxWidth: .infinity)
                         .padding(.vertical, 10)
                         .foregroundColor(.white)
@@ -129,9 +138,11 @@ struct SidebarView: View {
     var layoutSection: some View {
         SidebarSection(title: "Layout") {
             LabeledSlider(label: "Columns", value: Binding(
-                get: { Double(state.numCols) },
+                get: { Double(min(state.numCols, state.maxSelectableCols)) },
                 set: { v in state.numCols = Int(v); state.rebuildLayout(resetGrows: true) }
-            ), range: 1...Double(max(1, min(6, state.images.count))), step: 1, format: "%.0f", resetValue: 2)
+            ), range: 1...Double(state.maxSelectableCols), step: 1, format: "%.0f", resetValue: 2)
+                .disabled(state.maxSelectableCols <= 1)
+                .opacity(state.maxSelectableCols <= 1 ? 0.4 : 1)
             
             /*
             struct LabeledSlider: View {
@@ -415,7 +426,9 @@ struct ModernSlider: View {
             let width = geo.size.width
             let usable = max(width - thumbBase, 1)
             let span = max(range.upperBound - range.lowerBound, 0.0001)
-            let fraction = CGFloat((value - range.lowerBound) / span)
+            // Clamp so a value outside the range (or a collapsed range) can
+            // never push the fill/thumb beyond the track.
+            let fraction = min(max(CGFloat((value - range.lowerBound) / span), 0), 1)
             let thumbX = thumbBase / 2 + fraction * usable
             let thumbSize = isDragging ? thumbBase + 6 : thumbBase
 
@@ -1462,19 +1475,37 @@ struct ImageThumb: View {
 
     @ViewBuilder
     private var thumbImage: some View {
-        #if canImport(UIKit)
-        Image(uiImage: img.thumb)
-            .resizable()
-            .scaledToFill()
-            .frame(width: size, height: size)
-            .clipShape(RoundedRectangle(cornerRadius: 6))
-        #else
-        Image(nsImage: img.thumb)
-            .resizable()
-            .scaledToFill()
-            .frame(width: size, height: size)
-            .clipShape(RoundedRectangle(cornerRadius: 6))
-        #endif
+        if img.isPlaceholder {
+            // The placeholder's pixels are transparent, so mark it with a
+            // dashed empty-slot glyph instead of an invisible square.
+            RoundedRectangle(cornerRadius: 6)
+                .fill(ColorManager.systemFill.opacity(0.5))
+                .overlay(
+                    RoundedRectangle(cornerRadius: 6)
+                        .strokeBorder(Color.secondary.opacity(0.6),
+                                      style: StrokeStyle(lineWidth: 1.5, dash: [5, 4]))
+                )
+                .overlay(
+                    Image(systemName: "rectangle.dashed")
+                        .font(.system(size: 18, weight: .medium))
+                        .foregroundColor(.secondary)
+                )
+                .frame(width: size, height: size)
+        } else {
+            #if canImport(UIKit)
+            Image(uiImage: img.thumb)
+                .resizable()
+                .scaledToFill()
+                .frame(width: size, height: size)
+                .clipShape(RoundedRectangle(cornerRadius: 6))
+            #else
+            Image(nsImage: img.thumb)
+                .resizable()
+                .scaledToFill()
+                .frame(width: size, height: size)
+                .clipShape(RoundedRectangle(cornerRadius: 6))
+            #endif
+        }
     }
 }
 
