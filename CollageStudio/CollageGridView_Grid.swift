@@ -157,8 +157,11 @@ struct CollageGridView_Grid: View {
     private func resizeHandles(canvasSize: CGSize, gap: CGFloat, cols: [[ColumnItem]]) -> some View {
         let widths = columnWidths(canvasSize: canvasSize, gap: gap, cols: cols)
         let availW = canvasSize.width - gap * CGFloat(cols.count + 1)
-        // Generous touch target even when the visual gap is tiny
-        let hitThickness = max(gap, 28)
+        // Hug the actual gap: a couple of points of bleed at most, so
+        // pinch/pan touches near a box edge always reach the image. (28pt
+        // strips used to bleed ~14pt onto the images and swallowed pinch
+        // fingers — boxes sandwiched between strips went gesture-dead.)
+        let hitThickness = max(gap, 14)
 
         ZStack {
             // Vertical handles between columns

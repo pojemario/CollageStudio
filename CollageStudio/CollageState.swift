@@ -357,6 +357,8 @@ class CollageState: ObservableObject {
     @Published var boxActionTargetId: UUID? = nil
     @Published var showBoxActionMenu: Bool = false
     @Published var showReplacePicker: Bool = false
+    /// Global-space point of the long press, anchoring the action menu popover.
+    @Published var boxActionPressPoint: CGPoint = .zero
 
     // MARK: - Shared import (Share Extension)
     @Published var pendingSharedImages: [PlatformImage] = []
@@ -1020,13 +1022,31 @@ class CollageState: ObservableObject {
     func commitZoomRotate(id: UUID, scaleFactor: CGFloat, angleDelta: CGFloat, boxSize: CGSize) {
         guard let idx = images.firstIndex(where: { $0.id == id }) else { return }
         var img = images[idx]
-        img.zoom = max(1.0, min(4.0, img.zoom * scaleFactor))
-        img.rotation += angleDelta
+        // RotationGesture emits NaN when the fingers nearly coincide, and
+        // MagnificationGesture can too — never let it poison the stored
+        // transform (rotation += NaN sticks until a manual reset).
+        let safeScale = (scaleFactor.isFinite && scaleFactor > 0) ? scaleFactor : 1.0
+        let safeAngle = angleDelta.isFinite ? angleDelta : 0
+        img.zoom = max(1.0, min(4.0, img.zoom * safeScale))
+        img.rotation += safeAngle
+        if !img.rotation.isFinite { img.rotation = 0 }
         let panPx = Self.panPixels(img.panOffset, in: boxSize)
         let clamped = clamp(pan: panPx, zoom: img.zoom, boxSize: boxSize, naturalSize: img.naturalSize)
         img.panOffset = Self.normalizedPan(clamped, in: boxSize)
         img.lastBoxSize = boxSize
         images[idx] = img
+        // The heal-rebuild can recreate the view before its
+        // onChange(of: pinching) delivers false — release the zoom lock here
+        // so it can never stick.
+        endImageZoom(id: id)
+    }
+
+    /// New identity for a box view → SwiftUI rebuilds it with fresh gesture
+    /// recognizers. Called (deferred) after every pinch ends so recognizer
+    /// corruption can never outlive a single gesture.
+    func bumpGestureEpoch(id: UUID) {
+        guard let idx = images.firstIndex(where: { $0.id == id }) else { return }
+        images[idx].gestureEpoch += 1
     }
 
     func resetTransform(id: UUID) {
@@ -1036,11 +1056,6 @@ class CollageState: ObservableObject {
         images[idx].rotation = 0
     }
 
-    func clamp2(pan: CGSize, zoom: CGFloat, boxSize: CGSize, naturalSize: CGSize) -> CGSize {
-        print("[EDGE CHECK] pan.width=\(pan.width), image.width=\(naturalSize.width), box.width=\(boxSize.width)")
-        return pan
-    }
-    
     func clamp(pan: CGSize, zoom: CGFloat, boxSize: CGSize, naturalSize: CGSize) -> CGSize {
         // 1. Calculate the base scale that achieves 'Aspect Fill' (cover)
         let scaleW = boxSize.width / naturalSize.width
@@ -1168,10 +1183,21 @@ class CollageState: ObservableObject {
             return
         }
         order.swapAt(i1, i2)
-        resetTransform(id: id1)
-        resetTransform(id: id2)
+        // Keep zoom and rotation across the swap — zoom is stored relative to
+        // the box's aspect-fill cover, so it re-fits the new box automatically
+        // (never leaves gaps). Only the pan resets: it's normalized to the old
+        // box's geometry and rarely means the same thing in the new one.
+        resetPan(id: id1)
+        resetPan(id: id2)
         clearSwapDrag()
         rebuildLayout(resetGrows: false)
+    }
+
+    /// Clears just the pan composition, preserving zoom and rotation.
+    private func resetPan(id: UUID) {
+        guard let idx = images.firstIndex(where: { $0.id == id }) else { return }
+        images[idx].panOffset = .zero
+        images[idx].lastBoxSize = .zero
     }
 
     func updateImageFrame(id: UUID, frame: CGRect) {
@@ -1258,7 +1284,8 @@ class CollageState: ObservableObject {
             l.boxGrows[columnIndex] = [1.0]
         }
         layout = l
-        resetTransform(id: id)
+        // Same policy as swapImages: zoom/rotation survive the move.
+        resetPan(id: id)
         clearSwapDrag()
     }
 
@@ -1290,12 +1317,46 @@ class CollageState: ObservableObject {
         guard !isCanvasZooming else { return false }
         imageZoomingId = id
         clearSwapDrag()
+        restartZoomWatchdog(id: id)
         return true
     }
 
     func endImageZoom(id: UUID) {
         if imageZoomingId == id {
             imageZoomingId = nil
+        }
+        if zoomWatchdogId == id {
+            zoomWatchdog?.cancel()
+            zoomWatchdogId = nil
+        }
+    }
+
+    // MARK: Pinch watchdog
+    // A two-finger recognizer can wedge mid-gesture: it stops getting touches
+    // but never delivers end/cancel, so the box's @GestureState sticks and the
+    // box goes deaf (observed live: "pinch begin" with no end ever following).
+    // Every pinch event feeds this watchdog; if a pinch goes silent without
+    // ending, the box view is rebuilt — destroying the wedged recognizer.
+
+    private var zoomWatchdog: Task<Void, Never>? = nil
+    private var zoomWatchdogId: UUID? = nil
+
+    /// Called on every pinch update so an active, moving gesture never trips
+    /// the watchdog. (A perfectly motionless two-finger hold produces no
+    /// events; 2s of that is rare, and the heal is invisible at rest.)
+    func noteZoomActivity(id: UUID) {
+        restartZoomWatchdog(id: id)
+    }
+
+    private func restartZoomWatchdog(id: UUID) {
+        zoomWatchdog?.cancel()
+        zoomWatchdogId = id
+        zoomWatchdog = Task { @MainActor in
+            try? await Task.sleep(nanoseconds: 2_000_000_000)
+            guard !Task.isCancelled else { return }
+            if imageZoomingId == id { imageZoomingId = nil }
+            zoomWatchdogId = nil
+            bumpGestureEpoch(id: id)
         }
     }
 

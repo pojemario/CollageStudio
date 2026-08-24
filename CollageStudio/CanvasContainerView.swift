@@ -141,8 +141,22 @@ struct CanvasContainerView: View {
             .onChange(of: photoItems) { _, newItems in
                 loadPhotos(newItems)
             }
-            // The long-press action menu is a popover anchored at the pressed
-            // point — see ImageBoxView. Only the Replace picker lives here.
+            // Long-press action menu: ONE popover on this stable container,
+            // anchored at the recorded press point (converted from global to
+            // local space). Per-box popovers must not be used — after swaps
+            // they left orphaned UIKit presentation views over the box that
+            // swallowed all its touches.
+            .popover(isPresented: actionMenuShown,
+                     attachmentAnchor: .rect(.rect(CGRect(
+                        x: state.boxActionPressPoint.x - geo.frame(in: .global).minX,
+                        y: state.boxActionPressPoint.y - geo.frame(in: .global).minY,
+                        width: 1, height: 1)))) {
+                if let id = state.boxActionTargetId {
+                    BoxActionMenu(imageId: id)
+                        .environmentObject(state)
+                        .presentationCompactAdaptation(.popover)
+                }
+            }
             // Single-image picker for the "Replace" action
             .photosPicker(isPresented: $state.showReplacePicker,
                           selection: $replaceItems,
@@ -151,20 +165,22 @@ struct CanvasContainerView: View {
             .onChange(of: replaceItems) { _, newItems in
                 loadReplacement(newItems)
             }
-            // Narrow edge zones for switching pages with a horizontal swipe.
-            // Only these strips react, so image pan/swap gestures inside the
-            // canvas are unaffected.
-            .overlay {
-                if state.pages.count > 1 {
-                    HStack(spacing: 0) {
-                        edgeSwipeStrip(isLeading: true)
-                        Spacer(minLength: 0)
-                        edgeSwipeStrip(isLeading: false)
-                    }
-                }
-            }
         }
     }
+    /// Dismissing the action menu (tap outside) clears the target unless the
+    /// Replace picker took over.
+    private var actionMenuShown: Binding<Bool> {
+        Binding(
+            get: { state.showBoxActionMenu },
+            set: { shown in
+                if !shown {
+                    state.showBoxActionMenu = false
+                    if !state.showReplacePicker { state.boxActionTargetId = nil }
+                }
+            }
+        )
+    }
+
     // MARK: - Load photos (empty-canvas add button)
 
     func loadPhotos(_ items: [PhotosPickerItem]) {
@@ -210,34 +226,5 @@ struct CanvasContainerView: View {
         }
     }
 
-    /// 22pt-wide invisible strip at the canvas-area edge: swiping inward
-    /// switches to the previous/next page.
-    private func edgeSwipeStrip(isLeading: Bool) -> some View {
-        Color.clear
-            .frame(width: 22)
-            .contentShape(Rectangle())
-            .highPriorityGesture(
-                DragGesture(minimumDistance: 15)
-                    .onEnded { value in
-                        let dx = value.translation.width
-                        let before = state.currentPageIndex
-                        withAnimation(.easeInOut(duration: 0.15)) {
-                            if isLeading, dx > 30 {
-                                // Swipe right from the left edge → previous page
-                                state.currentPageIndex = max(state.currentPageIndex - 1, 0)
-                            } else if !isLeading, dx < -30 {
-                                // Swipe left from the right edge → next page
-                                state.currentPageIndex = min(state.currentPageIndex + 1,
-                                                             state.pages.count - 1)
-                            }
-                        }
-                        #if canImport(UIKit)
-                        if state.currentPageIndex != before {
-                            UISelectionFeedbackGenerator().selectionChanged()
-                        }
-                        #endif
-                    }
-            )
-    }
 }
 

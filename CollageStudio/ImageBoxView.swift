@@ -5,15 +5,26 @@ struct ImageBoxView: View {
     static let showDebug = false
 
     @EnvironmentObject var state: CollageState
+    #if !os(macOS)
+    @Environment(\.horizontalSizeClass) private var hSizeClass
+    #endif
     let imageId: UUID
     /// Display scale of the canvas. Used to scale border thickness and corner
     /// radius so the on-screen preview matches the full-resolution export exactly.
     var scale: CGFloat = 1.0
 
+    /// True while the user is previewing full screen on iPhone (bottom panel
+    /// hidden). Editing helpers like the placeholder outline hide with it.
+    /// iPad/macOS use the sidebar, so they never count as previewing.
+    private var isPreviewing: Bool {
+        #if os(macOS)
+        return false
+        #else
+        return hSizeClass == .compact && !state.isPanelOpen
+        #endif
+    }
+
     @State private var livePanOffset: CGSize = .zero
-    /// Last touch point in this box's local space — anchors the long-press
-    /// action menu popover right where the finger is.
-    @State private var pressLocation: CGPoint = .zero
     // Live pinch/rotate deltas. @GestureState is GUARANTEED to reset to its
     // initial value when the gesture ends or is cancelled, so the manipulation
     // can never leave the input layer stuck.
@@ -79,10 +90,12 @@ struct ImageBoxView: View {
                     .allowsHitTesting(false)
                 )
                 // Faint dashed outline marking an "empty image" placeholder so
-                // it stays findable while editing. Not drawn during export.
+                // it stays findable while editing. Not drawn during export or
+                // full-screen preview (bottom panel hidden).
                 .overlay(
                     Group {
-                        if let img = imgData, img.isPlaceholder, !state.renderFullResolution {
+                        if let img = imgData, img.isPlaceholder,
+                           !state.renderFullResolution, !isPreviewing {
                             RoundedRectangle(cornerRadius: state.cornerRadius * scale)
                                 .strokeBorder(Color.gray.opacity(0.35),
                                               style: StrokeStyle(lineWidth: 1.5, dash: [6, 4]))
@@ -91,7 +104,7 @@ struct ImageBoxView: View {
                     .allowsHitTesting(false)
                 )
                 .overlay(alignment: .topLeading) {
-                    if Self.showDebug {
+                    if Self.showDebug && !state.renderFullResolution {
                         Text(debugText(boxSize: boxSize))
                             .font(.system(size: 9, weight: .semibold, design: .monospaced))
                             .foregroundColor(.white)
@@ -127,26 +140,18 @@ struct ImageBoxView: View {
                 .shadow(color: state.draggingId == imageId ? .black.opacity(0.3) : .clear, radius: 14, x: 0, y: 8)
                 .zIndex(state.draggingId == imageId ? 10 : 0)
                 .highPriorityGesture(panGesture(boxSize: boxSize))
-                .simultaneousGesture(pinchGesture(boxSize: boxSize))
-                // Records the touch point (box-local) without ever claiming
-                // the gesture, so the action menu can anchor at the finger.
-                .simultaneousGesture(
-                    DragGesture(minimumDistance: 0, coordinateSpace: .local)
-                        .onChanged { value in
-                            if !state.showBoxActionMenu { pressLocation = value.location }
-                        }
-                )
+                // Empty-image placeholders are blank, so zoom/rotate is
+                // meaningless — don't attach the pinch recognizers at all
+                // (.subviews keeps the wrapped gestures like pan working).
+                .simultaneousGesture(pinchGesture(boxSize: boxSize),
+                                     including: (imgData?.isPlaceholder ?? false) ? .subviews : .all)
+                // NOTE: no standalone minimumDistance-0 DragGesture may ever be
+                // attached here — one stranded in its "began" state blocks
+                // every other recognizer on the view, leaving the box deaf to
+                // all touches. The action-menu location comes from a drag
+                // SEQUENCED after the long press instead (see below), and the
+                // popover itself lives on the canvas container.
                 .simultaneousGesture(replaceLongPressGesture)
-                // Long-press action menu, shown as a popover at the pressed
-                // point instead of a bottom sheet.
-                .popover(isPresented: actionMenuShown,
-                         attachmentAnchor: .rect(.rect(CGRect(x: pressLocation.x,
-                                                              y: pressLocation.y,
-                                                              width: 1, height: 1)))) {
-                    BoxActionMenu(imageId: imageId)
-                        .environmentObject(state)
-                        .presentationCompactAdaptation(.popover)
-                }
                 // Double-tap resets this image. Simultaneous (not high
                 // priority) so it never delays the pan drag from starting.
                 .simultaneousGesture(
@@ -173,8 +178,17 @@ struct ImageBoxView: View {
                         _ = state.beginImageZoom(id: imageId)
                     } else {
                         state.endImageZoom(id: imageId)
+                        // Rebuild the view (fresh gesture recognizers) after
+                        // EVERY pinch — completed or cancelled — but only on
+                        // the next runloop tick, after the gesture system has
+                        // fully torn down (a synchronous rebuild mid-teardown
+                        // can itself strand recognizers).
+                        Task { @MainActor in
+                            state.bumpGestureEpoch(id: imageId)
+                        }
                     }
                 }
+                .id(imgData?.gestureEpoch ?? 0)
         }
     }
 
@@ -248,12 +262,20 @@ struct ImageBoxView: View {
     // MARK: - Debug readout
 
     func debugText(boxSize: CGSize) -> String {
-        guard let img = imgData else { return "" }
+        guard let img = imgData else { return "NO IMG" }
         let z = img.zoom * gestureScale
         let deg = (img.rotation + CGFloat(gestureRotation.radians)) * 180 / .pi
-        return String(format: "z %.2f  r %.0f°\np %.2f,%.2f\nbox %.0f×%.0f",
-                      z, deg, img.panOffset.width, img.panOffset.height,
-                      boxSize.width, boxSize.height)
+        // Which render path is active: the transform branch or the static
+        // scaledToFill fallback (which ignores zoom/rotation entirely).
+        let fallback = !(boxSize.width > 1 && boxSize.height > 1
+                         && img.naturalSize.width > 1 && img.naturalSize.height > 1)
+        return String(format: "z %.2f  r %.0f°%@%@\np %.2f,%.2f\nbox %.0f×%.0f  nat %.0f×%.0f",
+                      z, deg,
+                      img.isPlaceholder ? "  PH" : "",
+                      fallback ? "  FALLBACK" : "",
+                      img.panOffset.width, img.panOffset.height,
+                      boxSize.width, boxSize.height,
+                      img.naturalSize.width, img.naturalSize.height)
     }
 
     // MARK: - Pan gesture
@@ -323,35 +345,40 @@ struct ImageBoxView: View {
 
     // MARK: - Box actions via long press
 
-    /// The action menu popover is presented on the box that was pressed.
-    /// Dismissing it (tap outside) clears the target unless the Replace
-    /// picker took over.
-    private var actionMenuShown: Binding<Bool> {
-        Binding(
-            get: { state.showBoxActionMenu && state.boxActionTargetId == imageId },
-            set: { shown in
-                if !shown {
-                    state.showBoxActionMenu = false
-                    if !state.showReplacePicker { state.boxActionTargetId = nil }
-                }
-            }
-        )
-    }
-
     /// Holding still on a box for 1 second opens the Replace / Delete menu
-    /// for this image.
+    /// for this image (a single popover on the canvas container). The finger
+    /// location comes from a drag sequenced AFTER the long press succeeds —
+    /// the drag only starts recognizing then, so it can never sit armed on
+    /// every touch the way a standalone min-0 drag would.
     var replaceLongPressGesture: some Gesture {
         LongPressGesture(minimumDuration: 1.0, maximumDistance: 8)
-            .onEnded { _ in
-                guard state.draggingId == nil,
-                      state.imageZoomingId == nil,
-                      !state.isCanvasZooming else { return }
-                #if canImport(UIKit)
-                UIImpactFeedbackGenerator(style: .medium).impactOccurred()
-                #endif
-                state.boxActionTargetId = imageId
-                state.showBoxActionMenu = true
+            .sequenced(before: DragGesture(minimumDistance: 0, coordinateSpace: .global))
+            .onChanged { value in
+                if case .second(true, let drag) = value, let drag {
+                    showActionMenu(at: drag.startLocation)
+                }
             }
+            .onEnded { value in
+                // Finger lifted right at the 1s mark, before any drag event:
+                // the end value still carries the location.
+                if case .second(true, let drag) = value, let drag {
+                    showActionMenu(at: drag.startLocation)
+                }
+            }
+    }
+
+    /// Opens the action menu popover anchored at a global-space point.
+    private func showActionMenu(at point: CGPoint) {
+        guard !state.showBoxActionMenu,
+              state.draggingId == nil,
+              state.imageZoomingId == nil,
+              !state.isCanvasZooming else { return }
+        #if canImport(UIKit)
+        UIImpactFeedbackGenerator(style: .medium).impactOccurred()
+        #endif
+        state.boxActionPressPoint = point
+        state.boxActionTargetId = imageId
+        state.showBoxActionMenu = true
     }
 
     // MARK: - Pinch + rotate gesture
@@ -363,6 +390,12 @@ struct ImageBoxView: View {
     /// The final transform is committed once on end.
     func pinchGesture(boxSize: CGSize) -> some Gesture {
         SimultaneousGesture(MagnificationGesture(), RotationGesture())
+            // Feed the wedge watchdog on every update — a pinch that goes
+            // silent without ending gets its box force-rebuilt (see
+            // CollageState.noteZoomActivity).
+            .onChanged { _ in
+                state.noteZoomActivity(id: imageId)
+            }
             .updating($pinching) { _, isPinching, _ in
                 isPinching = true
             }

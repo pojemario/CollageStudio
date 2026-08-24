@@ -74,6 +74,11 @@ struct CollageImage: Identifiable, Equatable {
     /// layout and gestures like any image, but its pixels are fully
     /// transparent so the collage shows an intentional empty space.
     var isPlaceholder: Bool = false
+    /// Bumped after every committed pinch. The box view uses it as its
+    /// identity, forcing SwiftUI to rebuild the gesture recognizers — repeated
+    /// two-finger gestures can otherwise corrupt a view's recognizers and
+    /// leave the box permanently deaf to touch.
+    var gestureEpoch: Int = 0
     var panOffset: CGSize = .zero
     var zoom: CGFloat = 1.0
     /// Rotation of the image within its box, in radians.

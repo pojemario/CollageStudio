@@ -48,6 +48,7 @@ struct PanelHandleButton: View {
 
     private func open() {
         tapCount += 1
+        state.closeRatio()
         withAnimation(.spring(response: 0.34, dampingFraction: 0.86)) { state.isPanelOpen = true }
         #if canImport(UIKit)
         UIImpactFeedbackGenerator(style: .light).impactOccurred()
@@ -210,6 +211,12 @@ struct ContentView: View {
     @Environment(\.horizontalSizeClass) var hSizeClass
     @Environment(\.colorScheme) var colorScheme
 
+    // Global-space frames of the ratio popup and its toolbar button, so a tap
+    // anywhere else on screen can close the popup (the button keeps its own
+    // toggle behavior).
+    @State private var ratioPanelFrame: CGRect = .zero
+    @State private var ratioButtonFrame: CGRect = .zero
+
     var body: some View {
         #if os(macOS)
         macLayout
@@ -289,6 +296,13 @@ struct ContentView: View {
                     .contentShape(Capsule())
                 }
                 .buttonStyle(.plain)
+                .background(
+                    GeometryReader { g in
+                        Color.clear.onChange(of: g.frame(in: .global), initial: true) { _, f in
+                            ratioButtonFrame = f
+                        }
+                    }
+                )
 
                 // Full-screen toggle and Share — only once there are images.
                 if state.hasAnyImages {
@@ -340,7 +354,7 @@ struct ContentView: View {
                     .frame(height: 48)
                     .shimmering(state.isBusy)
                     .padding(.leading, 12)
-                    .offset(y: 3)
+                    .offset(y: -2)
                     .allowsHitTesting(false)
             }
             // Keep the toolbar (and its spilling logo) above the canvas below
@@ -358,6 +372,13 @@ struct ContentView: View {
                             .overlay(Rectangle().strokeBorder(Color.white.opacity(0.18), lineWidth: 1))
                             .shadow(color: .black.opacity(0.15), radius: 12, y: 2)
                     }
+                    .background(
+                        GeometryReader { g in
+                            Color.clear.onChange(of: g.frame(in: .global), initial: true) { _, f in
+                                ratioPanelFrame = f
+                            }
+                        }
+                    )
                     .transition(.move(edge: .top).combined(with: .opacity))
             }
 
@@ -394,6 +415,18 @@ struct ContentView: View {
         // One background tone across the whole app, including behind the
         // toolbar and status bar
         .background(ColorManager.canvasAreaBackground.ignoresSafeArea())
+        // A tap ANYWHERE outside the ratio popup (and its toolbar button,
+        // which keeps its own toggle) closes the popup. Simultaneous, so it
+        // rides along with whatever the tap actually hit — buttons included.
+        .simultaneousGesture(
+            SpatialTapGesture(coordinateSpace: .global)
+                .onEnded { value in
+                    guard state.isRatioOpen,
+                          !ratioPanelFrame.contains(value.location),
+                          !ratioButtonFrame.contains(value.location) else { return }
+                    state.closeRatio()
+                }
+        )
         .sheet(isPresented: $state.showExportSheet) { ExportSheetView().environmentObject(state) }
         .overlay {
             if state.isExporting {
