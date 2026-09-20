@@ -135,7 +135,19 @@ struct BottomPanelView: View {
                 }
                 .buttonStyle(.plain)
 
-                ActionButton(label: "Page", sf: "plus") { state.addPage() }
+                // Adds an editable text box rendered as an image.
+                Button { state.addTextImage() } label: {
+                    Image(systemName: "character.textbox")
+                        .font(.system(size: 17, weight: .medium))
+                        .frame(maxWidth: .infinity)
+                        .padding(.vertical, 10)
+                        .foregroundColor(.white)
+                        .background(Color.accentColor)
+                        .cornerRadius(10)
+                }
+                .buttonStyle(.plain)
+
+                ActionButton(label: "", sf: "doc.badge.plus") { state.addPage() }
                     .disabled(state.pages.count >= CollageState.maxPages)
                     .opacity(state.pages.count >= CollageState.maxPages ? 0.5 : 1)
 

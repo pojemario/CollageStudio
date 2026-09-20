@@ -83,7 +83,19 @@ struct SidebarView: View {
                 }
                 .buttonStyle(.plain)
 
-                ActionButton(label: "Page", sf: "plus") { state.addPage() }
+                // Adds an editable text box rendered as an image.
+                Button { state.addTextImage() } label: {
+                    Image(systemName: "character.textbox")
+                        .font(.system(size: 17, weight: .medium))
+                        .frame(maxWidth: .infinity)
+                        .padding(.vertical, 10)
+                        .foregroundColor(.white)
+                        .background(Color.accentColor)
+                        .cornerRadius(10)
+                }
+                .buttonStyle(.plain)
+
+                ActionButton(label: "", sf: "doc.badge.plus") { state.addPage() }
                     .disabled(state.pages.count >= CollageState.maxPages)
                     .opacity(state.pages.count >= CollageState.maxPages ? 0.5 : 1)
 
@@ -1159,7 +1171,6 @@ struct SpreadMenuButton: View {
         Button { show = true } label: {
             HStack(spacing: 4) {
                 Image(systemName: "rectangle.split.3x1")
-                Text("Spread")
                 Image(systemName: "chevron.down")
                     .font(.system(size: 9, weight: .semibold))
                     .opacity(0.6)

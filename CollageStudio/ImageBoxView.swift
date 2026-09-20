@@ -346,29 +346,32 @@ struct ImageBoxView: View {
     // MARK: - Box actions via long press
 
     /// Holding still on a box for 1 second opens the Replace / Delete menu
-    /// for this image (a single popover on the canvas container). The finger
-    /// location comes from a drag sequenced AFTER the long press succeeds —
-    /// the drag only starts recognizing then, so it can never sit armed on
-    /// every touch the way a standalone min-0 drag would.
+    /// for this image (a single popover on the canvas container). The menu
+    /// opens the moment the timer fires — the sequence transitions to .second
+    /// right then, while the finger is still down. The sequenced drag (which
+    /// only starts recognizing after the long press, so it can never sit
+    /// armed on every touch like a standalone min-0 drag) refines the anchor
+    /// to the exact finger point once it delivers an event; until then the
+    /// box's own frame anchors the popover.
     var replaceLongPressGesture: some Gesture {
         LongPressGesture(minimumDuration: 1.0, maximumDistance: 8)
-            .sequenced(before: DragGesture(minimumDistance: 0, coordinateSpace: .global))
+            .sequenced(before: DragGesture(minimumDistance: 0,
+                                           coordinateSpace: .named("collageCanvas")))
             .onChanged { value in
-                if case .second(true, let drag) = value, let drag {
-                    showActionMenu(at: drag.startLocation)
+                if case .second(true, let drag) = value {
+                    showActionMenu(at: drag?.startLocation)
                 }
             }
             .onEnded { value in
-                // Finger lifted right at the 1s mark, before any drag event:
-                // the end value still carries the location.
-                if case .second(true, let drag) = value, let drag {
-                    showActionMenu(at: drag.startLocation)
+                if case .second(true, let drag) = value {
+                    showActionMenu(at: drag?.startLocation)
                 }
             }
     }
 
-    /// Opens the action menu popover anchored at a global-space point.
-    private func showActionMenu(at point: CGPoint) {
+    /// Opens the action menu popover anchored at a canvas-space point, or at
+    /// the box's tracked frame when the exact finger point isn't known yet.
+    private func showActionMenu(at point: CGPoint?) {
         guard !state.showBoxActionMenu,
               state.draggingId == nil,
               state.imageZoomingId == nil,
@@ -376,7 +379,9 @@ struct ImageBoxView: View {
         #if canImport(UIKit)
         UIImpactFeedbackGenerator(style: .medium).impactOccurred()
         #endif
-        state.boxActionPressPoint = point
+        let boxCenter = state.imageFrame(for: imageId)
+            .map { CGPoint(x: $0.midX, y: $0.midY) } ?? .zero
+        state.boxActionPressPoint = point ?? boxCenter
         state.boxActionTargetId = imageId
         state.showBoxActionMenu = true
     }
@@ -430,9 +435,17 @@ struct BoxActionMenu: View {
         let movablePages = state.pages.indices.filter { pi in
             pi != source && state.pages[pi].images.count < CollageState.maxImagesPerPage
         }
+        let isText = state.textStyle(for: imageId) != nil
 
         ScrollView {
             VStack(alignment: .leading, spacing: 0) {
+                if isText {
+                    menuButton("Edit", sf: "textformat") {
+                        state.showBoxActionMenu = false
+                        state.beginEditText(id: imageId)
+                    }
+                    Divider()
+                }
                 menuButton("Replace", sf: "photo.on.rectangle.angled") {
                     state.showReplacePicker = true
                     state.showBoxActionMenu = false
@@ -460,7 +473,7 @@ struct BoxActionMenu: View {
         }
         .frame(width: 220)
         // Hug the content, but never grow taller than a comfortable popover.
-        .frame(maxHeight: min(CGFloat(3 + movablePages.count) * 44 + 8, 320))
+        .frame(maxHeight: min(CGFloat(3 + movablePages.count + (isText ? 1 : 0)) * 44 + 8, 320))
     }
 
     private func dismissMenu() {

@@ -56,6 +56,146 @@ extension PlatformImage {
     }
 }
 
+// MARK: - Text box style
+
+/// Everything needed to (re)render a "Text image": a text box that lives in
+/// the collage as a normal rendered image and can be re-edited at any time.
+struct TextBoxStyle: Equatable {
+    var text: String = "Your text"
+    var fontChoice: FontChoice = .classic
+    /// Point size on the 1200 px render canvas.
+    var fontSize: CGFloat = 120
+    var hAlignment: HAlign = .center
+    var vAlignment: VAlign = .middle
+    var textColor: Color = .black
+    var backgroundColor: Color = .white
+
+    enum HAlign: String, CaseIterable, Identifiable {
+        case leading, center, trailing
+        var id: String { rawValue }
+    }
+
+    enum VAlign: String, CaseIterable, Identifiable {
+        case top, middle, bottom
+        var id: String { rawValue }
+    }
+
+    enum FontChoice: String, CaseIterable, Identifiable {
+        case classic = "Classic"
+        case rounded = "Rounded"
+        case serif = "Serif"
+        case typewriter = "Typewriter"
+        case marker = "Marker"
+        case script = "Script"
+        var id: String { rawValue }
+    }
+}
+
+extension CollageImage {
+
+    /// Renders a text box as a square bitmap. Same routine for the initial
+    /// add and every edit, so what you see is exactly what exports.
+    static func renderTextImage(style: TextBoxStyle, side: CGFloat = 1200) -> PlatformImage {
+        let size = CGSize(width: side, height: side)
+        let inset = side * 0.06
+        let maxRect = CGRect(x: inset, y: inset, width: size.width - inset * 2, height: size.height - inset * 2)
+        // Font size scales with the render side so previews at smaller sides
+        // look identical to the full-resolution image.
+        let scaledFontSize = style.fontSize * (side / 1200)
+
+        let paragraph = NSMutableParagraphStyle()
+        paragraph.lineBreakMode = .byWordWrapping
+        switch style.hAlignment {
+        case .leading:  paragraph.alignment = .left
+        case .center:   paragraph.alignment = .center
+        case .trailing: paragraph.alignment = .right
+        }
+
+        #if canImport(UIKit)
+        var font: UIFont
+        switch style.fontChoice {
+        case .classic:    font = .systemFont(ofSize: scaledFontSize, weight: .semibold)
+        case .rounded:
+            font = .systemFont(ofSize: scaledFontSize, weight: .semibold)
+            if let d = font.fontDescriptor.withDesign(.rounded) {
+                font = UIFont(descriptor: d, size: scaledFontSize)
+            }
+        case .serif:      font = UIFont(name: "Georgia", size: scaledFontSize) ?? .systemFont(ofSize: scaledFontSize)
+        case .typewriter: font = UIFont(name: "AmericanTypewriter", size: scaledFontSize) ?? .systemFont(ofSize: scaledFontSize)
+        case .marker:     font = UIFont(name: "MarkerFelt-Wide", size: scaledFontSize) ?? .systemFont(ofSize: scaledFontSize)
+        case .script:     font = UIFont(name: "SnellRoundhand-Bold", size: scaledFontSize) ?? .systemFont(ofSize: scaledFontSize)
+        }
+        let attrs: [NSAttributedString.Key: Any] = [
+            .font: font,
+            .foregroundColor: UIColor(style.textColor),
+            .paragraphStyle: paragraph,
+        ]
+
+        let format = UIGraphicsImageRendererFormat()
+        format.scale = 1
+        format.opaque = false
+        return UIGraphicsImageRenderer(size: size, format: format).image { ctx in
+            UIColor(style.backgroundColor).setFill()
+            ctx.fill(CGRect(origin: .zero, size: size))
+
+            let bounding = (style.text as NSString).boundingRect(
+                with: CGSize(width: maxRect.width, height: .greatestFiniteMagnitude),
+                options: [.usesLineFragmentOrigin], attributes: attrs, context: nil)
+            let textHeight = min(bounding.height.rounded(.up), maxRect.height)
+            let y: CGFloat
+            switch style.vAlignment {
+            case .top:    y = maxRect.minY
+            case .middle: y = maxRect.minY + (maxRect.height - textHeight) / 2
+            case .bottom: y = maxRect.maxY - textHeight
+            }
+            (style.text as NSString).draw(
+                with: CGRect(x: maxRect.minX, y: y, width: maxRect.width, height: textHeight),
+                options: [.usesLineFragmentOrigin], attributes: attrs, context: nil)
+        }
+        #else
+        var font: NSFont
+        switch style.fontChoice {
+        case .classic:    font = .systemFont(ofSize: scaledFontSize, weight: .semibold)
+        case .rounded:
+            font = .systemFont(ofSize: scaledFontSize, weight: .semibold)
+            if let d = font.fontDescriptor.withDesign(.rounded),
+               let rounded = NSFont(descriptor: d, size: scaledFontSize) {
+                font = rounded
+            }
+        case .serif:      font = NSFont(name: "Georgia", size: scaledFontSize) ?? .systemFont(ofSize: scaledFontSize)
+        case .typewriter: font = NSFont(name: "American Typewriter", size: scaledFontSize) ?? .systemFont(ofSize: scaledFontSize)
+        case .marker:     font = NSFont(name: "Marker Felt Wide", size: scaledFontSize) ?? .systemFont(ofSize: scaledFontSize)
+        case .script:     font = NSFont(name: "Snell Roundhand Bold", size: scaledFontSize) ?? .systemFont(ofSize: scaledFontSize)
+        }
+        let attrs: [NSAttributedString.Key: Any] = [
+            .font: font,
+            .foregroundColor: NSColor(style.textColor),
+            .paragraphStyle: paragraph,
+        ]
+
+        let img = NSImage(size: size)
+        img.lockFocus()
+        NSColor(style.backgroundColor).setFill()
+        CGRect(origin: .zero, size: size).fill()
+        let bounding = (style.text as NSString).boundingRect(
+            with: CGSize(width: maxRect.width, height: .greatestFiniteMagnitude),
+            options: [.usesLineFragmentOrigin], attributes: attrs)
+        let textHeight = min(bounding.height.rounded(.up), maxRect.height)
+        let y: CGFloat
+        switch style.vAlignment {
+        case .top:    y = maxRect.minY
+        case .middle: y = maxRect.minY + (maxRect.height - textHeight) / 2
+        case .bottom: y = maxRect.maxY - textHeight
+        }
+        (style.text as NSString).draw(
+            with: CGRect(x: maxRect.minX, y: y, width: maxRect.width, height: textHeight),
+            options: [.usesLineFragmentOrigin], attributes: attrs)
+        img.unlockFocus()
+        return img
+        #endif
+    }
+}
+
 // MARK: - CollageImage
 
 struct CollageImage: Identifiable, Equatable {
@@ -74,6 +214,10 @@ struct CollageImage: Identifiable, Equatable {
     /// layout and gestures like any image, but its pixels are fully
     /// transparent so the collage shows an intentional empty space.
     var isPlaceholder: Bool = false
+    /// Non-nil for "Text images": the style this image was rendered from,
+    /// kept so the text stays editable (long-press → Edit Text).
+    var textStyle: TextBoxStyle? = nil
+    var isText: Bool { textStyle != nil }
     /// Bumped after every committed pinch. The box view uses it as its
     /// identity, forcing SwiftUI to rebuild the gesture recognizers — repeated
     /// two-finger gestures can otherwise corrupt a view's recognizers and
@@ -99,12 +243,21 @@ struct CollageImage: Identifiable, Equatable {
     }
 
     /// Swaps in a new picture, regenerating the working copies. Replacing a
-    /// placeholder with a real photo makes it a normal image again.
+    /// placeholder or text box with a real photo makes it a normal image
+    /// again (applyTextStyle restores textStyle after its re-render).
     mutating func setImage(_ newImage: PlatformImage) {
         image = newImage
         proxy = newImage.downsampled(longEdge: Self.proxyLongEdge)
         thumb = newImage.downsampled(longEdge: Self.thumbLongEdge)
         isPlaceholder = false
+        textStyle = nil
+    }
+
+    /// A "Text image": a rendered text box that behaves like any other image.
+    static func textImage(style: TextBoxStyle) -> CollageImage {
+        var img = CollageImage(image: renderTextImage(style: style))
+        img.textStyle = style
+        return img
     }
 
     /// An "empty image": a fully transparent square placeholder that users

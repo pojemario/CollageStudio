@@ -36,6 +36,13 @@ struct CollageApp: App {
                     // saving shared photos — import them right away.
                     importSharedImages()
                 }
+                // Text image editor (long-press a text box → Edit).
+                .sheet(isPresented: $state.showTextEditor) {
+                    if let id = state.textEditTargetId {
+                        TextImageEditorView(imageId: id)
+                            .environmentObject(state)
+                    }
+                }
                 .confirmationDialog("Export", isPresented: $state.showExportOptions) {
                     Button("Current Page") {
                         Task { await state.exportPages(allPages: false) }

@@ -8,6 +8,7 @@
 
 /* Begin PBXBuildFile section */
 		225F1A5F2FEB91D500BFD410 /* ColorManager.swift in Sources */ = {isa = PBXBuildFile; fileRef = 225F1A5E2FEB91D500BFD410 /* ColorManager.swift */; };
+		AA0000F2 /* TextImageEditorView.swift in Sources */ = {isa = PBXBuildFile; fileRef = AA0000F1 /* TextImageEditorView.swift */; };
 		22BA1EDD30028034000137C9 /* CollageGridView_Grid.swift in Sources */ = {isa = PBXBuildFile; fileRef = 22BA1EDC30028033000137C9 /* CollageGridView_Grid.swift */; };
 		22CD51FC300B66E20026FB00 /* SharedInbox.swift in Sources */ = {isa = PBXBuildFile; fileRef = 22CD51FB300B66E20026FB00 /* SharedInbox.swift */; };
 		22CD520B300B696A0026FB00 /* ShareExtension.appex in Embed Foundation Extensions */ = {isa = PBXBuildFile; fileRef = 22CD5201300B696A0026FB00 /* ShareExtension.appex */; settings = {ATTRIBUTES = (RemoveHeadersOnCopy, ); }; };
@@ -49,6 +50,7 @@
 
 /* Begin PBXFileReference section */
 		225F1A5E2FEB91D500BFD410 /* ColorManager.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ColorManager.swift; sourceTree = "<group>"; };
+		AA0000F1 /* TextImageEditorView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TextImageEditorView.swift; sourceTree = "<group>"; };
 		22BA1EDC30028033000137C9 /* CollageGridView_Grid.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CollageGridView_Grid.swift; sourceTree = "<group>"; };
 		22CD51FB300B66E20026FB00 /* SharedInbox.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SharedInbox.swift; sourceTree = "<group>"; };
 		22CD5201300B696A0026FB00 /* ShareExtension.appex */ = {isa = PBXFileReference; explicitFileType = "wrapper.app-extension"; includeInIndex = 0; path = ShareExtension.appex; sourceTree = BUILT_PRODUCTS_DIR; };
@@ -124,6 +126,7 @@
 				AA100010 /* Assets.xcassets */,
 				AA100011 /* Info.plist */,
 				225F1A5E2FEB91D500BFD410 /* ColorManager.swift */,
+				AA0000F1 /* TextImageEditorView.swift */,
 				22BA1EDC30028033000137C9 /* CollageGridView_Grid.swift */,
 				22CD51FB300B66E20026FB00 /* SharedInbox.swift */,
 			);
@@ -252,6 +255,7 @@
 			files = (
 				AA000001 /* CollageApp.swift in Sources */,
 				225F1A5F2FEB91D500BFD410 /* ColorManager.swift in Sources */,
+				AA0000F2 /* TextImageEditorView.swift in Sources */,
 				AA000002 /* ContentView.swift in Sources */,
 				22BA1EDD30028034000137C9 /* CollageGridView_Grid.swift in Sources */,
 				AA000003 /* CollageState.swift in Sources */,

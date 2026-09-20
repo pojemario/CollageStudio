@@ -142,14 +142,15 @@ struct CanvasContainerView: View {
                 loadPhotos(newItems)
             }
             // Long-press action menu: ONE popover on this stable container,
-            // anchored at the recorded press point (converted from global to
-            // local space). Per-box popovers must not be used — after swaps
-            // they left orphaned UIKit presentation views over the box that
-            // swallowed all its touches.
+            // anchored at the recorded press point (canvas space → this view's
+            // local space: the grid sits top-centered in the content area).
+            // Per-box popovers must not be used — after swaps they left
+            // orphaned UIKit presentation views over the box that swallowed
+            // all its touches.
             .popover(isPresented: actionMenuShown,
                      attachmentAnchor: .rect(.rect(CGRect(
-                        x: state.boxActionPressPoint.x - geo.frame(in: .global).minX,
-                        y: state.boxActionPressPoint.y - geo.frame(in: .global).minY,
+                        x: state.boxActionPressPoint.x + (contentW - displayW) / 2,
+                        y: state.boxActionPressPoint.y + padding,
                         width: 1, height: 1)))) {
                 if let id = state.boxActionTargetId {
                     BoxActionMenu(imageId: id)

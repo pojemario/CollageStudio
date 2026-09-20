@@ -357,7 +357,8 @@ class CollageState: ObservableObject {
     @Published var boxActionTargetId: UUID? = nil
     @Published var showBoxActionMenu: Bool = false
     @Published var showReplacePicker: Bool = false
-    /// Global-space point of the long press, anchoring the action menu popover.
+    /// Canvas-space ("collageCanvas") point of the long press, anchoring the
+    /// action menu popover.
     @Published var boxActionPressPoint: CGPoint = .zero
 
     // MARK: - Shared import (Share Extension)
@@ -404,6 +405,34 @@ class CollageState: ObservableObject {
     /// slot like any other image, leaving a deliberate gap in the collage.
     func addEmptyImage() {
         addPreparedImages([CollageImage.emptyPlaceholder()])
+    }
+
+    // MARK: - Text images
+
+    @Published var showTextEditor: Bool = false
+    @Published var textEditTargetId: UUID? = nil
+
+    /// Adds a text box rendered as an image, editable via long-press → Edit.
+    func addTextImage() {
+        addPreparedImages([CollageImage.textImage(style: TextBoxStyle())])
+    }
+
+    func beginEditText(id: UUID) {
+        textEditTargetId = id
+        showTextEditor = true
+    }
+
+    func textStyle(for id: UUID) -> TextBoxStyle? {
+        pages.flatMap(\.images).first { $0.id == id }?.textStyle
+    }
+
+    /// Re-renders a text image with an edited style, keeping its slot and
+    /// transform (the bitmap stays square, so the layout is unaffected).
+    func applyTextStyle(_ style: TextBoxStyle, to id: UUID) {
+        guard let pi = pageIndex(containing: id),
+              let idx = pages[pi].images.firstIndex(where: { $0.id == id }) else { return }
+        pages[pi].images[idx].setImage(CollageImage.renderTextImage(style: style))
+        pages[pi].images[idx].textStyle = style
     }
 
     /// Adds images whose proxies were already generated off the main thread.
