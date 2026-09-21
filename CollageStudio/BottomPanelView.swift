@@ -15,8 +15,8 @@ struct BottomPanelView: View {
     // Flat, edge-to-edge panel — no rounded corners.
     private let topCorners = Rectangle()
 
-    let tabs = ["Images", "Layout", "Canvas"]
-    let tabIcons = ["photo.badge.plus", "square.grid.2x2", "photo.artframe"]
+    let tabs = ["Images", "Layout", "Canvas", "Frames", "Overlay"]
+    let tabIcons = ["photo.badge.plus", "square.grid.2x2", "rectangle.inset.filled", "photo.artframe", "sparkles"]
 
     var body: some View {
         VStack(spacing: 0) {
@@ -69,7 +69,9 @@ struct BottomPanelView: View {
                 switch state.selectedPanelTab {
                 case 0: imagesTab
                 case 1: layoutTab
-                default: borderTab
+                case 2: borderTab
+                case 3: framesTab
+                default: overlayTab
                 }
             }
             .padding(.horizontal, 10)
@@ -242,7 +244,7 @@ struct BottomPanelView: View {
         }
     }
 
-    // MARK: - Canvas tab (margin, rotation, rounding + decorative frame)
+    // MARK: - Canvas tab (margin, rotation)
 
     var borderTab: some View {
         VStack(spacing: 12) {
@@ -250,9 +252,19 @@ struct BottomPanelView: View {
                           resetValue: 0)
             LabeledSlider(label: "Rotation", value: $state.canvasRotation, range: -60...60, step: 1, format: "%.0f°",
                           resetValue: 0)
-            FramePickerRow()
-                .panelChrome(state)
         }
+    }
+
+    // MARK: - Frames tab (adaptive frames + frame packs)
+
+    var framesTab: some View {
+        FramesPanel()
+    }
+
+    // MARK: - Overlay tab (dust, scratches, light leaks)
+
+    var overlayTab: some View {
+        OverlayPanel()
     }
 
     // MARK: - Load photos

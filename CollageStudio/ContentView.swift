@@ -46,6 +46,20 @@ struct PanelHandleButton: View {
     @EnvironmentObject var state: CollageState
     @State private var tapCount = 0
 
+    /// Padding above the bottom safe area. The handle used to float 10 pt
+    /// above it; it now sits 30% closer to the physical bottom edge, which
+    /// on home-indicator devices dips slightly into the safe area.
+    static var bottomPadding: CGFloat {
+        #if canImport(UIKit)
+        let inset = UIApplication.shared.connectedScenes
+            .compactMap { ($0 as? UIWindowScene)?.keyWindow }
+            .first?.safeAreaInsets.bottom ?? 0
+        #else
+        let inset: CGFloat = 0
+        #endif
+        return (inset + 10) * 0.7 - inset
+    }
+
     private func open() {
         tapCount += 1
         state.closeRatio()
@@ -76,6 +90,44 @@ struct PanelHandleButton: View {
                 .modifier(TapPulse(trigger: tapCount))
         }
         .buttonStyle(.plain)
+    }
+}
+
+/// "OVERLAY" badge beside the panel handle: canvas touches currently edit
+/// the overlay, not the collage. Its ✕ hands the canvas back.
+struct OverlayModePill: View {
+    @EnvironmentObject var state: CollageState
+
+    var body: some View {
+        HStack(spacing: 6) {
+            Image(systemName: "sparkles")
+                .font(.system(size: 11, weight: .semibold))
+            Text("OVERLAY")
+                .font(.system(size: 11, weight: .bold, design: .monospaced))
+                .tracking(1.2)
+            Button {
+                state.exitOverlayMode()
+            } label: {
+                Image(systemName: "xmark.circle.fill")
+                    .font(.system(size: 16))
+                    .foregroundStyle(.white.opacity(0.85))
+                    // Comfortable touch target without growing the pill
+                    .padding(6)
+                    .contentShape(Rectangle())
+                    .padding(-6)
+            }
+            .buttonStyle(.plain)
+        }
+        .foregroundColor(.white)
+        .padding(.leading, 10)
+        .padding(.trailing, 7)
+        .padding(.vertical, 7)
+        .background(
+            Capsule()
+                .fill(Color.accentColor)
+                .shadow(color: .black.opacity(0.25), radius: 6, y: 2)
+        )
+        .fixedSize()
     }
 }
 
@@ -400,7 +452,17 @@ struct ContentView: View {
                         // Collapsed handle — a circular button floating above
                         // the bottom edge that fades out as the panel rises.
                         PanelHandleButton()
-                            .padding(.bottom, 10)
+                            // Marks overlay mode while the panel is hidden,
+                            // so a frozen collage never looks broken.
+                            .overlay(alignment: .trailing) {
+                                if state.overlayModeActive {
+                                    OverlayModePill()
+                                        .alignmentGuide(.trailing) { d in d[.leading] - 10 }
+                                        .transition(.opacity)
+                                }
+                            }
+                            .animation(.easeInOut(duration: 0.2), value: state.overlayModeActive)
+                            .padding(.bottom, PanelHandleButton.bottomPadding)
                             .opacity(state.panelHiddenFraction)
                             .allowsHitTesting(state.panelHiddenFraction > 0.5)
                         // The panel, positioned by the shared interactive

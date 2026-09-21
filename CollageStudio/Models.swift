@@ -326,9 +326,11 @@ struct CanvasFrameSet: Identifiable, Equatable {
     let baseName: String
     /// Full asset names of all bundled variants of this frame.
     let variantAssets: [String]
+    /// Picker label when it should differ from the (unique) base name.
+    var label: String? = nil
 
     var id: String { baseName }
-    var displayName: String { baseName }
+    var displayName: String { label ?? baseName }
 
     /// Full asset name for a ratio suffix like "1x1" or "9x16".
     func assetName(ratioSuffix: String) -> String? {
@@ -350,6 +352,88 @@ struct CanvasFrameSet: Identifiable, Equatable {
         }
         return (0, 0, 0, 0)
     }
+}
+
+// MARK: - Frame pack
+
+/// A themed collection of frames drawn for ONE canvas format and used as is:
+/// no per-ratio variants and no square fallback, so every imperfection lands
+/// exactly where it was drawn. The format is part of the title so users can
+/// tell which pack fits their collage.
+///
+/// Assets live in Assets.xcassets/FramePacks/<pack>/ and follow the
+/// CanvasFrameSet naming scheme, prefixed with a pack id to stay unique,
+/// e.g. "Analog916_Notch_m45454545_r9x16".
+struct FramePack: Identifiable {
+    let name: String
+    let ratio: CanvasRatio
+    let frames: [CanvasFrameSet]
+
+    var id: String { "\(name)_\(ratio.rawValue)" }
+    var title: String { "\(name) (\(ratio.rawValue))" }
+
+    /// Builds a pack from asset names shaped "<prefix>_<Label>_m…_r…".
+    init(name: String, ratio: CanvasRatio, assets: [String]) {
+        self.name = name
+        self.ratio = ratio
+        self.frames = assets.map { asset in
+            let parts = asset.split(separator: "_")
+            return CanvasFrameSet(baseName: parts.prefix(2).joined(separator: "_"),
+                                  variantAssets: [asset],
+                                  label: parts.count > 1 ? String(parts[1]) : asset)
+        }
+    }
+}
+
+// MARK: - Overlays
+
+/// What an overlay simulates — decides how it is composited.
+enum OverlayKind: String {
+    case dust = "Dust & Scratches"
+    case leak = "Light Leaks"
+
+    /// Light leaks add light (screen), so dark areas of the picture pick up
+    /// their glow; dust and scratches simply sit on top.
+    var blendMode: BlendMode {
+        self == .leak ? .screen : .normal
+    }
+}
+
+/// A bundled set of overlay textures of one kind. Unlike frames, overlays
+/// carry no fixed geometry — they fill whatever canvas they land on and can
+/// be moved, scaled and rotated freely — so packs aren't tied to a format.
+///
+/// Assets live in Assets.xcassets/Overlays/<pack>/, named "<prefix>_<Label>".
+struct OverlayPack: Identifiable {
+    let name: String
+    let kind: OverlayKind
+    let assets: [String]
+
+    var id: String { name }
+
+    static func label(forAsset asset: String) -> String {
+        asset.split(separator: "_").last.map(String.init) ?? asset
+    }
+}
+
+/// One overlay layer stacked on the collage. Layers draw in list order,
+/// either under or over the decorative frame.
+struct OverlayLayer: Identifiable, Equatable {
+    let id = UUID()
+    let asset: String
+    let kind: OverlayKind
+    /// Percent, 0...100.
+    var opacity: Double = 100
+    var aboveFrame: Bool = false
+    // Placement, adjusted by finger on the canvas: scale and rotation about
+    // the center of the canvas-filling texture, then an offset in canvas pixels.
+    var scale: CGFloat = 1
+    var rotation: CGFloat = 0       // radians
+    var offset: CGSize = .zero
+
+    static let scaleRange: ClosedRange<CGFloat> = 0.25...8
+
+    var label: String { OverlayPack.label(forAsset: asset) }
 }
 
 // MARK: - Canvas Ratio

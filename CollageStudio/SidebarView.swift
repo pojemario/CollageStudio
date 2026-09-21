@@ -20,6 +20,8 @@ struct SidebarView: View {
                 ratioSection
                 layoutSection
                 borderSection
+                framesSection
+                overlaySection
             }
         }
         .onChange(of: photoItems) { _, newItems in
@@ -191,7 +193,7 @@ struct SidebarView: View {
         }
     }
 
-    // MARK: - Border (canvas margin + decorative frame)
+    // MARK: - Canvas (margin + rotation)
 
     var borderSection: some View {
         SidebarSection(title: "Canvas") {
@@ -199,7 +201,22 @@ struct SidebarView: View {
                           resetValue: 0)
             LabeledSlider(label: "Rotation", value: $state.canvasRotation, range: -60...60, step: 1, format: "%.0f°",
                           resetValue: 0)
-            FramePickerRow()
+        }
+    }
+
+    // MARK: - Frames (adaptive frames + frame packs)
+
+    var framesSection: some View {
+        SidebarSection(title: "Frames") {
+            FramesPanel()
+        }
+    }
+
+    // MARK: - Overlay (dust, scratches, light leaks)
+
+    var overlaySection: some View {
+        SidebarSection(title: "Overlay") {
+            OverlayPanel(inSidebar: true)
         }
     }
 
@@ -321,76 +338,6 @@ struct RatioButton: View {
             )
         }
         .buttonStyle(.plain)
-    }
-}
-
-/// Horizontal chooser for the decorative canvas frame: "None" plus one
-/// option per bundled frame set, previewed in the current canvas ratio.
-struct FramePickerRow: View {
-    @EnvironmentObject var state: CollageState
-
-    var body: some View {
-        ScrollView(.horizontal, showsIndicators: false) {
-            HStack(spacing: 10) {
-                frameOption(set: nil, label: "None")
-                ForEach(CollageState.availableFrames) { set in
-                    frameOption(set: set, label: set.displayName)
-                }
-            }
-        }
-    }
-
-    @ViewBuilder
-    private func frameOption(set: CanvasFrameSet?, label: String) -> some View {
-        let isSelected = state.canvasFrame == set
-        Button {
-            state.canvasFrame = set
-        } label: {
-            VStack(spacing: 4) {
-                ZStack {
-                    RoundedRectangle(cornerRadius: 8)
-                        .fill(Color(.systemFill))
-                    if let set, let preview = previewImage(for: set) {
-                        #if canImport(UIKit)
-                        Image(uiImage: preview)
-                            .resizable()
-                            .scaledToFit()
-                            .padding(4)
-                        #else
-                        Image(nsImage: preview)
-                            .resizable()
-                            .scaledToFit()
-                            .padding(4)
-                        #endif
-                    } else if set == nil {
-                        Image(systemName: "slash.circle")
-                            .font(.system(size: 20))
-                            .foregroundColor(.secondary)
-                    }
-                }
-                .frame(width: 56, height: 56)
-                .overlay(
-                    RoundedRectangle(cornerRadius: 8)
-                        .stroke(isSelected ? Color.accentColor : .clear, lineWidth: 2)
-                )
-                Text(label)
-                    .font(.caption2)
-                    .foregroundColor(isSelected ? .accentColor : .secondary)
-            }
-        }
-        .buttonStyle(.plain)
-    }
-
-    /// Preview in the current ratio, falling back to the 1:1 variant.
-    private func previewImage(for set: CanvasFrameSet) -> PlatformImage? {
-        let suffix = state.ratio.rawValue.replacingOccurrences(of: ":", with: "x")
-        if let name = set.assetName(ratioSuffix: suffix), let img = PlatformImage.named(name) {
-            return img
-        }
-        if let name = set.assetName(ratioSuffix: "1x1") {
-            return PlatformImage.named(name)
-        }
-        return nil
     }
 }
 

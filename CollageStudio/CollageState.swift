@@ -222,6 +222,37 @@ class CollageState: ObservableObject {
         ]),
     ]
 
+    /// Bundled frame packs — each drawn for a single format and used as is.
+    /// Add a pack by dropping its PNGs into Assets.xcassets/FramePacks/ and
+    /// listing them here.
+    static let framePacks: [FramePack] = [
+        FramePack(name: "Analog Frames", ratio: .portrait916, assets: [
+            "Analog916_Notch_m45454545_r9x16",
+            "Analog916_Amber400_m61436143_r9x16",
+            "Analog916_Sloppy_m58625862_r9x16",
+            "Analog916_Pan100_m57415741_r9x16",
+            "Analog916_Leak_m47434743_r9x16",
+            "Analog916_Dust_m39393939_r9x16",
+            "Analog916_Portra400_m61426142_r9x16",
+            "Analog916_Portra160_m40614061_r9x16",
+            "Analog916_HP5_m58415841_r9x16",
+            "Analog916_Delta100_m56435643_r9x16",
+        ]),
+    ]
+
+    /// Applies a pack frame. Pack frames only exist in their own format, so
+    /// the canvas switches to it when needed.
+    func applyFrame(_ frame: CanvasFrameSet, from pack: FramePack) {
+        if ratio != pack.ratio { setRatio(pack.ratio) }
+        canvasFrame = frame
+    }
+
+    /// Deselects a frame that has nothing to draw in the current format
+    /// (a pack frame after the canvas ratio changed).
+    private func dropFrameIfUnavailable() {
+        if canvasFrame != nil, resolvedFrameAssetName() == nil { canvasFrame = nil }
+    }
+
     /// Asset name of the frame variant used for the current ratio.
     private func resolvedFrameAssetName() -> (name: String, isSquareFallback: Bool)? {
         guard let set = canvasFrame else { return nil }
@@ -248,6 +279,145 @@ class CollageState: ObservableObject {
         guard let (name, isFallback) = resolvedFrameAssetName(),
               let image = PlatformImage.named(name) else { return nil }
         return (image, isFallback)
+    }
+
+    // MARK: - Overlays (dust, scratches, light leaks)
+
+    /// Overlay layers on the canvas, bottom to top. Like the frame, they
+    /// apply to every page.
+    @Published var overlayLayers: [OverlayLayer] = []
+    /// Layer being edited in the Overlay panel.
+    @Published var selectedOverlayId: UUID? = nil
+    /// Every layer is a full-canvas bitmap, so keep the stack bounded.
+    static let maxOverlayLayers = 8
+
+    /// Bundled overlay packs. Add one by dropping its PNGs into
+    /// Assets.xcassets/Overlays/ and listing them here.
+    static let overlayPacks: [OverlayPack] = [
+        OverlayPack(name: "Dust & Scratches", kind: .dust, assets: [
+            "Dust916_Fine", "Dust916_Heavy", "Dust916_Hairs",
+            "Dust916_Scratches", "Dust916_Grit", "Dust916_Worn",
+        ]),
+        OverlayPack(name: "Light Leaks", kind: .leak, assets: [
+            "Leak916_Edge", "Leak916_Corner", "Leak916_Band",
+            "Leak916_Burn", "Leak916_Magenta", "Leak916_Streaks",
+        ]),
+    ]
+
+    /// A texture being tried out: drawn live on the canvas and adjustable
+    /// like a layer, but not part of the stack (or the export) until it is
+    /// committed.
+    @Published var overlayPreview: OverlayLayer? = nil
+
+    var canAddOverlay: Bool { overlayLayers.count < Self.maxOverlayLayers }
+
+    /// Layers to draw under or over the frame, in stacking order. The preview
+    /// sits on top of its group — exactly where it lands once added.
+    func visibleOverlays(aboveFrame: Bool) -> [OverlayLayer] {
+        var layers = overlayLayers.filter { $0.aboveFrame == aboveFrame }
+        if let preview = overlayPreview, preview.aboveFrame == aboveFrame, !isExporting {
+            layers.append(preview)
+        }
+        return layers
+    }
+
+    /// Shows a texture live on the canvas. Swapping textures keeps the
+    /// opacity and placement already dialed in, so packs can be browsed
+    /// at the same settings; tapping the previewed texture again dismisses it.
+    func previewOverlay(asset: String, kind: OverlayKind) {
+        guard canAddOverlay else { return }
+        if overlayPreview?.asset == asset {
+            overlayPreview = nil
+            return
+        }
+        var layer = OverlayLayer(asset: asset, kind: kind)
+        if let current = overlayPreview {
+            layer.opacity = current.opacity
+            layer.aboveFrame = current.aboveFrame
+            layer.scale = current.scale
+            layer.rotation = current.rotation
+            layer.offset = current.offset
+        }
+        overlayPreview = layer
+    }
+
+    /// Stacks the previewed texture on top as a real layer and selects it.
+    func commitOverlayPreview() {
+        guard let layer = overlayPreview, canAddOverlay else { return }
+        overlayPreview = nil
+        overlayLayers.append(layer)
+        selectedOverlayId = layer.id
+    }
+
+    func cancelOverlayPreview() {
+        overlayPreview = nil
+    }
+
+    // Overlay mode: the collage is frozen and canvas gestures move / scale /
+    // rotate the edited overlay instead. On the phone it starts when the
+    // Overlay tab is chosen and survives hiding the panel (a canvas tap hides
+    // it for a clear view; an "OVERLAY" pill by the panel handle marks the
+    // mode) until another tab is picked or the pill's ✕ is tapped. The
+    // always-visible sidebar is only in the mode while a layer is edited.
+    @Published var overlayTabMode = false
+    @Published var overlaySidebarShowing = false
+
+    var overlayModeActive: Bool {
+        overlayTabMode || (overlaySidebarShowing && editedOverlayId != nil)
+    }
+
+    /// Hands the canvas back to the collage; an unconfirmed preview goes too.
+    func exitOverlayMode() {
+        overlayTabMode = false
+        overlayPreview = nil
+    }
+
+    /// What canvas gestures and the panel controls edit: the live preview,
+    /// else the selected layer.
+    var editedOverlayId: UUID? {
+        overlayPreview?.id ?? overlayLayers.first { $0.id == selectedOverlayId }?.id
+    }
+
+    var editedOverlay: OverlayLayer? {
+        overlayPreview ?? overlayLayers.first { $0.id == selectedOverlayId }
+    }
+
+    private func updateEditedOverlay(_ change: (inout OverlayLayer) -> Void) {
+        if overlayPreview != nil {
+            change(&overlayPreview!)
+        } else if let idx = overlayLayers.firstIndex(where: { $0.id == selectedOverlayId }) {
+            change(&overlayLayers[idx])
+        }
+    }
+
+    /// Commits a finished canvas gesture to the edited overlay.
+    /// `translation` is in canvas pixels.
+    func transformEditedOverlay(scaleBy: CGFloat = 1, rotateBy: CGFloat = 0, translation: CGSize = .zero) {
+        updateEditedOverlay { layer in
+            layer.scale = min(max(layer.scale * scaleBy, OverlayLayer.scaleRange.lowerBound),
+                              OverlayLayer.scaleRange.upperBound)
+            layer.rotation += rotateBy
+            layer.offset.width += translation.width
+            layer.offset.height += translation.height
+        }
+    }
+
+    /// Double-tap: back to the canvas-filling default placement.
+    func resetEditedOverlayTransform() {
+        updateEditedOverlay { layer in
+            layer.scale = 1
+            layer.rotation = 0
+            layer.offset = .zero
+        }
+    }
+
+    func removeOverlay(id: UUID) {
+        guard let idx = overlayLayers.firstIndex(where: { $0.id == id }) else { return }
+        overlayLayers.remove(at: idx)
+        if selectedOverlayId == id {
+            selectedOverlayId = overlayLayers.indices.contains(idx)
+                ? overlayLayers[idx].id : overlayLayers.last?.id
+        }
     }
 
     // MARK: - Drag to swap
@@ -878,6 +1048,7 @@ class CollageState: ObservableObject {
         if r != .custom {
             canvasSize = r.canvasSize(base: 1024)
         }
+        dropFrameIfUnavailable()
         resetAllImagePositions()
         rebuildAllPages()
         saveRatio()
@@ -890,6 +1061,7 @@ class CollageState: ObservableObject {
         let h = customUnit.toPx(hRaw)
         canvasSize = CGSize(width: max(100, min(6000, w)), height: max(100, min(6000, h)))
         ratio = .custom
+        dropFrameIfUnavailable()
         resetAllImagePositions()
         rebuildAllPages()
         saveRatio()

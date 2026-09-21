@@ -4,6 +4,16 @@ struct CollageGridView_Grid: View {
     @EnvironmentObject var state: CollageState
     let scale: CGFloat
 
+    // Live overlay-mode gesture deltas. Like the image boxes, the model isn't
+    // touched mid-gesture; the final transform is committed once on end.
+    @GestureState private var overlayDrag: CGSize = .zero
+    @GestureState private var overlayPinchScale: CGFloat = 1
+    @GestureState private var overlayPinchAngle: Angle = .zero
+    @GestureState private var overlayPinching = false
+    /// A two-finger pinch spawns a stray one-finger drag — its translation
+    /// must not be committed as a move.
+    @State private var overlayDragTainted = false
+
     var body: some View {
         GeometryReader { geo in
             let canvasSize = geo.size
@@ -58,6 +68,8 @@ struct CollageGridView_Grid: View {
                     // Asymmetric margins shift the content block off-center
                     .offset(x: (insetL - insetR) / 2, y: (insetT - insetB) / 2)
 
+                    overlayLayers(aboveFrame: false, canvasSize: canvasSize)
+
                     // Decorative PNG frame. Exact-ratio frames cover the
                     // canvas; the square fallback is drawn undistorted at the
                     // longer canvas edge, centered, cropped by the canvas.
@@ -66,6 +78,14 @@ struct CollageGridView_Grid: View {
                                      size: isSquareFallback
                                          ? CGSize(width: frameSide, height: frameSide)
                                          : canvasSize)
+                    }
+
+                    overlayLayers(aboveFrame: true, canvasSize: canvasSize)
+
+                    // Overlay mode: a touch surface above everything freezes
+                    // the collage and steers the edited overlay instead.
+                    if state.overlayModeActive && !state.isExporting {
+                        overlayGestureSurface
                     }
                 }
             }
@@ -88,6 +108,88 @@ struct CollageGridView_Grid: View {
             .frame(width: size.width, height: size.height)
             .allowsHitTesting(false)
         #endif
+    }
+
+    // MARK: - Overlay layers (dust, scratches, light leaks)
+
+    /// The layers (plus any live preview) stacked under or over the frame, in
+    /// list order. Each texture fills the canvas (whatever its ratio), is then
+    /// scaled / rotated about the center and offset by the layer's placement
+    /// — including the gesture in flight for the edited one — and cropped to
+    /// the canvas.
+    @ViewBuilder
+    private func overlayLayers(aboveFrame: Bool, canvasSize: CGSize) -> some View {
+        ForEach(state.visibleOverlays(aboveFrame: aboveFrame)) { layer in
+            if let image = PlatformImage.named(layer.asset) {
+                let live = layer.id == state.editedOverlayId && state.overlayModeActive
+                let liveScale = live ? overlayPinchScale : 1
+                let zoom = min(max(layer.scale * liveScale, OverlayLayer.scaleRange.lowerBound),
+                               OverlayLayer.scaleRange.upperBound)
+                let angle = Angle(radians: layer.rotation) + (live ? overlayPinchAngle : .zero)
+                // The stray one-finger drag of a pinch never moves the layer.
+                let drag = live && !overlayPinching && !overlayDragTainted ? overlayDrag : .zero
+                Group {
+                    #if canImport(UIKit)
+                    Image(uiImage: image).resizable()
+                    #else
+                    Image(nsImage: image).resizable()
+                    #endif
+                }
+                .scaledToFill()
+                .frame(width: canvasSize.width, height: canvasSize.height)
+                .scaleEffect(zoom)
+                .rotationEffect(angle)
+                .offset(x: layer.offset.width * scale + drag.width,
+                        y: layer.offset.height * scale + drag.height)
+                .frame(width: canvasSize.width, height: canvasSize.height)
+                .clipped()
+                .opacity(layer.opacity / 100)
+                .blendMode(layer.kind.blendMode)
+                .allowsHitTesting(false)
+            }
+        }
+    }
+
+    /// Invisible surface covering the canvas in overlay mode. It swallows
+    /// every touch meant for the collage; drag moves the edited overlay,
+    /// pinch zooms and rotates it, and a double tap resets its placement.
+    private var overlayGestureSurface: some View {
+        Color.clear
+            .contentShape(Rectangle())
+            .onTapGesture(count: 2) {
+                withAnimation(.spring(response: 0.3)) { state.resetEditedOverlayTransform() }
+                #if canImport(UIKit)
+                UIImpactFeedbackGenerator(style: .light).impactOccurred()
+                #endif
+            }
+            .gesture(
+                DragGesture(minimumDistance: 2)
+                    .updating($overlayDrag) { value, drag, _ in
+                        drag = value.translation
+                    }
+                    .onEnded { value in
+                        defer { overlayDragTainted = false }
+                        guard !overlayDragTainted, !overlayPinching else { return }
+                        state.transformEditedOverlay(
+                            translation: CGSize(width: value.translation.width / scale,
+                                                height: value.translation.height / scale))
+                    }
+            )
+            .simultaneousGesture(
+                SimultaneousGesture(MagnificationGesture(), RotationGesture())
+                    .onChanged { _ in overlayDragTainted = true }
+                    .updating($overlayPinching) { _, pinching, _ in pinching = true }
+                    .updating($overlayPinchScale) { value, zoom, _ in
+                        if let m = value.first { zoom = m }
+                    }
+                    .updating($overlayPinchAngle) { value, angle, _ in
+                        if let a = value.second { angle = a }
+                    }
+                    .onEnded { value in
+                        state.transformEditedOverlay(scaleBy: value.first ?? 1,
+                                                     rotateBy: CGFloat((value.second ?? .zero).radians))
+                    }
+            )
     }
 
     // MARK: - Grid
