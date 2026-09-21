@@ -63,7 +63,7 @@ extension PlatformImage {
 struct TextBoxStyle: Equatable {
     var text: String = "Your text"
     var fontChoice: FontChoice = .classic
-    /// Point size on the 1200 px render canvas.
+    /// Point size on a bitmap whose long edge is 1200 px.
     var fontSize: CGFloat = 120
     var hAlignment: HAlign = .center
     var vAlignment: VAlign = .middle
@@ -88,19 +88,40 @@ struct TextBoxStyle: Equatable {
         case marker = "Marker"
         case script = "Script"
         var id: String { rawValue }
+
+        /// The same face for SwiftUI labels (font chips).
+        func previewFont(size: CGFloat) -> Font {
+            switch self {
+            case .classic:    return .system(size: size, weight: .semibold)
+            case .rounded:    return .system(size: size, weight: .semibold, design: .rounded)
+            case .serif:      return .custom("Georgia", size: size)
+            case .typewriter: return .custom("AmericanTypewriter", size: size)
+            case .marker:     return .custom("MarkerFelt-Wide", size: size)
+            case .script:     return .custom("SnellRoundhand-Bold", size: size)
+            }
+        }
     }
 }
 
 extension CollageImage {
 
-    /// Renders a text box as a square bitmap. Same routine for the initial
-    /// add and every edit, so what you see is exactly what exports.
-    static func renderTextImage(style: TextBoxStyle, side: CGFloat = 1200) -> PlatformImage {
-        let size = CGSize(width: side, height: side)
+    /// Bitmap size for a text image living in a box of the given size: same
+    /// aspect ratio, 1200 px long edge — so the text block always fills its
+    /// box exactly instead of being cropped to it.
+    static func textRenderSize(forBox box: CGSize) -> CGSize {
+        guard box.width > 1, box.height > 1 else { return CGSize(width: 1200, height: 1200) }
+        let k = 1200 / max(box.width, box.height)
+        return CGSize(width: max((box.width * k).rounded(), 60), height: max((box.height * k).rounded(), 60))
+    }
+
+    /// Renders a text box bitmap. Same routine for the initial add and every
+    /// edit, so what you see is exactly what exports.
+    static func renderTextImage(style: TextBoxStyle,
+                                size: CGSize = CGSize(width: 1200, height: 1200)) -> PlatformImage {
+        let side = max(size.width, size.height)
         let inset = side * 0.06
         let maxRect = CGRect(x: inset, y: inset, width: size.width - inset * 2, height: size.height - inset * 2)
-        // Font size scales with the render side so previews at smaller sides
-        // look identical to the full-resolution image.
+        // The font size is defined on a 1200 px long edge.
         let scaledFontSize = style.fontSize * (side / 1200)
 
         let paragraph = NSMutableParagraphStyle()
@@ -215,7 +236,7 @@ struct CollageImage: Identifiable, Equatable {
     /// transparent so the collage shows an intentional empty space.
     var isPlaceholder: Bool = false
     /// Non-nil for "Text images": the style this image was rendered from,
-    /// kept so the text stays editable (long-press → Edit Text).
+    /// kept so the text stays editable (tap the box).
     var textStyle: TextBoxStyle? = nil
     var isText: Bool { textStyle != nil }
     /// Bumped after every committed pinch. The box view uses it as its
@@ -431,9 +452,54 @@ struct OverlayLayer: Identifiable, Equatable {
     var rotation: CGFloat = 0       // radians
     var offset: CGSize = .zero
 
-    static let scaleRange: ClosedRange<CGFloat> = 0.25...8
+    /// Drawn long edge limits, in canvas pixels — the failsafe that keeps a
+    /// texture from being pinched into a speck or blown up past recognition.
+    static let longEdgeRange: ClosedRange<CGFloat> = 200...4000
 
     var label: String { OverlayPack.label(forAsset: asset) }
+
+    /// This layer with a gesture applied, forced back into sane territory:
+    /// non-finite values are discarded, the drawn size stays within
+    /// `longEdgeRange`, the rotation is normalized, and the center can't
+    /// leave the canvas — so an overlay can never vanish from the screen.
+    /// `translation` is in canvas pixels.
+    func applying(scaleBy: CGFloat = 1, rotateBy: CGFloat = 0, translation: CGSize = .zero,
+                  canvasSize: CGSize) -> OverlayLayer {
+        func finite(_ v: CGFloat, or fallback: CGFloat) -> CGFloat { v.isFinite ? v : fallback }
+        var layer = self
+
+        let longEdge = max(canvasSize.width, canvasSize.height, 1)
+        let zoom = finite(scale, or: 1) * max(finite(scaleBy, or: 1), 0.0001)
+        layer.scale = min(max(zoom, Self.longEdgeRange.lowerBound / longEdge),
+                          Self.longEdgeRange.upperBound / longEdge)
+
+        let angle = finite(rotation, or: 0) + finite(rotateBy, or: 0)
+        layer.rotation = atan2(sin(angle), cos(angle))
+
+        let x = finite(offset.width, or: 0) + finite(translation.width, or: 0)
+        let y = finite(offset.height, or: 0) + finite(translation.height, or: 0)
+        layer.offset = CGSize(width: min(max(x, -canvasSize.width / 2), canvasSize.width / 2),
+                              height: min(max(y, -canvasSize.height / 2), canvasSize.height / 2))
+        return layer
+    }
+}
+
+// MARK: - Effects
+
+/// Whole-collage looks, each dialed in by its own intensity (0...100).
+/// They act on the pictures and background — overlays and the frame sit on
+/// top, untouched.
+enum CollageEffect: String, CaseIterable, Identifiable {
+    case fade = "Fade"              // lifted blacks, softer contrast
+    case halation = "Halation"      // red-orange bleed around highlights
+    case glow = "Glow"              // soft bloom
+    case blackWhite = "B&W"
+    case sepia = "Sepia"
+    case vignette = "Vignette"
+    case grain = "Grain"
+
+    var id: String { rawValue }
+    var title: String { rawValue }
 }
 
 // MARK: - Canvas Ratio

@@ -8,6 +8,12 @@ Dust overlays are 1152x2048 (pixel-exact at export) so specks stay crisp.
 Light leaks are smooth, so they ship at 576x1024; the app screen-blends them.
 Both are straight-alpha PNGs on a transparent background.
 
+Every overlay also gets a "<name>_Thumb" picker thumbnail: the texture over a
+sample dusk photo — dust and scratches zoomed in on their busiest patch so
+the debris actually reads at thumbnail size.
+
+Also writes Assets.xcassets/Effects/EffectGrain (film grain for the Effects tab).
+
 Usage:  venv/bin/python Tools/make_analog_overlays.py [--preview out.png]
         (same venv as make_analog_frames.py: pillow numpy scipy)
 """
@@ -23,12 +29,16 @@ from scipy.ndimage import gaussian_filter
 ROOT = os.path.join(os.path.dirname(__file__), "..", "CollageStudio", "Assets.xcassets", "Overlays")
 
 
-def write_imageset(pack, name, image):
-    d = os.path.join(ROOT, pack, f"{name}.imageset")
+def write_imageset(pack, name, image, root=None, jpeg_quality=None):
+    d = os.path.join(root or ROOT, pack, f"{name}.imageset")
     os.makedirs(d)
-    image.save(os.path.join(d, f"{name}.png"), optimize=True)
+    filename = f"{name}.jpg" if jpeg_quality else f"{name}.png"
+    if jpeg_quality:
+        image.save(os.path.join(d, filename), quality=jpeg_quality)
+    else:
+        image.save(os.path.join(d, filename), optimize=True)
     with open(os.path.join(d, "Contents.json"), "w") as f:
-        json.dump({"images": [{"filename": f"{name}.png", "idiom": "universal"}],
+        json.dump({"images": [{"filename": filename, "idiom": "universal"}],
                    "info": {"author": "xcode", "version": 1}}, f, indent=2)
 
 
@@ -254,6 +264,64 @@ LEAKS = [("Edge", 201, leak_edge), ("Corner", 203, leak_corner), ("Band", 207, l
          ("Burn", 211, leak_burn), ("Magenta", 223, leak_magenta), ("Streaks", 227, leak_streaks)]
 
 
+# ------------------------------------------------------------ thumbnails
+
+TW, TH = 180, 320
+
+
+def sample_photo():
+    """A small dusk landscape: dark enough for dust, moody enough for leaks."""
+    rng = np.random.default_rng(7)
+    y, x = np.mgrid[0:TH, 0:TW].astype(np.float32)
+    v = y / TH
+    stops = [(0, (18, 30, 66)), (.38, (58, 62, 110)), (.56, (176, 104, 96)), (.64, (236, 164, 96)),
+             (.66, (40, 44, 58)), (1, (12, 14, 20))]
+    xs = [s_[0] for s_ in stops]
+    img = np.dstack([np.interp(v, xs, [s_[1][i] for s_ in stops]) for i in range(3)])
+    sun = np.exp(-(((x - TW * .62) / 46) ** 2 + ((y - TH * .63) / 30) ** 2))
+    img += sun[..., None] * np.float32([120, 80, 30]) * (v < .655)[..., None]
+    ridge = TH * (.60 + .035 * np.sin(x / 23.0) + .02 * np.sin(x / 9.0 + 1.3))   # hills
+    hills = np.clip((y - ridge) / 1.5, 0, 1) * (v < .66)
+    img = img * (1 - hills[..., None]) + np.float32([26, 30, 44]) * hills[..., None]
+    img += rng.standard_normal((TH, TW, 1)).astype(np.float32) * 3
+    return np.clip(img, 0, 255)
+
+
+def dust_thumbnail(image, photo):
+    """Zooms in on the busiest patch of the texture and boosts it a little."""
+    alpha = np.asarray(image, np.float32)[..., 3]
+    cw, ch = 330, 586                       # ~3.5x zoom into the 1152x2048 texture
+    best, box = -1, (0, 0)
+    for cy in range(0, DH - ch, 120):
+        for cx in range(0, DW - cw, 120):
+            score = alpha[cy:cy + ch, cx:cx + cw].sum()
+            if score > best:
+                best, box = score, (cx, cy)
+    crop = image.crop((box[0], box[1], box[0] + cw, box[1] + ch)).resize((TW, TH), Image.LANCZOS)
+    o = np.asarray(crop, np.float32)
+    a = np.clip(o[..., 3:] / 255 * 1.7, 0, 1)
+    return Image.fromarray((photo * (1 - a) + o[..., :3] * a).clip(0, 255).astype(np.uint8), "RGB")
+
+
+def leak_thumbnail(image, photo):
+    o = np.asarray(image.resize((TW, TH), Image.LANCZOS), np.float32)
+    a = o[..., 3:] / 255
+    screened = 255 - (255 - photo) * (255 - o[..., :3]) / 255
+    return Image.fromarray((photo * (1 - a) + screened * a).clip(0, 255).astype(np.uint8), "RGB")
+
+
+# ------------------------------------------------------------ film grain (Effects tab)
+
+def grain_image():
+    """Mid-gray film grain, overlay-blended by the app: fine grain with a
+    little clumping, centered on 50% gray so it neither lightens nor darkens."""
+    rng = np.random.default_rng(311)
+    fine = gaussian_filter(rng.standard_normal((DH, DW)).astype(np.float32), .7)
+    clump = gaussian_filter(rng.standard_normal((DH, DW)).astype(np.float32), 1.8)
+    g = fine / fine.std() * .8 + clump / clump.std() * .45
+    return Image.fromarray((128 + g * 34).clip(0, 255).astype(np.uint8), "L")
+
+
 # ------------------------------------------------------------ main
 
 def main():
@@ -263,19 +331,28 @@ def main():
     write_folder(os.path.join(ROOT, "Dust916"))
     write_folder(os.path.join(ROOT, "Leak916"))
 
+    photo = sample_photo()
     rendered = []
     for name, seed, build in DUST:
         canvas = DustCanvas(seed)
         build(canvas)
         image = canvas.image()
         write_imageset("Dust916", f"Dust916_{name}", image)
+        write_imageset("Dust916", f"Dust916_{name}_Thumb", dust_thumbnail(image, photo))
         rendered.append(("normal", image))
         print(f"Dust916_{name}")
     for name, seed, build in LEAKS:
         image = build(np.random.default_rng(seed))
         write_imageset("Leak916", f"Leak916_{name}", image)
+        write_imageset("Leak916", f"Leak916_{name}_Thumb", leak_thumbnail(image, photo))
         rendered.append(("screen", image))
         print(f"Leak916_{name}")
+
+    effects_root = os.path.join(ROOT, "..", "Effects")
+    shutil.rmtree(effects_root, ignore_errors=True)
+    write_folder(effects_root)
+    write_imageset("", "EffectGrain", grain_image(), root=effects_root, jpeg_quality=72)
+    print("EffectGrain")
 
     if preview_path:                        # contact sheet over a fake photo
         tw, th = 288, 512

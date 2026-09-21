@@ -136,8 +136,12 @@ struct FramePickerRow: View {
     /// 1:1 variant (pack frames only have their own format).
     private func previewImage(for set: CanvasFrameSet) -> PlatformImage? {
         let suffix = (pack?.ratio ?? state.ratio).rawValue.replacingOccurrences(of: ":", with: "x")
-        let name = set.assetName(ratioSuffix: suffix) ?? set.assetName(ratioSuffix: "1x1")
-        return name.flatMap(FrameThumbnails.image(named:))
+        guard let name = set.assetName(ratioSuffix: suffix) ?? set.assetName(ratioSuffix: "1x1") else {
+            return nil
+        }
+        // Packs ship a "<asset>_Thumb" close-up of the frame's corner over a
+        // sample picture; frames without one show the whole PNG.
+        return FrameThumbnails.image(named: name + "_Thumb") ?? FrameThumbnails.image(named: name)
     }
 }
 

@@ -13,6 +13,7 @@ struct CollageGridView_Grid: View {
     /// A two-finger pinch spawns a stray one-finger drag — its translation
     /// must not be committed as a move.
     @State private var overlayDragTainted = false
+    @GestureState private var overlayTouching = false
 
     var body: some View {
         GeometryReader { geo in
@@ -39,6 +40,9 @@ struct CollageGridView_Grid: View {
             let contentSize = CGSize(width: max(canvasSize.width - insetL - insetR, 0),
                                      height: max(canvasSize.height - insetT - insetB, 0))
             let cols = state.layout.columns
+            // The effect-source snapshot wants the bare collage: no effects,
+            // overlays, frame or gesture surface.
+            let decorated = !state.isRenderingEffectSource
 
             ZStack {
                 // Empty canvas is transparent so the app background shows
@@ -48,6 +52,7 @@ struct CollageGridView_Grid: View {
                     Color.clear
                 } else {
                     state.backgroundColor
+                        .modifier(EffectToning(state: state, enabled: decorated))
                 }
 
                 if cols.isEmpty {
@@ -67,25 +72,32 @@ struct CollageGridView_Grid: View {
                     .rotationEffect(.degrees(state.canvasRotation))
                     // Asymmetric margins shift the content block off-center
                     .offset(x: (insetL - insetR) / 2, y: (insetT - insetB) / 2)
+                    .modifier(EffectToning(state: state, enabled: decorated))
 
-                    overlayLayers(aboveFrame: false, canvasSize: canvasSize)
+                    if decorated {
+                        // Looks that need their own layers: fade haze, glow
+                        // and halation maps, vignette, grain.
+                        EffectLayers(maps: state.effectMaps, canvasSize: canvasSize)
 
-                    // Decorative PNG frame. Exact-ratio frames cover the
-                    // canvas; the square fallback is drawn undistorted at the
-                    // longer canvas edge, centered, cropped by the canvas.
-                    if let resolvedFrame {
-                        frameOverlay(image: resolvedFrame.image,
-                                     size: isSquareFallback
-                                         ? CGSize(width: frameSide, height: frameSide)
-                                         : canvasSize)
-                    }
+                        overlayLayers(aboveFrame: false, canvasSize: canvasSize)
 
-                    overlayLayers(aboveFrame: true, canvasSize: canvasSize)
+                        // Decorative PNG frame. Exact-ratio frames cover the
+                        // canvas; the square fallback is drawn undistorted at the
+                        // longer canvas edge, centered, cropped by the canvas.
+                        if let resolvedFrame {
+                            frameOverlay(image: resolvedFrame.image,
+                                         size: isSquareFallback
+                                             ? CGSize(width: frameSide, height: frameSide)
+                                             : canvasSize)
+                        }
 
-                    // Overlay mode: a touch surface above everything freezes
-                    // the collage and steers the edited overlay instead.
-                    if state.overlayModeActive && !state.isExporting {
-                        overlayGestureSurface
+                        overlayLayers(aboveFrame: true, canvasSize: canvasSize)
+
+                        // Overlay mode: a touch surface above everything freezes
+                        // the collage and steers the edited overlay instead.
+                        if state.overlayModeActive && !state.isExporting {
+                            overlayGestureSurface
+                        }
                     }
                 }
             }
@@ -121,13 +133,18 @@ struct CollageGridView_Grid: View {
     private func overlayLayers(aboveFrame: Bool, canvasSize: CGSize) -> some View {
         ForEach(state.visibleOverlays(aboveFrame: aboveFrame)) { layer in
             if let image = PlatformImage.named(layer.asset) {
+                // The edited layer follows the gesture in flight, through the
+                // same clamps a commit applies. The stray one-finger drag of a
+                // pinch never moves it.
                 let live = layer.id == state.editedOverlayId && state.overlayModeActive
-                let liveScale = live ? overlayPinchScale : 1
-                let zoom = min(max(layer.scale * liveScale, OverlayLayer.scaleRange.lowerBound),
-                               OverlayLayer.scaleRange.upperBound)
-                let angle = Angle(radians: layer.rotation) + (live ? overlayPinchAngle : .zero)
-                // The stray one-finger drag of a pinch never moves the layer.
                 let drag = live && !overlayPinching && !overlayDragTainted ? overlayDrag : .zero
+                let shown = live
+                    ? layer.applying(scaleBy: overlayPinchScale,
+                                     rotateBy: CGFloat(overlayPinchAngle.radians),
+                                     translation: CGSize(width: drag.width / scale,
+                                                         height: drag.height / scale),
+                                     canvasSize: state.canvasSize)
+                    : layer
                 Group {
                     #if canImport(UIKit)
                     Image(uiImage: image).resizable()
@@ -137,10 +154,9 @@ struct CollageGridView_Grid: View {
                 }
                 .scaledToFill()
                 .frame(width: canvasSize.width, height: canvasSize.height)
-                .scaleEffect(zoom)
-                .rotationEffect(angle)
-                .offset(x: layer.offset.width * scale + drag.width,
-                        y: layer.offset.height * scale + drag.height)
+                .scaleEffect(shown.scale)
+                .rotationEffect(.radians(shown.rotation))
+                .offset(x: shown.offset.width * scale, y: shown.offset.height * scale)
                 .frame(width: canvasSize.width, height: canvasSize.height)
                 .clipped()
                 .opacity(layer.opacity / 100)
@@ -153,15 +169,10 @@ struct CollageGridView_Grid: View {
     /// Invisible surface covering the canvas in overlay mode. It swallows
     /// every touch meant for the collage; drag moves the edited overlay,
     /// pinch zooms and rotates it, and a double tap resets its placement.
+    /// The first touch also whisks the panel away so the canvas is in view.
     private var overlayGestureSurface: some View {
         Color.clear
             .contentShape(Rectangle())
-            .onTapGesture(count: 2) {
-                withAnimation(.spring(response: 0.3)) { state.resetEditedOverlayTransform() }
-                #if canImport(UIKit)
-                UIImpactFeedbackGenerator(style: .light).impactOccurred()
-                #endif
-            }
             .gesture(
                 DragGesture(minimumDistance: 2)
                     .updating($overlayDrag) { value, drag, _ in
@@ -188,6 +199,28 @@ struct CollageGridView_Grid: View {
                     .onEnded { value in
                         state.transformEditedOverlay(scaleBy: value.first ?? 1,
                                                      rotateBy: CGFloat((value.second ?? .zero).radians))
+                    }
+            )
+            .simultaneousGesture(
+                TapGesture(count: 2).onEnded {
+                    withAnimation(.spring(response: 0.3)) { state.resetEditedOverlayTransform() }
+                    #if canImport(UIKit)
+                    UIImpactFeedbackGenerator(style: .light).impactOccurred()
+                    #endif
+                }
+            )
+            // Touch-down watcher: fires the moment a finger lands.
+            .simultaneousGesture(
+                DragGesture(minimumDistance: 0)
+                    .updating($overlayTouching) { _, touching, _ in
+                        guard !touching else { return }
+                        touching = true
+                        DispatchQueue.main.async {
+                            state.collapsePanel(animated: false)
+                            // A fresh touch starts clean — a pinch that ended
+                            // without its stray drag must not block this one.
+                            if !overlayPinching { overlayDragTainted = false }
+                        }
                     }
             )
     }
@@ -259,17 +292,17 @@ struct CollageGridView_Grid: View {
     private func resizeHandles(canvasSize: CGSize, gap: CGFloat, cols: [[ColumnItem]]) -> some View {
         let widths = columnWidths(canvasSize: canvasSize, gap: gap, cols: cols)
         let availW = canvasSize.width - gap * CGFloat(cols.count + 1)
-        // Hug the actual gap: a couple of points of bleed at most, so
-        // pinch/pan touches near a box edge always reach the image. (28pt
+        // A finger-sized strip over the gap. Kept in check on purpose: 28pt
         // strips used to bleed ~14pt onto the images and swallowed pinch
-        // fingers — boxes sandwiched between strips went gesture-dead.)
-        let hitThickness = max(gap, 14)
+        // fingers — boxes sandwiched between strips went gesture-dead — so
+        // this stays a notch below that.
+        let hitThickness = max(gap, 24)
 
         ZStack {
             // Vertical handles between columns
             ForEach(1..<max(cols.count, 1), id: \.self) { ci in
                 let x = gap + widths.prefix(ci).reduce(0, +) + gap * CGFloat(ci - 1) + gap / 2
-                ColumnResizeHandle(ciA: ci - 1, ciB: ci, availW: availW)
+                ColumnResizeHandle(ciA: ci - 1, ciB: ci, availW: availW, gap: gap)
                     .frame(width: hitThickness, height: max(canvasSize.height - gap * 2, 0))
                     .position(x: x, y: canvasSize.height / 2)
             }
@@ -282,7 +315,7 @@ struct CollageGridView_Grid: View {
 
                 ForEach(1..<max(col.count, 1), id: \.self) { bi in
                     let y = gap + heights.prefix(bi).reduce(0, +) + gap * CGFloat(bi - 1) + gap / 2
-                    BoxResizeHandle(ci: ci, biA: bi - 1, biB: bi, availH: availH)
+                    BoxResizeHandle(ci: ci, biA: bi - 1, biB: bi, availH: availH, gap: gap)
                         .frame(width: max(widths[ci], 0), height: hitThickness)
                         .position(x: colCenterX, y: y)
                 }
@@ -299,6 +332,33 @@ struct CollageGridView_Grid: View {
     }
 }
 
+// MARK: - Separator highlight
+
+/// Lights up the whole separator while its resize handle is hovered or
+/// held — end to end, so it stays visible on both sides of the finger —
+/// with a grip in the middle.
+private struct SeparatorHighlight: View {
+    let axis: Axis          // direction the separator line runs
+    let gap: CGFloat
+    let active: Bool
+
+    var body: some View {
+        let thickness = max(gap, 4) + (active ? 2 : 0)
+        ZStack {
+            Capsule()
+                .fill(Color.accentColor.opacity(active ? 0.95 : 0.6))
+                .frame(width: axis == .vertical ? thickness : nil,
+                       height: axis == .horizontal ? thickness : nil)
+                .shadow(color: Color.accentColor.opacity(active ? 0.8 : 0), radius: 6)
+                .shadow(color: .black.opacity(0.25), radius: 2)
+            Capsule()
+                .fill(Color.white.opacity(0.95))
+                .frame(width: axis == .vertical ? 3 : 36, height: axis == .vertical ? 36 : 3)
+        }
+        .allowsHitTesting(false)
+    }
+}
+
 // MARK: - Column resize handle (between columns)
 
 private struct ColumnResizeHandle: View {
@@ -306,6 +366,7 @@ private struct ColumnResizeHandle: View {
     let ciA: Int
     let ciB: Int
     let availW: CGFloat
+    let gap: CGFloat
 
     @GestureState private var isDragging = false
     @State private var isHovering = false
@@ -314,10 +375,7 @@ private struct ColumnResizeHandle: View {
         ZStack {
             Color.clear
             if isHovering || isDragging {
-                Capsule()
-                    .fill(Color.white.opacity(isDragging ? 0.9 : 0.6))
-                    .frame(width: isDragging ? 5 : 3, height: isDragging ? 40 : 32)
-                    .shadow(color: .black.opacity(0.25), radius: 2)
+                SeparatorHighlight(axis: .vertical, gap: gap, active: isDragging)
             }
         }
         .contentShape(Rectangle())
@@ -348,6 +406,7 @@ private struct BoxResizeHandle: View {
     let biA: Int
     let biB: Int
     let availH: CGFloat
+    let gap: CGFloat
 
     @GestureState private var isDragging = false
     @State private var isHovering = false
@@ -356,10 +415,7 @@ private struct BoxResizeHandle: View {
         ZStack {
             Color.clear
             if isHovering || isDragging {
-                Capsule()
-                    .fill(Color.white.opacity(isDragging ? 0.9 : 0.6))
-                    .frame(width: isDragging ? 40 : 32, height: isDragging ? 5 : 3)
-                    .shadow(color: .black.opacity(0.25), radius: 2)
+                SeparatorHighlight(axis: .horizontal, gap: gap, active: isDragging)
             }
         }
         .contentShape(Rectangle())

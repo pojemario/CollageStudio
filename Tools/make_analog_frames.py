@@ -1,16 +1,18 @@
 #!/usr/bin/env python3
-"""Generates the "Analog Frames (9:16)" frame pack.
+"""Generates the 9:16 frame packs: "Analog Frames" and "Film Frames".
 
 Each frame is a 1152x2048 PNG (2x the 576x1024 canvas, i.e. pixel-exact at
 export): opaque white paper gap on the outside, a medium-format style film
 border with its imperfections, and a transparent window for the collage.
 
 Output goes straight into the asset catalog as
-  Assets.xcassets/FramePacks/Analog916/Analog916_<Name>_m<LLTTRRBB>_r9x16.imageset
+  Assets.xcassets/FramePacks/<Pack>/<Pack>_<Name>_m<LLTTRRBB>_r9x16.imageset
 where m.. are the minimum content margins in canvas pixels (see CanvasFrameSet).
+Each frame also gets a "<name>_Thumb" picker thumbnail: its top-left corner,
+zoomed in over a sample sky.
 
 Usage:  python3 -m venv venv && venv/bin/pip install pillow numpy scipy
-        venv/bin/python Tools/make_analog_frames.py [--preview out.png]
+        venv/bin/python Tools/make_analog_frames.py [--pack Film916] [--preview out.png]
 """
 import json
 import os
@@ -24,8 +26,8 @@ from scipy.ndimage import gaussian_filter
 W, H = 1152, 2048
 CANVAS_SCALE = 2          # PNG pixels per canvas pixel
 TUCK = 8                  # PNG px the collage slides under the inner film edge
-PACK_DIR = os.path.join(os.path.dirname(__file__), "..", "CollageStudio",
-                        "Assets.xcassets", "FramePacks", "Analog916")
+PACKS_DIR = os.path.join(os.path.dirname(__file__), "..", "CollageStudio",
+                         "Assets.xcassets", "FramePacks")
 FONT_DIN = "/System/Library/Fonts/Supplemental/DIN Condensed Bold.ttf"
 FONT_NARROW = "/System/Library/Fonts/Supplemental/Arial Narrow Bold.ttf"
 
@@ -124,6 +126,22 @@ def dust_mask(rng, specks, hairs, area):
     return np.asarray(img.filter(ImageFilter.GaussianBlur(0.6)), np.float32) / 255
 
 
+def edge_bites(rng, count, rect, radius):
+    """Mask of small irregular bites centered on the outline of rect."""
+    x0, y0, x1, y1 = rect
+    img = Image.new("L", (W, H), 0)
+    d = ImageDraw.Draw(img)
+    for _ in range(count):
+        side, t = rng.integers(4), rng.uniform(.03, .97)
+        x, y = [(x0, y0 + (y1 - y0) * t), (x1, y0 + (y1 - y0) * t),
+                (x0 + (x1 - x0) * t, y0), (x0 + (x1 - x0) * t, y1)][side]
+        for _ in range(rng.integers(1, 4)):         # a bite is a few overlapping nibbles
+            r = rng.uniform(*radius)
+            ox, oy = rng.normal(0, r * .6, 2)
+            d.ellipse([x + ox - r, y + oy - r * rng.uniform(.6, 1), x + ox + r, y + oy + r], fill=255)
+    return np.asarray(img.filter(ImageFilter.GaussianBlur(.8)), np.float32) / 255
+
+
 # ---------------------------------------------------------------- frame
 
 def make_frame(spec):
@@ -140,6 +158,10 @@ def make_frame(spec):
     for sigma, amp in spec["outer_rough"]:
         d_out = d_out + noise(rng, sigma) * amp
     film_outer = cov(d_out, spec.get("outer_soft", 1.4))
+    bites = np.zeros((H, W), np.float32)
+    if spec.get("chips"):                   # small bites out of the film edge
+        bites = edge_bites(rng, spec["chips"], (gl, gt, W - gr, H - gb), (2.5, 7))
+        film_outer = film_outer * (1 - bites)
 
     # Exposure window (camera gate): straight-ish, soft, rounded corners
     wx0, wy0, wx1, wy1 = gl + rl, gt + rt, W - gr - rr, H - gb - rb
@@ -169,6 +191,12 @@ def make_frame(spec):
         intrusions = np.maximum(
             intrusions, np.asarray(img.filter(ImageFilter.GaussianBlur(1.0)), np.float32) / 255)
     window = window * (1 - intrusions)
+    if spec.get("gate_chips"):              # emulsion flaked off along the gate
+        window = np.maximum(window, edge_bites(rng, spec["gate_chips"], (wx0, wy0, wx1, wy1), (1.5, 4)))
+    if spec.get("corner_lift"):             # one corner of the emulsion lifted away
+        cx, cy, r = spec["corner_lift"]
+        lift = cov(np.hypot(X - cx, Y - cy) - r + noise(rng, 6) * 3, 2.0)
+        window = np.maximum(window, lift * film_outer)
     film = film_outer * (1 - window)
 
     # --- composite, bottom to top
@@ -176,7 +204,7 @@ def make_frame(spec):
     a = np.zeros((H, W), np.float32)
 
     # White paper everywhere outside the film (tucked 3px under its edge)
-    paper = 1 - cov(d_out + 3, 1.2)
+    paper = np.maximum(1 - cov(d_out + 3, 1.2), bites)     # bites show paper, not picture
     rgb, a = over(rgb, a, np.float32([255, 255, 255]), paper)
 
     if spec.get("shadow"):                  # film strip lying on a lightbox
@@ -211,6 +239,21 @@ def make_frame(spec):
         leak_rgb = np.float32([255, 74, 22]) * (1 - hot) + np.float32([255, 214, 140]) * hot
         rgb, a = over(rgb, a, leak_rgb, leak)
 
+    if spec.get("scuffs"):                  # scratches and rubs on the border itself
+        img = Image.new("L", (W, H), 0)
+        d = ImageDraw.Draw(img)
+        for _ in range(spec["scuffs"]):
+            side = rng.integers(4)
+            t = rng.uniform(.04, .96)
+            x, y = [(gl + rl / 2, gt + (H - gt - gb) * t), (W - gr - rr / 2, gt + (H - gt - gb) * t),
+                    (gl + (W - gl - gr) * t, gt + rt / 2), (gl + (W - gl - gr) * t, H - gb - rb / 2)][side]
+            ang = rng.uniform(0, 6.28)
+            ln = rng.uniform(6, 34)
+            d.line([(x - np.cos(ang) * ln, y - np.sin(ang) * ln), (x + np.cos(ang) * ln, y + np.sin(ang) * ln)],
+                   fill=int(rng.uniform(90, 220)), width=int(rng.choice([1, 1, 2])))
+        sm = np.asarray(img.filter(ImageFilter.GaussianBlur(.6)), np.float32) / 255
+        rgb, a = over(rgb, a, np.float32([235, 232, 224]), sm * film * .8)
+
     if spec.get("dust"):
         specks, hairs, strength = spec["dust"]
         dm = dust_mask(rng, specks, hairs, (gl, gt, W - gr, H - gb)) * film_outer * strength
@@ -222,7 +265,8 @@ def make_frame(spec):
     out[..., 3] = np.clip(a * 255, 0, 255).round()
 
     inset = [gl + rl, gt + rt, gr + rr, gb + rb]
-    margins = [max(0, min(99, (v - TUCK) // CANVAS_SCALE)) for v in inset]
+    tuck = spec.get("tuck", TUCK)           # thin borders can't hide a deep tuck
+    margins = [max(0, min(99, (v - tuck) // CANVAS_SCALE)) for v in inset]
     return Image.fromarray(out, "RGBA"), margins
 
 
@@ -341,8 +385,64 @@ FRAMES = [
 ]
 
 
-def write_imageset(name, image):
-    d = os.path.join(PACK_DIR, f"{name}.imageset")
+# "Film Frames": thin black edges, each a little the worse for wear.
+FILM_FRAMES = [
+    dict(name="Thin", seed=131, gap=(54, 54, 54, 54), rebate=(14, 14, 14, 14), tuck=6,
+         film_rgb=(14, 14, 15), outer_rough=[(40, 1.2), (3, .6)], outer_soft=1.5,
+         inner_rough=[(50, 1.0), (4, .5)], gate_radius=6, inner_soft=2.2,
+         chips=3, gate_chips=2, dust=(14, 0, .4)),
+    dict(name="Nicked", seed=137, gap=(54, 54, 54, 54), rebate=(18, 18, 18, 18), tuck=8,
+         film_rgb=(15, 14, 14), outer_rough=[(30, 1.5), (3, .8)], outer_soft=1.5,
+         inner_rough=[(40, 1.2), (4, .7)], gate_radius=8, inner_soft=2.4,
+         chips=16, gate_chips=9, gate_fuzz=5, dust=(18, 0, .4)),
+    dict(name="Scuffed", seed=139, gap=(52, 52, 52, 52), rebate=(22, 22, 22, 22),
+         film_rgb=(17, 16, 15), outer_rough=[(36, 1.4), (3, .7)], outer_soft=1.6,
+         inner_rough=[(50, 1.1), (4, .6)], gate_radius=7, inner_soft=2.4,
+         chips=5, scuffs=46, dust=(70, 2, .55)),
+    dict(name="Uneven", seed=149, gap=(54, 50, 54, 58), rebate=(12, 28, 16, 20), tuck=6,
+         film_rgb=(14, 14, 14), outer_rough=[(90, 3.0), (20, 1.6), (3, .6)], outer_soft=1.8,
+         inner_rough=[(80, 2.4), (5, .6)], gate_radius=14, inner_soft=2.6,
+         chips=4, gate_chips=3, gate_fuzz=4, dust=(16, 0, .4)),
+    dict(name="Corner", seed=151, gap=(54, 54, 54, 54), rebate=(18, 18, 18, 18), tuck=8,
+         film_rgb=(16, 14, 13), outer_rough=[(40, 1.3), (3, .7)], outer_soft=1.5,
+         inner_rough=[(50, 1.1), (4, .6)], gate_radius=8, inner_soft=2.4,
+         chips=4, gate_chips=3, corner_lift=(W - 54 - 10, H - 54 - 12, 34), scuffs=10,
+         dust=(24, 1, .45)),
+    dict(name="Hairline", seed=157, gap=(56, 56, 56, 56), rebate=(8, 8, 8, 8), tuck=4,
+         film_rgb=(16, 16, 16), outer_rough=[(60, 1.6), (6, 1.0), (2, .7)], outer_soft=1.4,
+         inner_rough=[(60, 1.6), (6, 1.0), (2, .7)], gate_radius=4, inner_soft=1.8,
+         chips=7, gate_chips=6, dust=(12, 0, .35)),
+]
+
+PACKS = [("Analog916", FRAMES), ("Film916", FILM_FRAMES)]
+
+
+THUMB_W, THUMB_H = 180, 320
+THUMB_CROP = (420, 747)     # top-left corner of the frame, ~2.7x closer than the full view
+
+
+def sample_sky():
+    """Bright, soft sky for the thumbnails — black film edges pop against it."""
+    rng = np.random.default_rng(5)
+    y, x = np.mgrid[0:THUMB_H, 0:THUMB_W].astype(np.float32)
+    v = y / THUMB_H
+    sky = np.dstack([np.interp(v, [0, .6, 1], c) for c in ([96, 168, 246], [150, 200, 232], [212, 232, 196])])
+    clouds = gaussian_filter(rng.standard_normal((THUMB_H, THUMB_W)).astype(np.float32), 14)
+    clouds = np.clip(clouds / clouds.std() * .5 + .1, 0, 1)[..., None]
+    return np.clip(sky * (1 - clouds * .7) + 255 * clouds * .7, 0, 255)
+
+
+def frame_thumbnail(image, sky):
+    """Picker thumbnail: the frame's top-left corner, zoomed in over a sample
+    sky, so edge character and damage are visible at thumbnail size."""
+    corner = image.crop((0, 0, *THUMB_CROP)).resize((THUMB_W, THUMB_H), Image.LANCZOS)
+    o = np.asarray(corner, np.float32)
+    a = o[..., 3:] / 255
+    return Image.fromarray((sky * (1 - a) + o[..., :3] * a).clip(0, 255).astype(np.uint8), "RGB")
+
+
+def write_imageset(pack, name, image):
+    d = os.path.join(PACKS_DIR, pack, f"{name}.imageset")
     os.makedirs(d)
     image.save(os.path.join(d, f"{name}.png"), optimize=True)
     with open(os.path.join(d, "Contents.json"), "w") as f:
@@ -351,21 +451,29 @@ def write_imageset(name, image):
 
 
 def main():
-    preview_path = sys.argv[2] if len(sys.argv) > 2 and sys.argv[1] == "--preview" else None
-    shutil.rmtree(PACK_DIR, ignore_errors=True)
-    os.makedirs(PACK_DIR)
-    with open(os.path.join(PACK_DIR, "Contents.json"), "w") as f:
-        json.dump({"info": {"author": "xcode", "version": 1}}, f, indent=2)
-    with open(os.path.join(PACK_DIR, "..", "Contents.json"), "w") as f:
+    preview_path = sys.argv[sys.argv.index("--preview") + 1] if "--preview" in sys.argv else None
+    only = sys.argv[sys.argv.index("--pack") + 1] if "--pack" in sys.argv else None
+    os.makedirs(PACKS_DIR, exist_ok=True)
+    with open(os.path.join(PACKS_DIR, "Contents.json"), "w") as f:
         json.dump({"info": {"author": "xcode", "version": 1}}, f, indent=2)
 
+    sky = sample_sky()
     rendered = []
-    for spec in FRAMES:
-        image, m = make_frame(spec)
-        name = "Analog916_%s_m%02d%02d%02d%02d_r9x16" % (spec["name"], *m)
-        write_imageset(name, image)
-        rendered.append(image)
-        print(name)
+    for pack, frames in PACKS:
+        if only and pack != only:
+            continue
+        pack_dir = os.path.join(PACKS_DIR, pack)
+        shutil.rmtree(pack_dir, ignore_errors=True)
+        os.makedirs(pack_dir)
+        with open(os.path.join(pack_dir, "Contents.json"), "w") as f:
+            json.dump({"info": {"author": "xcode", "version": 1}}, f, indent=2)
+        for spec in frames:
+            image, m = make_frame(spec)
+            name = "%s_%s_m%02d%02d%02d%02d_r9x16" % (pack, spec["name"], *m)
+            write_imageset(pack, name, image)
+            write_imageset(pack, name + "_Thumb", frame_thumbnail(image, sky))
+            rendered.append(image)
+            print(name)
 
     if preview_path:                        # contact sheet over a fake photo
         tw, th = W // 2, H // 2

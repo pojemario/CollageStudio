@@ -15,8 +15,9 @@ struct BottomPanelView: View {
     // Flat, edge-to-edge panel — no rounded corners.
     private let topCorners = Rectangle()
 
-    let tabs = ["Images", "Layout", "Canvas", "Frames", "Overlay"]
-    let tabIcons = ["photo.badge.plus", "square.grid.2x2", "rectangle.inset.filled", "photo.artframe", "sparkles"]
+    let tabs = ["Images", "Layout", "Canvas", "Frames", "Overlay", "Effects"]
+    let tabIcons = ["photo.badge.plus", "square.grid.2x2", "rectangle.inset.filled", "photo.artframe", "sparkles",
+                    "wand.and.stars"]
 
     var body: some View {
         VStack(spacing: 0) {
@@ -24,7 +25,11 @@ struct BottomPanelView: View {
             HStack(spacing: 0) {
                 ForEach(tabs.indices, id: \.self) { i in
                     Button {
-                        if state.selectedPanelTab == i && state.isPanelOpen {
+                        if state.textEditTargetId != nil {
+                            // Any tab leaves text editing and shows that tab.
+                            state.endTextEditing()
+                            state.selectedPanelTab = i
+                        } else if state.selectedPanelTab == i && state.isPanelOpen {
                             #if canImport(UIKit)
                             UIImpactFeedbackGenerator(style: .light).impactOccurred()
                             #endif
@@ -43,6 +48,7 @@ struct BottomPanelView: View {
                         .frame(maxWidth: .infinity)
                         .padding(.vertical, 6)
                         .foregroundColor(state.selectedPanelTab == i && state.isPanelOpen
+                                         && state.textEditTargetId == nil
                                          ? .white : .white.opacity(0.3))
                     }
                     .buttonStyle(.plain)
@@ -66,12 +72,18 @@ struct BottomPanelView: View {
 
             // Panel content — each tab is only as tall as its own content.
             Group {
+                // Editing a text box takes over the panel until it's done.
+                if let textId = state.textEditTargetId {
+                    TextEditPanel(imageId: textId)
+                } else {
                 switch state.selectedPanelTab {
                 case 0: imagesTab
                 case 1: layoutTab
                 case 2: borderTab
                 case 3: framesTab
-                default: overlayTab
+                case 4: overlayTab
+                default: effectsTab
+                }
                 }
             }
             .padding(.horizontal, 10)
@@ -265,6 +277,12 @@ struct BottomPanelView: View {
 
     var overlayTab: some View {
         OverlayPanel()
+    }
+
+    // MARK: - Effects tab (fade, halation, glow, B&W, …)
+
+    var effectsTab: some View {
+        EffectsPanel()
     }
 
     // MARK: - Load photos

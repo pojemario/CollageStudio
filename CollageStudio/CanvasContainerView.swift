@@ -105,10 +105,7 @@ struct CanvasContainerView: View {
                 // Simultaneous so image pan/pinch/swap still win on a drag.
                 .contentShape(Rectangle())
                 .simultaneousGesture(
-                    TapGesture().onEnded {
-                        state.collapsePanel()
-                        state.closeRatio()
-                    }
+                    TapGesture().onEnded { state.handleCanvasTap() }
                 )
                 // Drives the slide transition between pages
                 .animation(.easeInOut(duration: 0.28), value: state.currentPageIndex)
@@ -118,10 +115,7 @@ struct CanvasContainerView: View {
             // open panel or the ratio sheet. Simultaneous so it never blocks
             // image pan/pinch/swap — a drag is not a tap, so those still win.
             .simultaneousGesture(
-                TapGesture().onEnded {
-                    state.collapsePanel()
-                    state.closeRatio()
-                }
+                TapGesture().onEnded { state.handleCanvasTap() }
             )
             // The canvas is static: user interaction never pans it
             .scrollDisabled(true)

@@ -72,11 +72,6 @@ struct OverlayPanel: View {
                 state.exitOverlayMode()
             }
         }
-        // Reopening the panel on this tab re-enters the mode after the
-        // "OVERLAY" pill's ✕ left it.
-        .onChange(of: state.isPanelOpen) { _, open in
-            if open && !inSidebar { state.overlayTabMode = true }
-        }
     }
 
     // MARK: - Textures (tap to preview)
@@ -259,8 +254,9 @@ struct OverlayPanel: View {
     }
 }
 
-/// Overlay texture preview on dark gray, where light dust, dark grit and the
-/// glow of a light leak all stay readable.
+/// Overlay texture preview. Packs ship a "<asset>_Thumb" picture — the
+/// texture over a sample photo, dust zoomed in so it reads at this size;
+/// without one the raw texture is shown on dark gray.
 struct OverlayThumbnail: View {
     let asset: String
     let height: CGFloat
@@ -268,7 +264,8 @@ struct OverlayThumbnail: View {
     var body: some View {
         ZStack {
             Color(white: 0.3)
-            if let thumb = FrameThumbnails.image(named: asset) {
+            if let thumb = FrameThumbnails.image(named: asset + "_Thumb")
+                ?? FrameThumbnails.image(named: asset) {
                 #if canImport(UIKit)
                 Image(uiImage: thumb).resizable().scaledToFill()
                 #else

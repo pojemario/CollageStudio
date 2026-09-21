@@ -1,4 +1,5 @@
 import SwiftUI
+import Combine
 
 @MainActor
 class CollageState: ObservableObject {
@@ -15,6 +16,8 @@ class CollageState: ObservableObject {
     @Published var currentPageIndex: Int = 0 {
         didSet {
             pageSlideEdge = currentPageIndex > oldValue ? .trailing : .leading
+            // Highlight maps belong to the previous page's picture
+            if currentPageIndex != oldValue { effectMaps.clear() }
             // Tracked box frames belong to the previous page's boxes
             imageFrames.removeAll()
             emptySlotFrames.removeAll()
@@ -238,6 +241,14 @@ class CollageState: ObservableObject {
             "Analog916_HP5_m58415841_r9x16",
             "Analog916_Delta100_m56435643_r9x16",
         ]),
+        FramePack(name: "Film Frames", ratio: .portrait916, assets: [
+            "Film916_Thin_m31313131_r9x16",
+            "Film916_Nicked_m32323232_r9x16",
+            "Film916_Scuffed_m33333333_r9x16",
+            "Film916_Uneven_m30363236_r9x16",
+            "Film916_Corner_m32323232_r9x16",
+            "Film916_Hairline_m30303030_r9x16",
+        ]),
     ]
 
     /// Applies a pack frame. Pack frames only exist in their own format, so
@@ -355,10 +366,10 @@ class CollageState: ObservableObject {
 
     // Overlay mode: the collage is frozen and canvas gestures move / scale /
     // rotate the edited overlay instead. On the phone it starts when the
-    // Overlay tab is chosen and survives hiding the panel (a canvas tap hides
-    // it for a clear view; an "OVERLAY" pill by the panel handle marks the
-    // mode) until another tab is picked or the pill's ✕ is tapped. The
-    // always-visible sidebar is only in the mode while a layer is edited.
+    // Overlay tab is chosen and survives hiding the panel (touching the canvas
+    // hides it at once for a clear view; an "OVERLAY" label by the panel
+    // handle marks the mode) until another tab is picked. The always-visible
+    // sidebar is only in the mode while a layer is edited.
     @Published var overlayTabMode = false
     @Published var overlaySidebarShowing = false
 
@@ -390,15 +401,12 @@ class CollageState: ObservableObject {
         }
     }
 
-    /// Commits a finished canvas gesture to the edited overlay.
-    /// `translation` is in canvas pixels.
+    /// Commits a finished canvas gesture to the edited overlay, clamped by
+    /// OverlayLayer.applying. `translation` is in canvas pixels.
     func transformEditedOverlay(scaleBy: CGFloat = 1, rotateBy: CGFloat = 0, translation: CGSize = .zero) {
         updateEditedOverlay { layer in
-            layer.scale = min(max(layer.scale * scaleBy, OverlayLayer.scaleRange.lowerBound),
-                              OverlayLayer.scaleRange.upperBound)
-            layer.rotation += rotateBy
-            layer.offset.width += translation.width
-            layer.offset.height += translation.height
+            layer = layer.applying(scaleBy: scaleBy, rotateBy: rotateBy,
+                                   translation: translation, canvasSize: canvasSize)
         }
     }
 
@@ -418,6 +426,70 @@ class CollageState: ObservableObject {
             selectedOverlayId = overlayLayers.indices.contains(idx)
                 ? overlayLayers[idx].id : overlayLayers.last?.id
         }
+    }
+
+    // MARK: - Effects (fade, halation, glow, B&W, …)
+
+    /// Intensity per effect, 0...100; absent or 0 means off. Like the frame
+    /// and overlays, effects apply to every page.
+    @Published var effects: [CollageEffect: Double] = [:]
+
+    /// 0...1 strength of an effect.
+    func effectAmount(_ effect: CollageEffect) -> Double {
+        min(max((effects[effect] ?? 0) / 100, 0), 1)
+    }
+
+    var hasEffects: Bool { effects.values.contains { $0 > 0 } }
+
+    func resetEffects() { effects = [:] }
+
+    /// Glow and halation are light spilling out of the highlights, so they
+    /// need the rendered collage as input: a small snapshot of the current
+    /// page is turned into blurred highlight maps that the canvas screens
+    /// back on at the effect's intensity. Separate object, so publishing new
+    /// maps doesn't re-trigger the refresh below.
+    let effectMaps = EffectMaps()
+    /// True while that snapshot renders: the canvas then draws the bare
+    /// collage — no effects, overlays or frame.
+    private(set) var isRenderingEffectSource = false
+    private var effectMapRefresh: AnyCancellable?
+
+    /// Re-derives the maps shortly after anything settles; cheap no-op while
+    /// neither effect is on.
+    private func observeEffectSources() {
+        effectMapRefresh = objectWillChange
+            // Changes published by the snapshot render itself (geometry
+            // bookkeeping) must not schedule another snapshot.
+            .filter { [weak self] _ in
+                !MainActor.assumeIsolated { self?.isRenderingEffectSource ?? false }
+            }
+            .debounce(for: .milliseconds(300), scheduler: RunLoop.main)
+            .sink { [weak self] _ in
+                MainActor.assumeIsolated { self?.refreshEffectMaps() }
+            }
+    }
+
+    /// `force` is for export, which needs fresh maps for the page it is
+    /// about to render instead of waiting for the debounce.
+    func refreshEffectMaps(force: Bool = false) {
+        let glow = effectAmount(.glow) > 0, halation = effectAmount(.halation) > 0
+        guard glow || halation, !currentPage.images.isEmpty else {
+            effectMaps.clear()
+            return
+        }
+        guard force || !isExporting else { return }
+
+        isRenderingEffectSource = true
+        defer { isRenderingEffectSource = false }
+        let source = CollageGridView_Grid(scale: 1.0)
+            .frame(width: canvasSize.width, height: canvasSize.height)
+            .environmentObject(self)
+        let renderer = ImageRenderer(content: source)
+        renderer.proposedSize = ProposedViewSize(canvasSize)
+        // The maps are heavily blurred — half resolution is plenty.
+        renderer.scale = 0.5
+        guard let snapshot = renderer.cgImage else { return }
+        effectMaps.update(from: snapshot, glow: glow, halation: halation)
     }
 
     // MARK: - Drag to swap
@@ -514,10 +586,13 @@ class CollageState: ObservableObject {
 
     /// Collapse the panel (used when the user starts interacting with the
     /// canvas, so the same gesture that hides the panel also does the work).
-    func collapsePanel() {
+    func collapsePanel(animated: Bool = true) {
         guard isPanelOpen else { return }
-        withAnimation(.easeInOut(duration: 0.25)) {
+        var transaction = Transaction(animation: animated ? .easeInOut(duration: 0.25) : nil)
+        transaction.disablesAnimations = !animated
+        withTransaction(transaction) {
             isPanelOpen = false
+            textEditTargetId = nil
             panelDrag = 0
             isPanelDragging = false
         }
@@ -579,17 +654,48 @@ class CollageState: ObservableObject {
 
     // MARK: - Text images
 
-    @Published var showTextEditor: Bool = false
+    /// Text box being edited in the panel (nil = not editing text).
     @Published var textEditTargetId: UUID? = nil
 
-    /// Adds a text box rendered as an image, editable via long-press → Edit.
+    /// Adds a text box rendered as an image and opens it for editing.
     func addTextImage() {
-        addPreparedImages([CollageImage.textImage(style: TextBoxStyle())])
+        let image = CollageImage.textImage(style: TextBoxStyle())
+        addPreparedImages([image])
+        if currentPage.images.contains(where: { $0.id == image.id }) {
+            beginEditText(id: image.id)
+        }
     }
 
+    /// Tapping a text box edits it live: the panel swaps to the text
+    /// properties while the text itself updates on the collage.
     func beginEditText(id: UUID) {
-        textEditTargetId = id
-        showTextEditor = true
+        lastTextTap = Date()
+        guard textEditTargetId != id || !isPanelOpen else { return }
+        closeRatio()
+        withAnimation(.easeInOut(duration: 0.25)) {
+            textEditTargetId = id
+            isPanelOpen = true
+        }
+    }
+
+    func endTextEditing() {
+        guard textEditTargetId != nil else { return }
+        withAnimation(.easeInOut(duration: 0.2)) { textEditTargetId = nil }
+    }
+
+    /// A tap on a text box also reaches the canvas-wide tap handlers, in no
+    /// guaranteed order. They defer to the next runloop tick and stand down
+    /// when the tap just opened a text box.
+    private var lastTextTap: Date = .distantPast
+
+    /// Canvas taps dismiss whatever is open: text editing, panel, ratio sheet.
+    func handleCanvasTap() {
+        DispatchQueue.main.async { [self] in
+            guard Date().timeIntervalSince(lastTextTap) > 0.25 else { return }
+            endTextEditing()
+            collapsePanel()
+            closeRatio()
+        }
     }
 
     func textStyle(for id: UUID) -> TextBoxStyle? {
@@ -597,11 +703,12 @@ class CollageState: ObservableObject {
     }
 
     /// Re-renders a text image with an edited style, keeping its slot and
-    /// transform (the bitmap stays square, so the layout is unaffected).
+    /// transform. The bitmap takes the shape of the box it lives in.
     func applyTextStyle(_ style: TextBoxStyle, to id: UUID) {
         guard let pi = pageIndex(containing: id),
               let idx = pages[pi].images.firstIndex(where: { $0.id == id }) else { return }
-        pages[pi].images[idx].setImage(CollageImage.renderTextImage(style: style))
+        let size = CollageImage.textRenderSize(forBox: pages[pi].images[idx].lastBoxSize)
+        pages[pi].images[idx].setImage(CollageImage.renderTextImage(style: style, size: size))
         pages[pi].images[idx].textStyle = style
     }
 
@@ -1079,6 +1186,7 @@ class CollageState: ObservableObject {
 
     init() {
         restoreSettings()
+        observeEffectSources()
     }
 
     private func restoreSettings() {
@@ -1189,8 +1297,19 @@ class CollageState: ObservableObject {
     }
 
     func setBoxSize(id: UUID, boxSize: CGSize) {
+        guard !isRenderingEffectSource else { return }
         guard let idx = images.firstIndex(where: { $0.id == id }) else { return }
         images[idx].lastBoxSize = boxSize
+        // A text block always takes the shape of its box: re-render when the
+        // box's proportions moved away from the bitmap's.
+        if let style = images[idx].textStyle, boxSize.width > 1, boxSize.height > 1 {
+            let target = CollageImage.textRenderSize(forBox: boxSize)
+            let current = images[idx].naturalSize
+            if abs(target.width - current.width) > 2 || abs(target.height - current.height) > 2 {
+                images[idx].setImage(CollageImage.renderTextImage(style: style, size: target))
+                images[idx].textStyle = style
+            }
+        }
     }
 
     func setZoom(id: UUID, zoom: CGFloat, anchor: CGPoint, boxSize: CGSize) {
@@ -1402,6 +1521,9 @@ class CollageState: ObservableObject {
     }
 
     func updateImageFrame(id: UUID, frame: CGRect) {
+        // The offscreen effect snapshot lays out at canvas scale — its
+        // geometry must not replace the on-screen one.
+        guard !isRenderingEffectSource else { return }
         imageFrames[id] = frame
     }
 
@@ -1594,6 +1716,7 @@ class CollageState: ObservableObject {
         var urls: [URL] = []
         for (n, pi) in targets.enumerated() {
             currentPageIndex = pi
+            refreshEffectMaps(force: true)
             guard let image = renderCurrentPage(),
                   let data = Self.pngData(image) else { continue }
             let url = dir.appendingPathComponent(String(format: "%03d.png", n + 1))

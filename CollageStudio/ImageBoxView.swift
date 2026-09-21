@@ -103,6 +103,16 @@ struct ImageBoxView: View {
                     }
                     .allowsHitTesting(false)
                 )
+                // The text box being edited in the panel.
+                .overlay(
+                    Group {
+                        if state.textEditTargetId == imageId, !state.renderFullResolution {
+                            RoundedRectangle(cornerRadius: state.cornerRadius * scale)
+                                .strokeBorder(Color.accentColor, lineWidth: 2)
+                        }
+                    }
+                    .allowsHitTesting(false)
+                )
                 .overlay(alignment: .topLeading) {
                     if Self.showDebug && !state.renderFullResolution {
                         Text(debugText(boxSize: boxSize))
@@ -152,6 +162,14 @@ struct ImageBoxView: View {
                 // SEQUENCED after the long press instead (see below), and the
                 // popover itself lives on the canvas container.
                 .simultaneousGesture(replaceLongPressGesture)
+                // A single tap on a text box opens it for live editing.
+                // Zoom and rotate need two fingers, pan needs a drag, so a
+                // plain tap can't be mistaken for any of them.
+                .simultaneousGesture(
+                    TapGesture().onEnded {
+                        if imgData?.isText == true { state.beginEditText(id: imageId) }
+                    }
+                )
                 // Double-tap resets this image. Simultaneous (not high
                 // priority) so it never delays the pan drag from starting.
                 .simultaneousGesture(
@@ -435,17 +453,9 @@ struct BoxActionMenu: View {
         let movablePages = state.pages.indices.filter { pi in
             pi != source && state.pages[pi].images.count < CollageState.maxImagesPerPage
         }
-        let isText = state.textStyle(for: imageId) != nil
 
         ScrollView {
             VStack(alignment: .leading, spacing: 0) {
-                if isText {
-                    menuButton("Edit", sf: "textformat") {
-                        state.showBoxActionMenu = false
-                        state.beginEditText(id: imageId)
-                    }
-                    Divider()
-                }
                 menuButton("Replace", sf: "photo.on.rectangle.angled") {
                     state.showReplacePicker = true
                     state.showBoxActionMenu = false
@@ -473,7 +483,7 @@ struct BoxActionMenu: View {
         }
         .frame(width: 220)
         // Hug the content, but never grow taller than a comfortable popover.
-        .frame(maxHeight: min(CGFloat(3 + movablePages.count + (isText ? 1 : 0)) * 44 + 8, 320))
+        .frame(maxHeight: min(CGFloat(3 + movablePages.count) * 44 + 8, 320))
     }
 
     private func dismissMenu() {

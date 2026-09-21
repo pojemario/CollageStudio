@@ -16,12 +16,18 @@ struct SidebarView: View {
         ScrollView {
             VStack(alignment: .leading, spacing: 0) {
                 logo
+                if let textId = state.textEditTargetId {
+                    SidebarSection(title: "Text") {
+                        TextEditPanel(imageId: textId)
+                    }
+                }
                 imagesSection
                 ratioSection
                 layoutSection
                 borderSection
                 framesSection
                 overlaySection
+                effectsSection
             }
         }
         .onChange(of: photoItems) { _, newItems in
@@ -217,6 +223,14 @@ struct SidebarView: View {
     var overlaySection: some View {
         SidebarSection(title: "Overlay") {
             OverlayPanel(inSidebar: true)
+        }
+    }
+
+    // MARK: - Effects (fade, halation, glow, B&W, …)
+
+    var effectsSection: some View {
+        SidebarSection(title: "Effects") {
+            EffectsPanel()
         }
     }
 
