@@ -516,6 +516,9 @@ class CollageState: ObservableObject {
     /// Measured full height of the panel (incl. a buffer for the safe area),
     /// used as the fully-hidden offset.
     @Published var panelHeight: CGFloat = 320
+    /// Full-screen preview: the floating tab bar (and panel) get out of the
+    /// way so nothing but the collage is on screen.
+    @Published var chromeHidden: Bool = false
     /// Live drag translation while the user is pulling the panel (+ = down).
     @Published var panelDrag: CGFloat = 0
     /// True while a pull is in progress.

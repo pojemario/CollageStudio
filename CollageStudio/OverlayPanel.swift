@@ -2,8 +2,8 @@ import SwiftUI
 
 /// Overlay tab / sidebar section: pick a pack (dust & scratches, light
 /// leaks) and tap a texture to preview it live on the collage. The preview
-/// is adjustable like a layer — opacity, above or below the frame, and
-/// placement by finger on the canvas — but only joins the layer stack with
+/// is adjustable like a layer — opacity and placement by finger on the
+/// canvas — but only joins the layer stack with
 /// "Add layer". Existing layers are edited by selecting them in the stack.
 ///
 /// Choosing this panel puts the app in overlay mode: the collage is frozen
@@ -48,13 +48,6 @@ struct OverlayPanel: View {
             if let layer = state.editedOverlay {
                 LabeledSlider(label: "Opacity", value: binding(for: layer.id, \.opacity),
                               range: 0...100, step: 1, format: "%.0f", resetValue: 100)
-                positionRow(layerId: layer.id)
-                Label("Drag, pinch and rotate on the collage · double-tap to reset",
-                      systemImage: "hand.draw")
-                    .font(.caption2)
-                    .foregroundColor(.secondary)
-                    .frame(maxWidth: .infinity, alignment: .center)
-                    .panelChrome(state)
             }
         }
         .animation(.easeInOut(duration: 0.2), value: state.overlayPreview?.id)
@@ -104,33 +97,21 @@ struct OverlayPanel: View {
         .opacity(state.canAddOverlay ? 1 : 0.4)
     }
 
-    // MARK: - Preview bar (confirm or dismiss the texture being tried)
+    // MARK: - Preview bar (confirm the texture being tried; tapping its
+    // thumbnail again or leaving the tab dismisses it)
 
     private func previewBar(_ preview: OverlayLayer) -> some View {
         HStack(spacing: 8) {
             Image(systemName: "eye")
-                .font(.system(size: 13, weight: .medium))
-            Text("Previewing \(preview.label)")
-                .font(.system(size: 13, weight: .medium))
-                .lineLimit(1)
+                .font(.system(size: 15, weight: .medium))
             Spacer(minLength: 4)
-            Button {
-                state.cancelOverlayPreview()
-            } label: {
-                Text("Cancel")
-                    .font(.system(size: 13, weight: .medium))
-                    .padding(.horizontal, 12)
-                    .padding(.vertical, 7)
-                    .background(Capsule().fill(Color.white.opacity(0.18)))
-            }
-            .buttonStyle(.plain)
             Button {
                 #if canImport(UIKit)
                 UIImpactFeedbackGenerator(style: .light).impactOccurred()
                 #endif
                 state.commitOverlayPreview()
             } label: {
-                Label("Add layer", systemImage: "plus")
+                Label("Layer", systemImage: "plus")
                     .font(.system(size: 13, weight: .semibold))
                     .padding(.horizontal, 12)
                     .padding(.vertical, 7)
@@ -162,8 +143,8 @@ struct OverlayPanel: View {
             } else {
                 ScrollView(.horizontal, showsIndicators: false) {
                     HStack(spacing: 8) {
-                        ForEach(Array(state.overlayLayers.enumerated()), id: \.element.id) { index, layer in
-                            layerChip(layer, number: index + 1)
+                        ForEach(state.overlayLayers) { layer in
+                            layerChip(layer)
                         }
                     }
                 }
@@ -173,18 +154,13 @@ struct OverlayPanel: View {
 
     /// One layer in the stack: tap to select (which ends any preview), tap
     /// again to deselect; the selected one can be removed.
-    private func layerChip(_ layer: OverlayLayer, number: Int) -> some View {
+    private func layerChip(_ layer: OverlayLayer) -> some View {
         let isSelected = state.overlayPreview == nil && state.selectedOverlayId == layer.id
         return HStack(spacing: 6) {
             OverlayThumbnail(asset: layer.asset, height: 32)
-            VStack(alignment: .leading, spacing: 1) {
-                Text("\(number) · \(layer.label)")
-                    .font(.system(size: 11, weight: .medium))
-                Image(systemName: layer.aboveFrame ? "square.2.layers.3d.top.filled"
-                                                   : "square.2.layers.3d.bottom.filled")
-                    .font(.system(size: 9))
-                    .opacity(0.7)
-            }
+            Text(layer.label)
+                .font(.system(size: 12, weight: .medium))
+                .lineLimit(1)
             if isSelected {
                 Button {
                     state.removeOverlay(id: layer.id)
@@ -214,24 +190,6 @@ struct OverlayPanel: View {
     }
 
     // MARK: - Selected layer controls
-
-    private func positionRow(layerId: UUID) -> some View {
-        HStack(spacing: 8) {
-            Text("Position")
-                .font(.subheadline)
-                .foregroundColor(.primary)
-                .frame(width: 76, alignment: .leading)
-            Picker("", selection: binding(for: layerId, \.aboveFrame)) {
-                Text("Below frame").tag(false)
-                Text("Above frame").tag(true)
-            }
-            .pickerStyle(.segmented)
-            .labelsHidden()
-            // Match the sliders' value + swatch trailing block width
-            Color.clear.frame(width: 44 + 8 + 24, height: 24)
-        }
-        .panelChrome(state)
-    }
 
     /// Binding into the preview or a stacked layer, looked up by id, so a
     /// control that outlives its layer (mid-removal) never indexes out of range.

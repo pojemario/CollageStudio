@@ -34,9 +34,10 @@ public enum ColorManager {
         #endif
     }
     
-    /// Main application background — pure white.
+    /// Main application background: a soft cool gray, so the white collage
+    /// canvas and the floating glass chrome read as layered pieces on top.
     public static var canvasAreaBackground: Color {
-        Color.white
+        Color(red: 0.945, green: 0.947, blue: 0.96)
     }
 
     /// Canvas background shown before any images are added. Adapts to

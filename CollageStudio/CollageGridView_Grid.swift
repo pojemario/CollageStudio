@@ -30,15 +30,20 @@ struct CollageGridView_Grid: View {
             let overflowX = isSquareFallback ? (frameSide - canvasSize.width) / 2 : 0
             let overflowY = isSquareFallback ? (frameSide - canvasSize.height) / 2 : 0
             // Effective margins: the frame's built-in minimums (reduced by any
-            // off-canvas overflow) plus the user-adjustable extra margin.
+            // off-canvas overflow).
             let base = state.frameBaseMargins
-            let added = CGFloat(state.canvasMargin) * scale
-            let insetL = max(0, base.left * scale - overflowX) + added
-            let insetT = max(0, base.top * scale - overflowY) + added
-            let insetR = max(0, base.right * scale - overflowX) + added
-            let insetB = max(0, base.bottom * scale - overflowY) + added
+            let insetL = max(0, base.left * scale - overflowX)
+            let insetT = max(0, base.top * scale - overflowY)
+            let insetR = max(0, base.right * scale - overflowX)
+            let insetB = max(0, base.bottom * scale - overflowY)
             let contentSize = CGSize(width: max(canvasSize.width - insetL - insetR, 0),
                                      height: max(canvasSize.height - insetT - insetB, 0))
+            // The user margin is an OUTER margin: the whole collage block is
+            // scaled down uniformly (gaps, rounding and proportions intact)
+            // to leave that much room around it — never re-laid out inside a
+            // smaller area. Negative margins zoom it in past the edges.
+            let added = CGFloat(state.canvasMargin) * scale
+            let marginScale = min(max((contentSize.width - added * 2) / max(contentSize.width, 1), 0.1), 2)
             let cols = state.layout.columns
             // The effect-source snapshot wants the bare collage: no effects,
             // overlays, frame or gesture surface.
@@ -68,6 +73,7 @@ struct CollageGridView_Grid: View {
                         resizeHandles(canvasSize: contentSize, gap: gap, cols: cols)
                     }
                     .frame(width: contentSize.width, height: contentSize.height)
+                    .scaleEffect(marginScale)
                     // Tilt the whole collage within the canvas
                     .rotationEffect(.degrees(state.canvasRotation))
                     // Asymmetric margins shift the content block off-center

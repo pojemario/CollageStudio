@@ -40,62 +40,9 @@ struct SavingOverlay: View {
     }
 }
 
-/// Glass handle shown when the bottom panel is collapsed. A single tap on the
-/// sliders icon opens the panel, with a little ripple/pulse animation.
-struct PanelHandleButton: View {
-    @EnvironmentObject var state: CollageState
-    @State private var tapCount = 0
-
-    /// Padding above the bottom safe area. The handle used to float 10 pt
-    /// above it; it now sits at 45% of that distance from the physical
-    /// bottom edge — on home-indicator devices that is well inside the safe
-    /// area, just clear of the indicator bar.
-    static var bottomPadding: CGFloat {
-        #if canImport(UIKit)
-        let inset = UIApplication.shared.connectedScenes
-            .compactMap { ($0 as? UIWindowScene)?.keyWindow }
-            .first?.safeAreaInsets.bottom ?? 0
-        #else
-        let inset: CGFloat = 0
-        #endif
-        return (inset + 10) * 0.45 - inset
-    }
-
-    private func open() {
-        tapCount += 1
-        state.closeRatio()
-        withAnimation(.spring(response: 0.34, dampingFraction: 0.86)) { state.isPanelOpen = true }
-        #if canImport(UIKit)
-        UIImpactFeedbackGenerator(style: .light).impactOccurred()
-        #endif
-    }
-
-    var body: some View {
-        // A circular glass button floating just above the bottom edge — reads
-        // clearly as tappable. A single tap opens the panel.
-        Button(action: open) {
-            Image(systemName: "slider.horizontal.3")
-                .font(.system(size: 20, weight: .semibold))
-                .foregroundColor(.white)
-                .frame(width: 54, height: 54)
-                .background(
-                    Circle()
-                        .fill(.ultraThinMaterial)
-                        .overlay(Circle().strokeBorder(Color.white.opacity(0.3), lineWidth: 1))
-                        // Soft white glow.
-                        .shadow(color: Color.white.opacity(0.7), radius: 10)
-                        .shadow(color: Color.white.opacity(0.4), radius: 20)
-                )
-                .contentShape(Circle())
-                // A quick pulse of the whole button on tap.
-                .modifier(TapPulse(trigger: tapCount))
-        }
-        .buttonStyle(.plain)
-    }
-}
-
-/// "OVERLAY" label beside the panel handle: canvas touches currently edit
-/// the overlay, not the collage. Purely informational — touches pass through.
+/// "OVERLAY" label floating above the tab pill: canvas touches currently
+/// edit the overlay, not the collage. Purely informational — touches pass
+/// through.
 struct OverlayModeLabel: View {
     var body: some View {
         HStack(spacing: 5) {
@@ -111,21 +58,6 @@ struct OverlayModeLabel: View {
         .background(Capsule().fill(Color.black.opacity(0.5)))
         .fixedSize()
         .allowsHitTesting(false)
-    }
-}
-
-/// Briefly scales its content up then back on each `trigger` change.
-private struct TapPulse: ViewModifier {
-    let trigger: Int
-    @State private var pulsing = false
-
-    func body(content: Content) -> some View {
-        content
-            .scaleEffect(pulsing ? 1.18 : 1.0)
-            .onChange(of: trigger) { _, _ in
-                pulsing = true
-                withAnimation(.spring(response: 0.35, dampingFraction: 0.45)) { pulsing = false }
-            }
     }
 }
 
@@ -306,90 +238,99 @@ struct ContentView: View {
 
     var iPhoneLayout: some View {
         VStack(spacing: 0) {
-            // Toolbar
+            // Toolbar: the logo on the left and a glass cluster of controls
+            // on the right, floating straight on the backdrop.
             HStack {
                 // Placeholder reserving horizontal space for the logo, which
                 // is drawn as an overlay so it can spill below the toolbar.
                 Color.clear.frame(width: 77, height: 1)
                 Spacer()
 
-                // Ratio selector — always available, even before images exist.
-                Button {
-                    if state.isRatioOpen { state.closeRatio() } else { state.openRatio() }
-                } label: {
-                    HStack(spacing: 5) {
-                        Image(systemName: "aspectratio")
-                            .font(.system(size: 15, weight: .medium))
-                        Text(state.ratio.rawValue.replacingOccurrences(of: ":", with: "×"))
-                            .font(.footnote.weight(.bold))
-                            .lineLimit(1)
-                    }
-                    .foregroundColor(.white)
-                    .padding(.horizontal, 10)
-                    .frame(height: 32)
-                    .background(Capsule().fill(Color.white.opacity(0.18)))
-                    .contentShape(Capsule())
-                }
-                .buttonStyle(.plain)
-                .background(
-                    GeometryReader { g in
-                        Color.clear.onChange(of: g.frame(in: .global), initial: true) { _, f in
-                            ratioButtonFrame = f
-                        }
-                    }
-                )
-
-                // Full-screen toggle and Share — only once there are images.
-                if state.hasAnyImages {
+                HStack(spacing: 2) {
+                    // Ratio selector — always available, even before images exist.
                     Button {
-                        withAnimation(.easeInOut(duration: 0.25)) {
-                            state.isPanelOpen.toggle()
-                        }
+                        if state.isRatioOpen { state.closeRatio() } else { state.openRatio() }
                     } label: {
-                        Image(systemName: state.isPanelOpen
-                              ? "arrow.up.left.and.arrow.down.right"
-                              : "arrow.down.right.and.arrow.up.left")
-                            .font(.system(size: 17, weight: .medium))
-                            .foregroundColor(.white)
-                            .frame(width: 40, height: 40)
-                            .contentShape(Rectangle())
+                        HStack(spacing: 5) {
+                            Image(systemName: "aspectratio")
+                                .font(.system(size: 15, weight: .medium))
+                            Text(state.ratio.rawValue.replacingOccurrences(of: ":", with: "×"))
+                                .font(.footnote.weight(.bold))
+                                .lineLimit(1)
+                        }
+                        .foregroundColor(state.isRatioOpen ? .white : .primary)
+                        .padding(.horizontal, 12)
+                        .frame(height: 34)
+                        .background(
+                            Capsule().fill(state.isRatioOpen ? Color.accentColor : Color.primary.opacity(0.07))
+                        )
+                        .contentShape(Capsule())
                     }
                     .buttonStyle(.plain)
-
-                    Button {
-                        if state.pages.count > 1 {
-                            state.showExportOptions = true
-                        } else {
-                            Task { await state.exportPages(allPages: false) }
+                    .background(
+                        GeometryReader { g in
+                            Color.clear.onChange(of: g.frame(in: .global), initial: true) { _, f in
+                                ratioButtonFrame = f
+                            }
                         }
-                    } label: {
-                        Image(systemName: "square.and.arrow.up")
-                            .font(.system(size: 19, weight: .medium))
-                            .foregroundColor(.white)
-                            .frame(width: 40, height: 40)
-                            .contentShape(Rectangle())
+                    )
+
+                    // Full-screen preview and Share — only once there are images.
+                    if state.hasAnyImages {
+                        Button {
+                            withAnimation(.easeInOut(duration: 0.25)) {
+                                state.chromeHidden.toggle()
+                                if state.chromeHidden { state.collapsePanel() }
+                            }
+                        } label: {
+                            Image(systemName: state.chromeHidden
+                                  ? "arrow.down.right.and.arrow.up.left"
+                                  : "arrow.up.left.and.arrow.down.right")
+                                .font(.system(size: 16, weight: .medium))
+                                .foregroundColor(.primary)
+                                .frame(width: 40, height: 40)
+                                .contentShape(Rectangle())
+                        }
+                        .buttonStyle(.plain)
+
+                        Button {
+                            if state.pages.count > 1 {
+                                state.showExportOptions = true
+                            } else {
+                                Task { await state.exportPages(allPages: false) }
+                            }
+                        } label: {
+                            Image(systemName: "square.and.arrow.up")
+                                .font(.system(size: 17, weight: .medium))
+                                .foregroundColor(.primary)
+                                .frame(width: 40, height: 40)
+                                .contentShape(Rectangle())
+                        }
+                        .buttonStyle(.plain)
                     }
-                    .buttonStyle(.plain)
                 }
+                .padding(.horizontal, 5)
+                .frame(height: 44)
+                .background(.ultraThinMaterial, in: Capsule(style: .continuous))
+                .overlay(Capsule(style: .continuous).strokeBorder(Color.white.opacity(0.6), lineWidth: 0.8))
+                .shadow(color: .black.opacity(0.10), radius: 12, y: 4)
             }
             // Fixed height so the bar doesn't collapse before any images are
             // added (the icons only appear once images exist) — keeps the logo
             // clear of the system clock.
-            .frame(height: 40)
-            .padding(.horizontal, 14)
+            .frame(height: 48)
+            .padding(.horizontal, 12)
             .padding(.vertical, 4)
-            // Black bar extending up behind the status bar; icons are white.
-            .background(Color.black.ignoresSafeArea(edges: .top))
             // Logo overlay: larger than the toolbar and unclipped, so it
             // spills below the bar's bottom edge.
             .overlay(alignment: .bottomLeading) {
                 Image("DasKolazLogo")
                     .resizable()
                     .scaledToFit()
-                    .frame(height: 48)
+                    .frame(height: 52)
                     .shimmering(state.isBusy)
-                    .padding(.leading, 12)
-                    .offset(y: -2)
+                    .padding(.leading, 10)
+                    .offset(y: 2)
                     .allowsHitTesting(false)
             }
             // Keep the toolbar (and its spilling logo) above the canvas below
@@ -399,14 +340,16 @@ struct ContentView: View {
             if state.isRatioOpen {
                 RatioPanelView()
                     .padding(12)
-                    // Very transparent glass, square (unrounded) corners.
+                    // Glass card matching the bottom panel.
                     .background {
-                        Rectangle()
+                        RoundedRectangle(cornerRadius: 22, style: .continuous)
                             .fill(.ultraThinMaterial)
-                            .opacity(0.5)
-                            .overlay(Rectangle().strokeBorder(Color.white.opacity(0.18), lineWidth: 1))
-                            .shadow(color: .black.opacity(0.15), radius: 12, y: 2)
+                            .overlay(RoundedRectangle(cornerRadius: 22, style: .continuous)
+                                .strokeBorder(Color.white.opacity(0.55), lineWidth: 0.8))
+                            .shadow(color: .black.opacity(0.12), radius: 16, y: 6)
                     }
+                    .padding(.horizontal, 12)
+                    .padding(.bottom, 8)
                     .background(
                         GeometryReader { g in
                             Color.clear.onChange(of: g.frame(in: .global), initial: true) { _, f in
@@ -422,39 +365,59 @@ struct ContentView: View {
             VStack(spacing: 0) {
                 CanvasContainerView()
                     .frame(maxWidth: .infinity, maxHeight: .infinity)
+                    // Leave the tab pill's zone free so it never covers the
+                    // collage; full-screen preview gives it back.
+                    .padding(.bottom, state.hasAnyImages && !state.chromeHidden ? FloatingTabBar.zoneHeight : 0)
+                    .animation(.easeInOut(duration: 0.25), value: state.chromeHidden)
             }
             // Floating page counter pill over the top of the canvas.
             .overlay(alignment: .top) {
                 PageTabBar().padding(.top, 2)
             }
             .overlay(alignment: .bottom) {
-                // No panel until there are images — the empty canvas just
+                // No chrome until there are images — the empty canvas just
                 // shows the big "add images" button.
-                if state.hasAnyImages {
+                if state.hasAnyImages && !state.chromeHidden {
                     ZStack(alignment: .bottom) {
-                        // Collapsed handle — a circular button floating above
-                        // the bottom edge that fades out as the panel rises.
-                        // In overlay mode an "OVERLAY" label sits beside the
-                        // handle, so a frozen collage never looks broken. Its
-                        // hidden twin keeps the handle centered.
-                        HStack(spacing: 10) {
-                            OverlayModeLabel().hidden()
-                            PanelHandleButton()
-                            OverlayModeLabel()
-                                .opacity(state.overlayModeActive ? 1 : 0)
-                                .animation(.easeInOut(duration: 0.2), value: state.overlayModeActive)
-                        }
-                        .padding(.bottom, PanelHandleButton.bottomPadding)
-                        .opacity(state.panelHiddenFraction)
-                        .allowsHitTesting(state.panelHiddenFraction > 0.5)
-                        // The panel, positioned by the shared interactive
-                        // offset (0 = open, panelHeight = fully hidden).
+                        // The panel card, positioned by the shared interactive
+                        // offset (0 = open, panelHeight = fully hidden). It
+                        // slides down behind the tab pill.
+                        // Clipped at the pill's bottom edge, so it rises out
+                        // of the toolbar instead of sliding past it.
                         BottomPanelView()
+                            .padding(.horizontal, 10)
+                            .padding(.bottom, FloatingTabBar.zoneHeight - 8
+                                     + (state.isPanelOpen && state.panelDrag == 0 ? FloatingTabBar.openLift : 0))
+                            .animation(.easeInOut(duration: 0.25), value: state.isPanelOpen)
                             .offset(y: state.panelOffset)
-                            // Container only: the keyboard (text editing)
-                            // must push the panel up, not cover it.
-                            .ignoresSafeArea(.container, edges: .bottom)
+                            .padding(.top, 40)      // room for the card's shadow inside the clip
+                            // The clip follows the pill's rounded bottom
+                            // corners, so nothing shows past them; above the
+                            // pill it is the full width (keeps the shadow).
+                            .mask {
+                                ZStack(alignment: .bottom) {
+                                    Rectangle().padding(.bottom, 60)
+                                    RoundedRectangle(cornerRadius: FloatingTabBar.cornerRadius, style: .continuous)
+                                        .padding(.horizontal, 10)
+                                        .frame(height: 140)
+                                }
+                            }
+                            .padding(.bottom, 8)
+
+                        FloatingTabBar(merged: state.isPanelOpen && state.panelDrag == 0)
+                            .panelChrome(state)
+                            // In overlay mode an "OVERLAY" label floats above
+                            // the pill, so a frozen collage never looks broken.
+                            .overlay(alignment: .top) {
+                                if state.overlayModeActive && state.panelHiddenFraction > 0.5 {
+                                    OverlayModeLabel()
+                                        .offset(y: -30)
+                                        .transition(.opacity)
+                                }
+                            }
+                            .animation(.easeInOut(duration: 0.2), value: state.overlayModeActive)
                     }
+                    .transition(.move(edge: .bottom).combined(with: .opacity))
                 }
             }
         }

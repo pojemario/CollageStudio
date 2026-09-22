@@ -3,6 +3,118 @@ import SwiftUI
 import PhotosUI
 #endif
 
+/// The floating tab pill at the bottom of the phone layout: one glass
+/// capsule, always visible while there are images, a tab per panel. Tapping
+/// a tab raises the panel card above it; tapping the open tab again lowers
+/// it. The active tab sits in a soft bubble that slides between tabs.
+struct FloatingTabBar: View {
+    @EnvironmentObject var state: CollageState
+    /// True while the panel card is up: the pill drops its own glass and
+    /// becomes the bottom row of the card, behind an inset separator.
+    var merged = false
+    @Namespace private var bubble
+
+    static let tabs = ["Images", "Layout", "Canvas", "Frames", "Overlay", "Effects"]
+    static let icons = ["photo.on.rectangle.angled", "square.grid.2x2", "rectangle.inset.filled",
+                        "photo.artframe", "sparkles", "wand.and.stars"]
+    /// Vertical room the pill takes at the bottom of the screen (pill +
+    /// its margins) — what the panel card and the canvas leave free.
+    static let zoneHeight: CGFloat = 80
+    /// Extra room between the panel content and the tab row while the panel
+    /// is open; the pill itself never moves.
+    static let openLift: CGFloat = 0
+    /// Corner radius of the pill, and of the card it merges into.
+    static let cornerRadius: CGFloat = 24
+
+    /// The chosen tab keeps its bubble even while its panel is lowered, so
+    /// the pill always shows which tools are one tap away.
+    private var activeTab: Int { state.selectedPanelTab }
+
+    var body: some View {
+        HStack(spacing: 0) {
+            ForEach(Self.tabs.indices, id: \.self) { i in
+                let active = activeTab == i
+                Button {
+                    select(i)
+                } label: {
+                    VStack(spacing: 3) {
+                        Image(systemName: Self.icons[i])
+                            .font(.system(size: 19, weight: active ? .medium : .regular))
+                            .frame(height: 24)
+                        Text(Self.tabs[i])
+                            .font(.system(size: 9.5, weight: .semibold))
+                            .lineLimit(1)
+                            .minimumScaleFactor(0.8)
+                    }
+                    .padding(.horizontal, 8)
+                    .foregroundStyle(active ? Color.accentColor : Color.primary.opacity(0.72))
+                    .frame(maxWidth: .infinity)
+                    .frame(height: 50)
+                    // Selection bubble: a denser, matte piece of glass sitting
+                    // in the pill, the icon and label in the accent color.
+                    .background {
+                        if active {
+                            let shape = RoundedRectangle(cornerRadius: Self.cornerRadius - 5, style: .continuous)
+                            shape
+                                .fill(.regularMaterial)
+                                .overlay(shape.fill(Color.primary.opacity(0.07)))
+                                .overlay(shape.strokeBorder(Color.white.opacity(0.5), lineWidth: 0.8))
+                                .shadow(color: .black.opacity(0.08), radius: 4, y: 1)
+                                .matchedGeometryEffect(id: "bubble", in: bubble)
+                        }
+                    }
+                    .contentShape(Rectangle())
+                }
+                .buttonStyle(.plain)
+            }
+        }
+        .padding(.vertical, 5)
+        .padding(.horizontal, 10)
+        .background {
+            if !merged {
+                let shape = RoundedRectangle(cornerRadius: Self.cornerRadius, style: .continuous)
+                shape
+                    .fill(.ultraThinMaterial)
+                    .overlay(shape.strokeBorder(Color.white.opacity(0.6), lineWidth: 0.8))
+                    .shadow(color: .black.opacity(0.14), radius: 16, y: 6)
+            }
+        }
+        // Inset separator between the card's content and its tab row.
+        .overlay(alignment: .top) {
+            if merged {
+                Rectangle()
+                    .fill(Color.primary.opacity(0.12))
+                    .frame(height: 1)
+                    .padding(.horizontal, 14)
+                    .offset(y: -5)
+            }
+        }
+        .animation(.spring(response: 0.32, dampingFraction: 0.82), value: activeTab)
+        .animation(.easeInOut(duration: 0.25), value: merged)
+        .padding(.horizontal, 10)
+        .padding(.bottom, 8)
+    }
+
+    private func select(_ i: Int) {
+        #if canImport(UIKit)
+        UIImpactFeedbackGenerator(style: .light).impactOccurred()
+        #endif
+        state.closeRatio()
+        if state.textEditTargetId != nil {
+            // Any tab leaves text editing and shows that tab.
+            state.endTextEditing()
+            state.selectedPanelTab = i
+        } else if state.selectedPanelTab == i && state.isPanelOpen {
+            withAnimation(.easeInOut(duration: 0.25)) { state.isPanelOpen = false }
+        } else {
+            state.selectedPanelTab = i
+            withAnimation(.easeInOut(duration: 0.25)) { state.isPanelOpen = true }
+        }
+    }
+}
+
+/// The panel card: the content of the selected tab on a floating glass
+/// sheet that rises above the tab pill.
 struct BottomPanelView: View {
     @EnvironmentObject var state: CollageState
     @State private var photoItems: [PhotosPickerItem] = []
@@ -12,63 +124,31 @@ struct BottomPanelView: View {
     @State private var showAllOnOneConfirm = false
     @State private var pagesContentHeight: CGFloat = 0
 
-    // Flat, edge-to-edge panel — no rounded corners.
-    private let topCorners = Rectangle()
-
-    let tabs = ["Images", "Layout", "Canvas", "Frames", "Overlay", "Effects"]
-    let tabIcons = ["photo.badge.plus", "square.grid.2x2", "rectangle.inset.filled", "photo.artframe", "sparkles",
-                    "wand.and.stars"]
+    private let card = RoundedRectangle(cornerRadius: FloatingTabBar.cornerRadius, style: .continuous)
+    /// While up, the card's glass reaches down around the tab pill so the
+    /// two read as one piece (see FloatingTabBar.merged).
+    private var merged: Bool { state.isPanelOpen && state.panelDrag == 0 }
 
     var body: some View {
         VStack(spacing: 0) {
-            // Tab bar
-            HStack(spacing: 0) {
-                ForEach(tabs.indices, id: \.self) { i in
-                    Button {
-                        if state.textEditTargetId != nil {
-                            // Any tab leaves text editing and shows that tab.
-                            state.endTextEditing()
-                            state.selectedPanelTab = i
-                        } else if state.selectedPanelTab == i && state.isPanelOpen {
-                            #if canImport(UIKit)
-                            UIImpactFeedbackGenerator(style: .light).impactOccurred()
-                            #endif
-                            withAnimation(.easeInOut(duration: 0.25)) { state.isPanelOpen = false }
-                        } else {
-                            state.selectedPanelTab = i
-                            withAnimation(.easeInOut(duration: 0.25)) { state.isPanelOpen = true }
-                        }
-                    } label: {
-                        VStack(spacing: 3) {
-                            Image(systemName: tabIcons[i])
-                                .font(.system(size: 16))
-                            Text(tabs[i])
-                                .font(.system(size: 9))
-                        }
-                        .frame(maxWidth: .infinity)
-                        .padding(.vertical, 6)
-                        .foregroundColor(state.selectedPanelTab == i && state.isPanelOpen
-                                         && state.textEditTargetId == nil
-                                         ? .white : .white.opacity(0.3))
-                    }
-                    .buttonStyle(.plain)
-                }
-            }
-            .panelChrome(state)
-            .contentShape(Rectangle())
-            // A downward swipe on the icon area collapses the panel (no
+            // Grabber: a downward swipe on it collapses the panel (no
             // interactive follow — just closes on release, so no flicker).
-            .simultaneousGesture(
-                DragGesture(minimumDistance: 12)
-                    .onEnded { value in
-                        if value.translation.height > 20 {
-                            state.collapsePanel()
-                        }
-                    }
-            )
-
-            Divider().opacity(0.4)
+            Capsule()
+                .fill(Color.primary.opacity(0.22))
+                .frame(width: 36, height: 5)
+                .padding(.top, 8)
+                .padding(.bottom, 2)
+                .frame(maxWidth: .infinity)
+                .contentShape(Rectangle())
                 .panelChrome(state)
+                .simultaneousGesture(
+                    DragGesture(minimumDistance: 12)
+                        .onEnded { value in
+                            if value.translation.height > 20 {
+                                state.collapsePanel()
+                            }
+                        }
+                )
 
             // Panel content — each tab is only as tall as its own content.
             Group {
@@ -76,43 +156,41 @@ struct BottomPanelView: View {
                 if let textId = state.textEditTargetId {
                     TextEditPanel(imageId: textId)
                 } else {
-                switch state.selectedPanelTab {
-                case 0: imagesTab
-                case 1: layoutTab
-                case 2: borderTab
-                case 3: framesTab
-                case 4: overlayTab
-                default: effectsTab
-                }
+                    switch state.selectedPanelTab {
+                    case 0: imagesTab
+                    case 1: layoutTab
+                    case 2: borderTab
+                    case 3: framesTab
+                    case 4: overlayTab
+                    default: effectsTab
+                    }
                 }
             }
-            .padding(.horizontal, 10)
-            .padding(.top, 10)
-            .padding(.bottom, 12)
+            .padding(.horizontal, 12)
+            .padding(.top, 8)
+            .padding(.bottom, 6)
         }
-        // Ride as low as possible — pushed a few points past the safe area
-        // so the collapsed tab bar sits right at the very bottom edge.
-        .padding(.bottom, -2)
-        .clipShape(topCorners)
-        // Glass sheet that dives out from the very bottom of the screen, edge
-        // to edge (extending behind the home indicator). Fades while adjusting
-        // a slider. Lives here so the drag offset moves it with the content.
+        // Floating glass card. Fades while adjusting a slider so the collage
+        // shows through; lives here so the drag offset moves it with the content.
         .background {
-            topCorners
+            card
                 .fill(.ultraThinMaterial)
-                .overlay(topCorners.strokeBorder(Color.white.opacity(0.18), lineWidth: 1))
-                .shadow(color: .black.opacity(0.18), radius: 12, y: -2)
+                .overlay(card.strokeBorder(Color.white.opacity(0.55), lineWidth: 0.8))
+                .shadow(color: .black.opacity(0.12), radius: 18, y: 6)
+                .padding(.bottom, merged ? -(FloatingTabBar.zoneHeight - 8 + FloatingTabBar.openLift) : 0)
+                .animation(.easeInOut(duration: 0.25), value: merged)
                 .opacity(state.activeAdjustment == nil && !state.shuffleFocusActive ? 1 : 0)
                 .animation(.easeInOut(duration: 0.2), value: state.activeAdjustment)
-                .ignoresSafeArea(edges: .bottom)
         }
-        // Report the panel's height so the sheet knows how far to slide when
-        // fully hidden (plus a buffer for the home-indicator area).
+        // Report the card's height so it knows how far to slide to be fully
+        // hidden: past the tab bar zone and the home-indicator area.
         .background(
             GeometryReader { g in
                 Color.clear
-                    .onAppear { state.panelHeight = g.size.height + 44 }
-                    .onChange(of: g.size.height) { _, h in state.panelHeight = h + 44 }
+                    .onAppear { state.panelHeight = g.size.height + FloatingTabBar.zoneHeight + 60 }
+                    .onChange(of: g.size.height) { _, h in
+                        state.panelHeight = h + FloatingTabBar.zoneHeight + 60
+                    }
             }
         )
         .onChange(of: photoItems) { _, items in

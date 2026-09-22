@@ -505,6 +505,9 @@ struct LabeledSlider: View {
                 .font(.subheadline)
                 .foregroundColor(.primary)
                 .frame(width: labelWidth, alignment: .leading)
+                // Double-tapping the label resets to default, like the value
+                .contentShape(Rectangle())
+                .onTapGesture(count: 2) { resetToDefault() }
             ModernSlider(value: $value, range: range, step: step,
                          onEditingChanged: { editing in
                             withAnimation(.easeInOut(duration: 0.2)) {
@@ -520,12 +523,7 @@ struct LabeledSlider: View {
                 .frame(width: 44, alignment: .center)
                 // Double-tapping the value also resets to default
                 .contentShape(Rectangle())
-                .onTapGesture(count: 2) {
-                    value = min(max(resetValue ?? 0, range.lowerBound), range.upperBound)
-                    #if canImport(UIKit)
-                    UIImpactFeedbackGenerator(style: .light).impactOccurred()
-                    #endif
-                }
+                .onTapGesture(count: 2) { resetToDefault() }
             if let swatchColor {
                 ColorSwatchButton(color: swatchColor, depth: 0.55)
                     // Pure minimal in focus mode: only label + slider + value.
@@ -540,7 +538,15 @@ struct LabeledSlider: View {
         // Focus mode: fade this row out when another slider is active or the
         // panel is in shuffle focus.
         .opacity(state.chromeVisible(for: label) ? 1 : 0)
-        .animation(.easeInOut(duration: 0.2), value: state.activeAdjustment)    }
+        .animation(.easeInOut(duration: 0.2), value: state.activeAdjustment)
+    }
+
+    private func resetToDefault() {
+        value = min(max(resetValue ?? 0, range.lowerBound), range.upperBound)
+        #if canImport(UIKit)
+        UIImpactFeedbackGenerator(style: .light).impactOccurred()
+        #endif
+    }
 }
 
 /// Subtle rounded glass panel drawn behind the slider row that's currently
@@ -741,7 +747,8 @@ struct BorderStyleRow: View {
         }
         .background { focusGlass(active: state.activeAdjustment == "Border") }
         .opacity(state.chromeVisible(for: "Border") ? 1 : 0)
-        .animation(.easeInOut(duration: 0.2), value: state.activeAdjustment)    }
+        .animation(.easeInOut(duration: 0.2), value: state.activeAdjustment)
+    }
 }
 
 extension View {

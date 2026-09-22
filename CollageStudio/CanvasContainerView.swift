@@ -52,9 +52,22 @@ struct CanvasContainerView: View {
                         .id(state.currentPage.id)
                         .transition(.push(from: state.pageSlideEdge))
                         .frame(width: displayW, height: displayH)
-                        // Before any images are added the canvas is transparent
-                        // so the app background shows behind the "add" button.
-                        .background(state.images.isEmpty ? AnyShapeStyle(.clear) : AnyShapeStyle(state.gapColor))
+                        // Before any images are added the canvas is a faint
+                        // outlined card in the chosen ratio, behind the
+                        // "start" content.
+                        .background {
+                            if state.images.isEmpty {
+                                RoundedRectangle(cornerRadius: 28, style: .continuous)
+                                    .fill(Color.white.opacity(0.5))
+                                    .overlay(
+                                        RoundedRectangle(cornerRadius: 28, style: .continuous)
+                                            .strokeBorder(Color.primary.opacity(0.06), lineWidth: 1)
+                                    )
+                                    .padding(6)
+                            } else {
+                                state.gapColor
+                            }
+                        }
                         // Flatten the canvas into one layer first — otherwise
                         // .shadow draws a separate shadow under every image box
                         // (visible in the gaps) instead of just the outer edge.
@@ -68,25 +81,7 @@ struct CanvasContainerView: View {
                                 Button {
                                     showAddPicker = true
                                 } label: {
-                                    VStack(spacing: 16) {
-                                        Image(systemName: "plus")
-                                            .font(.system(size: 44, weight: .medium))
-                                            .foregroundColor(.white)
-                                            .frame(width: 96, height: 96)
-                                            .background(
-                                                RoundedRectangle(cornerRadius: 28, style: .continuous)
-                                                    .fill(Color.accentColor)
-                                                    .shadow(color: .black.opacity(0.25), radius: 12, y: 6)
-                                            )
-                                        Text("Add images to start")
-                                            .font(.callout)
-                                            .foregroundColor(.black.opacity(0.6))
-                                    }
-                                    .frame(maxWidth: .infinity, maxHeight: .infinity)
-                                    // Bias toward the top so the button stays
-                                    // visible above the bottom panel.
-                                    .offset(y: -displayH * 0.18)
-                                    .contentShape(Rectangle())
+                                    EmptyCanvasContent(canvasSize: CGSize(width: displayW, height: displayH))
                                 }
                                 .buttonStyle(PressBounceStyle())
                                 .photosPicker(isPresented: $showAddPicker,
@@ -223,3 +218,64 @@ struct CanvasContainerView: View {
 
 }
 
+
+/// What an empty canvas shows: a thin-line collage motif, a title, and an
+/// "Add Photos" call to action. The whole canvas is the button.
+private struct EmptyCanvasContent: View {
+    let canvasSize: CGSize
+
+    var body: some View {
+        VStack(spacing: 26) {
+            motif
+            VStack(spacing: 5) {
+                Text("Start a collage")
+                    .font(.system(size: 20, weight: .medium))
+                    .foregroundColor(.primary)
+                Text("Pick photos from your library\nor share them from Photos")
+                    .font(.system(size: 13))
+                    .multilineTextAlignment(.center)
+                    .lineSpacing(2)
+                    .foregroundColor(.secondary)
+            }
+            HStack(spacing: 8) {
+                Image(systemName: "plus")
+                    .font(.system(size: 12, weight: .semibold))
+                    .foregroundColor(.white)
+                    .frame(width: 22, height: 22)
+                    .background(Circle().fill(Color.accentColor))
+                Text("Add Photos")
+                    .font(.system(size: 15, weight: .medium))
+                    .foregroundColor(.primary)
+            }
+            .padding(.leading, 8)
+            .padding(.trailing, 16)
+            .padding(.vertical, 8)
+            .background(.ultraThinMaterial, in: Capsule())
+            .overlay(Capsule().strokeBorder(Color.white.opacity(0.7), lineWidth: 0.8))
+            .shadow(color: .black.opacity(0.08), radius: 12, y: 4)
+        }
+        .frame(maxWidth: .infinity, maxHeight: .infinity)
+        // Bias toward the top so it stays visible above the bottom panel.
+        .offset(y: -canvasSize.height * 0.06)
+        .contentShape(Rectangle())
+    }
+
+    /// A hairline two-column collage layout; one cell tinted with the accent.
+    private var motif: some View {
+        let cell = RoundedRectangle(cornerRadius: 9, style: .continuous)
+        let line = Color.primary.opacity(0.22)
+        return HStack(spacing: 7) {
+            VStack(spacing: 7) {
+                cell.strokeBorder(line, lineWidth: 1.2).frame(height: 58)
+                cell.fill(Color.accentColor.opacity(0.18))
+                    .overlay(cell.strokeBorder(Color.accentColor.opacity(0.5), lineWidth: 1.2))
+                    .frame(height: 40)
+            }
+            VStack(spacing: 7) {
+                cell.strokeBorder(line, lineWidth: 1.2).frame(height: 40)
+                cell.strokeBorder(line, lineWidth: 1.2).frame(height: 58)
+            }
+        }
+        .frame(width: 104, height: 105)
+    }
+}
