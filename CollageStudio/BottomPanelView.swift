@@ -20,6 +20,9 @@ struct FloatingTabBar: View {
     /// Vertical room the pill takes at the bottom of the screen (pill +
     /// its margins) — what the panel card and the canvas leave free.
     static let zoneHeight: CGFloat = 80
+    /// Gap between the pill and the bottom safe area; slightly negative so
+    /// the pill dips a little into the home-indicator area.
+    static let bottomMargin: CGFloat = -4
     /// Extra room between the panel content and the tab row while the panel
     /// is open; the pill itself never moves.
     static let openLift: CGFloat = 0
@@ -92,7 +95,7 @@ struct FloatingTabBar: View {
         .animation(.spring(response: 0.32, dampingFraction: 0.82), value: activeTab)
         .animation(.easeInOut(duration: 0.25), value: merged)
         .padding(.horizontal, 10)
-        .padding(.bottom, 8)
+        .padding(.bottom, Self.bottomMargin)
     }
 
     private func select(_ i: Int) {
@@ -177,7 +180,7 @@ struct BottomPanelView: View {
                 .fill(.ultraThinMaterial)
                 .overlay(card.strokeBorder(Color.white.opacity(0.55), lineWidth: 0.8))
                 .shadow(color: .black.opacity(0.12), radius: 18, y: 6)
-                .padding(.bottom, merged ? -(FloatingTabBar.zoneHeight - 8 + FloatingTabBar.openLift) : 0)
+                .padding(.bottom, merged ? -(FloatingTabBar.zoneHeight - FloatingTabBar.bottomMargin + FloatingTabBar.openLift) : 0)
                 .animation(.easeInOut(duration: 0.25), value: merged)
                 .opacity(state.activeAdjustment == nil && !state.shuffleFocusActive ? 1 : 0)
                 .animation(.easeInOut(duration: 0.2), value: state.activeAdjustment)

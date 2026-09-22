@@ -80,28 +80,91 @@ struct TextBoxStyle: Equatable {
         var id: String { rawValue }
     }
 
+    /// Fonts offered for text boxes, grouped sans → thin → serif → script
+    /// and handwriting. All are built into iOS.
     enum FontChoice: String, CaseIterable, Identifiable {
+        // Sans
         case classic = "Classic"
         case rounded = "Rounded"
+        case futura = "Futura"
+        // Thin sans
+        case thin = "Thin"
+        case hairline = "Hairline"
+        case avenir = "Avenir"
+        case gill = "Gill"
+        // Serif
         case serif = "Serif"
+        case didot = "Didot"
         case typewriter = "Typewriter"
-        case marker = "Marker"
+        // Script & handwriting
         case script = "Script"
+        case savoye = "Savoye"
+        case zapfino = "Zapfino"
+        case handwritten = "Handwritten"
+        case note = "Note"
+        case chalk = "Chalk"
+        case marker = "Marker"
+
         var id: String { rawValue }
+
+        /// PostScript name of the face; nil for the system font variants.
+        var postScriptName: String? {
+            switch self {
+            case .classic, .rounded, .thin: return nil
+            case .futura:      return "Futura-Medium"
+            case .hairline:    return "HelveticaNeue-UltraLight"
+            case .avenir:      return "AvenirNext-UltraLight"
+            case .gill:        return "GillSans-Light"
+            case .serif:       return "Georgia"
+            case .didot:       return "Didot"
+            case .typewriter:  return "AmericanTypewriter"
+            case .script:      return "SnellRoundhand-Bold"
+            case .savoye:      return "SavoyeLetPlain"
+            case .zapfino:     return "Zapfino"
+            case .handwritten: return "BradleyHandITCTT-Bold"
+            case .note:        return "Noteworthy-Light"
+            case .chalk:       return "Chalkduster"
+            case .marker:      return "MarkerFelt-Wide"
+            }
+        }
 
         /// The same face for SwiftUI labels (font chips).
         func previewFont(size: CGFloat) -> Font {
             switch self {
-            case .classic:    return .system(size: size, weight: .semibold)
-            case .rounded:    return .system(size: size, weight: .semibold, design: .rounded)
-            case .serif:      return .custom("Georgia", size: size)
-            case .typewriter: return .custom("AmericanTypewriter", size: size)
-            case .marker:     return .custom("MarkerFelt-Wide", size: size)
-            case .script:     return .custom("SnellRoundhand-Bold", size: size)
+            case .classic: return .system(size: size, weight: .semibold)
+            case .rounded: return .system(size: size, weight: .semibold, design: .rounded)
+            case .thin:    return .system(size: size, weight: .thin)
+            default:       return .custom(postScriptName ?? "", size: size)
+            }
+        }
+
+        /// The face for rendering, at a given size.
+        func platformFont(size: CGFloat) -> PlatformFont {
+            switch self {
+            case .classic:
+                return .systemFont(ofSize: size, weight: .semibold)
+            case .thin:
+                return .systemFont(ofSize: size, weight: .thin)
+            case .rounded:
+                let base = PlatformFont.systemFont(ofSize: size, weight: .semibold)
+                #if canImport(UIKit)
+                if let d = base.fontDescriptor.withDesign(.rounded) { return UIFont(descriptor: d, size: size) }
+                #else
+                if let d = base.fontDescriptor.withDesign(.rounded), let f = NSFont(descriptor: d, size: size) { return f }
+                #endif
+                return base
+            default:
+                return PlatformFont(name: postScriptName ?? "", size: size) ?? .systemFont(ofSize: size)
             }
         }
     }
 }
+
+#if canImport(UIKit)
+typealias PlatformFont = UIFont
+#else
+typealias PlatformFont = NSFont
+#endif
 
 extension CollageImage {
 
@@ -133,19 +196,7 @@ extension CollageImage {
         }
 
         #if canImport(UIKit)
-        var font: UIFont
-        switch style.fontChoice {
-        case .classic:    font = .systemFont(ofSize: scaledFontSize, weight: .semibold)
-        case .rounded:
-            font = .systemFont(ofSize: scaledFontSize, weight: .semibold)
-            if let d = font.fontDescriptor.withDesign(.rounded) {
-                font = UIFont(descriptor: d, size: scaledFontSize)
-            }
-        case .serif:      font = UIFont(name: "Georgia", size: scaledFontSize) ?? .systemFont(ofSize: scaledFontSize)
-        case .typewriter: font = UIFont(name: "AmericanTypewriter", size: scaledFontSize) ?? .systemFont(ofSize: scaledFontSize)
-        case .marker:     font = UIFont(name: "MarkerFelt-Wide", size: scaledFontSize) ?? .systemFont(ofSize: scaledFontSize)
-        case .script:     font = UIFont(name: "SnellRoundhand-Bold", size: scaledFontSize) ?? .systemFont(ofSize: scaledFontSize)
-        }
+        let font = style.fontChoice.platformFont(size: scaledFontSize)
         let attrs: [NSAttributedString.Key: Any] = [
             .font: font,
             .foregroundColor: UIColor(style.textColor),
@@ -174,20 +225,7 @@ extension CollageImage {
                 options: [.usesLineFragmentOrigin], attributes: attrs, context: nil)
         }
         #else
-        var font: NSFont
-        switch style.fontChoice {
-        case .classic:    font = .systemFont(ofSize: scaledFontSize, weight: .semibold)
-        case .rounded:
-            font = .systemFont(ofSize: scaledFontSize, weight: .semibold)
-            if let d = font.fontDescriptor.withDesign(.rounded),
-               let rounded = NSFont(descriptor: d, size: scaledFontSize) {
-                font = rounded
-            }
-        case .serif:      font = NSFont(name: "Georgia", size: scaledFontSize) ?? .systemFont(ofSize: scaledFontSize)
-        case .typewriter: font = NSFont(name: "American Typewriter", size: scaledFontSize) ?? .systemFont(ofSize: scaledFontSize)
-        case .marker:     font = NSFont(name: "Marker Felt Wide", size: scaledFontSize) ?? .systemFont(ofSize: scaledFontSize)
-        case .script:     font = NSFont(name: "Snell Roundhand Bold", size: scaledFontSize) ?? .systemFont(ofSize: scaledFontSize)
-        }
+        let font = style.fontChoice.platformFont(size: scaledFontSize)
         let attrs: [NSAttributedString.Key: Any] = [
             .font: font,
             .foregroundColor: NSColor(style.textColor),
@@ -490,16 +528,18 @@ struct OverlayLayer: Identifiable, Equatable {
 /// They act on the pictures and background — overlays and the frame sit on
 /// top, untouched.
 enum CollageEffect: String, CaseIterable, Identifiable {
-    case fade = "Fade"              // lifted blacks, softer contrast
+    case fade = "Fade"              // + lifted blacks, softer contrast; − more contrast
     case halation = "Halation"      // red-orange bleed around highlights
     case glow = "Glow"              // soft bloom
     case blackWhite = "B&W"
-    case sepia = "Sepia"
     case vignette = "Vignette"
     case grain = "Grain"
 
     var id: String { rawValue }
     var title: String { rawValue }
+
+    /// Fade runs both ways (negative = punchier contrast).
+    var range: ClosedRange<Double> { self == .fade ? -100...100 : 0...100 }
 }
 
 // MARK: - Canvas Ratio

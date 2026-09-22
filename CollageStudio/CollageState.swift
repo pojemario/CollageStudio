@@ -11,7 +11,19 @@ class CollageState: ObservableObject {
     @Published var pages: [CollagePage] = [CollagePage()]
     /// Edge the incoming page slides in from — set from the navigation
     /// direction so the canvas page transition matches finger movement.
-    var pageSlideEdge: Edge = .trailing
+    /// Published, and set a beat BEFORE the page changes (see goToPage), so
+    /// the outgoing page is already carrying the right transition when it
+    /// leaves — set together with the index it would slide the old way.
+    @Published var pageSlideEdge: Edge = .trailing
+
+    /// Navigates with a direction-correct slide.
+    func goToPage(_ index: Int) {
+        guard pages.indices.contains(index), index != currentPageIndex else { return }
+        pageSlideEdge = index > currentPageIndex ? .trailing : .leading
+        DispatchQueue.main.async { [self] in
+            withAnimation(.easeInOut(duration: 0.3)) { currentPageIndex = index }
+        }
+    }
 
     @Published var currentPageIndex: Int = 0 {
         didSet {
@@ -229,7 +241,7 @@ class CollageState: ObservableObject {
     /// Add a pack by dropping its PNGs into Assets.xcassets/FramePacks/ and
     /// listing them here.
     static let framePacks: [FramePack] = [
-        FramePack(name: "Analog Frames", ratio: .portrait916, assets: [
+        FramePack(name: "Analog", ratio: .portrait916, assets: [
             "Analog916_Notch_m45454545_r9x16",
             "Analog916_Amber400_m61436143_r9x16",
             "Analog916_Sloppy_m58625862_r9x16",
@@ -241,7 +253,7 @@ class CollageState: ObservableObject {
             "Analog916_HP5_m58415841_r9x16",
             "Analog916_Delta100_m56435643_r9x16",
         ]),
-        FramePack(name: "Film Frames", ratio: .portrait916, assets: [
+        FramePack(name: "Film", ratio: .portrait916, assets: [
             "Film916_Thin_m31313131_r9x16",
             "Film916_Nicked_m32323232_r9x16",
             "Film916_Scuffed_m33333333_r9x16",
@@ -251,45 +263,37 @@ class CollageState: ObservableObject {
         ]),
     ]
 
-    /// Applies a pack frame. Pack frames only exist in their own format, so
-    /// the canvas switches to it when needed.
+    /// Applies a pack frame. The canvas keeps its ratio; the frame is laid
+    /// over it in the frame's own proportions.
     func applyFrame(_ frame: CanvasFrameSet, from pack: FramePack) {
-        if ratio != pack.ratio { setRatio(pack.ratio) }
         canvasFrame = frame
     }
 
-    /// Deselects a frame that has nothing to draw in the current format
-    /// (a pack frame after the canvas ratio changed).
-    private func dropFrameIfUnavailable() {
-        if canvasFrame != nil, resolvedFrameAssetName() == nil { canvasFrame = nil }
-    }
-
-    /// Asset name of the frame variant used for the current ratio.
-    private func resolvedFrameAssetName() -> (name: String, isSquareFallback: Bool)? {
+    /// Asset name of the frame variant to draw: the one made for the current
+    /// ratio if there is one, else the set's first variant (drawn
+    /// undistorted, covering the canvas).
+    private func resolvedFrameAssetName() -> String? {
         guard let set = canvasFrame else { return nil }
         let suffix = ratio.rawValue.replacingOccurrences(of: ":", with: "x")
         if let name = set.assetName(ratioSuffix: suffix), PlatformImage.named(name) != nil {
-            return (name, false)
+            return name
         }
-        if let name = set.assetName(ratioSuffix: "1x1"), PlatformImage.named(name) != nil {
-            return (name, true)
-        }
-        return nil
+        return set.variantAssets.first { PlatformImage.named($0) != nil }
     }
 
     /// Minimum content margins of the frame variant in use — margins can
     /// differ per ratio (zero without a frame).
     var frameBaseMargins: (left: CGFloat, top: CGFloat, right: CGFloat, bottom: CGFloat) {
-        guard let (name, _) = resolvedFrameAssetName() else { return (0, 0, 0, 0) }
+        guard let name = resolvedFrameAssetName() else { return (0, 0, 0, 0) }
         return CanvasFrameSet.margins(fromAssetName: name)
     }
 
     /// Frame image for the current canvas ratio. Falls back to the square
     /// 1:1 variant when the exact ratio isn't bundled.
-    func resolvedFrame() -> (image: PlatformImage, isSquareFallback: Bool)? {
-        guard let (name, isFallback) = resolvedFrameAssetName(),
+    func resolvedFrame() -> (image: PlatformImage, name: String)? {
+        guard let name = resolvedFrameAssetName(),
               let image = PlatformImage.named(name) else { return nil }
-        return (image, isFallback)
+        return (image, name)
     }
 
     // MARK: - Overlays (dust, scratches, light leaks)
@@ -381,6 +385,28 @@ class CollageState: ObservableObject {
     func exitOverlayMode() {
         overlayTabMode = false
         overlayPreview = nil
+        overlayPanelReturn?.cancel()
+    }
+
+    // While an overlay is placed by finger the panel gets out of the way;
+    // a second after the fingers lift it comes back.
+    private var overlayPanelReturn: DispatchWorkItem?
+
+    /// Safe to call on every gesture update.
+    func beginOverlayGesture() {
+        overlayPanelReturn?.cancel()
+        overlayPanelReturn = nil
+        if isPanelOpen { collapsePanel(animated: false) }
+    }
+
+    func endOverlayGesture() {
+        overlayPanelReturn?.cancel()
+        let work = DispatchWorkItem { [weak self] in
+            guard let self, self.overlayModeActive, !self.isPanelOpen, !self.chromeHidden else { return }
+            withAnimation(.easeInOut(duration: 0.25)) { self.isPanelOpen = true }
+        }
+        overlayPanelReturn = work
+        DispatchQueue.main.asyncAfter(deadline: .now() + 1.0, execute: work)
     }
 
     /// What canvas gestures and the panel controls edit: the live preview,
@@ -434,14 +460,32 @@ class CollageState: ObservableObject {
     /// and overlays, effects apply to every page.
     @Published var effects: [CollageEffect: Double] = [:]
 
-    /// 0...1 strength of an effect.
+    /// Strength of an effect, 0...1 (fade: −1...1).
     func effectAmount(_ effect: CollageEffect) -> Double {
-        min(max((effects[effect] ?? 0) / 100, 0), 1)
+        let r = effect.range
+        return min(max((effects[effect] ?? 0) / 100, r.lowerBound / 100), r.upperBound / 100)
     }
 
-    var hasEffects: Bool { effects.values.contains { $0 > 0 } }
+    var hasEffects: Bool { effects.values.contains { $0 != 0 } }
 
     func resetEffects() { effects = [:] }
+
+    /// Which effects a shuffle touches (all by default).
+    @Published var effectShuffleOptions: Set<CollageEffect> = Set(CollageEffect.allCases)
+
+    /// Random tasteful amounts for the chosen effects; the rest are untouched.
+    func shuffleEffects() {
+        for effect in effectShuffleOptions {
+            switch effect {
+            case .fade:       effects[effect] = Double(Int.random(in: -40...60))
+            case .halation:   effects[effect] = Double(Int.random(in: 0...70))
+            case .glow:       effects[effect] = Double(Int.random(in: 0...60))
+            case .blackWhite: effects[effect] = Bool.random() ? Double(Int.random(in: 60...100)) : 0
+            case .vignette:   effects[effect] = Double(Int.random(in: 10...80))
+            case .grain:      effects[effect] = Double(Int.random(in: 0...70))
+            }
+        }
+    }
 
     /// Glow and halation are light spilling out of the highlights, so they
     /// need the rendered collage as input: a small snapshot of the current
@@ -519,6 +563,10 @@ class CollageState: ObservableObject {
     /// Full-screen preview: the floating tab bar (and panel) get out of the
     /// way so nothing but the collage is on screen.
     @Published var chromeHidden: Bool = false
+    /// Top edge of the open panel card in global coordinates (0 while
+    /// closed) — how much of the screen bottom the panel (and the keyboard
+    /// pushing it up) covers, for keeping an edited text box in view.
+    @Published var panelTopGlobalY: CGFloat = 0
     /// Live drag translation while the user is pulling the panel (+ = down).
     @Published var panelDrag: CGFloat = 0
     /// True while a pull is in progress.
@@ -1158,7 +1206,6 @@ class CollageState: ObservableObject {
         if r != .custom {
             canvasSize = r.canvasSize(base: 1024)
         }
-        dropFrameIfUnavailable()
         resetAllImagePositions()
         rebuildAllPages()
         saveRatio()
@@ -1171,7 +1218,6 @@ class CollageState: ObservableObject {
         let h = customUnit.toPx(hRaw)
         canvasSize = CGSize(width: max(100, min(6000, w)), height: max(100, min(6000, h)))
         ratio = .custom
-        dropFrameIfUnavailable()
         resetAllImagePositions()
         rebuildAllPages()
         saveRatio()

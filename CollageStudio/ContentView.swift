@@ -40,23 +40,20 @@ struct SavingOverlay: View {
     }
 }
 
-/// "OVERLAY" label floating above the tab pill: canvas touches currently
-/// edit the overlay, not the collage. Purely informational — touches pass
-/// through.
+/// Edge-to-edge strip above the tab pill: canvas touches currently edit
+/// the overlay, not the collage. Purely informational — touches pass through.
 struct OverlayModeLabel: View {
     var body: some View {
-        HStack(spacing: 5) {
+        HStack(spacing: 6) {
             Image(systemName: "sparkles")
                 .font(.system(size: 10, weight: .semibold))
-            Text("OVERLAY")
-                .font(.system(size: 10, weight: .bold, design: .monospaced))
-                .tracking(1.2)
+            Text("OVERLAY mode: zoom and rotate overlay")
+                .font(.system(size: 11, weight: .semibold))
         }
         .foregroundColor(.white)
-        .padding(.horizontal, 9)
-        .padding(.vertical, 5)
-        .background(Capsule().fill(Color.black.opacity(0.5)))
-        .fixedSize()
+        .frame(maxWidth: .infinity)
+        .padding(.vertical, 6)
+        .background(Color.black.opacity(0.5))
         .allowsHitTesting(false)
     }
 }
@@ -117,7 +114,7 @@ struct PageTabBar: View {
         guard state.pages.indices.contains(index) else { return }
         // Choosing a page from the top bar also dismisses the bottom panel.
         state.collapsePanel()
-        withAnimation(.easeInOut(duration: 0.15)) { state.currentPageIndex = index }
+        state.goToPage(index)
         #if canImport(UIKit)
         UISelectionFeedbackGenerator().selectionChanged()
         #endif
@@ -365,6 +362,9 @@ struct ContentView: View {
             VStack(spacing: 0) {
                 CanvasContainerView()
                     .frame(maxWidth: .infinity, maxHeight: .infinity)
+                    // The keyboard must not shrink the canvas (it slides up
+                    // to keep an edited text box in view instead).
+                    .ignoresSafeArea(.keyboard, edges: .bottom)
                     // Leave the tab pill's zone free so it never covers the
                     // collage; full-screen preview gives it back.
                     .padding(.bottom, state.hasAnyImages && !state.chromeHidden ? FloatingTabBar.zoneHeight : 0)
@@ -385,8 +385,15 @@ struct ContentView: View {
                         // Clipped at the pill's bottom edge, so it rises out
                         // of the toolbar instead of sliding past it.
                         BottomPanelView()
+                            .background(
+                                GeometryReader { g in
+                                    Color.clear.onChange(of: g.frame(in: .global).minY, initial: true) { _, y in
+                                        state.panelTopGlobalY = state.isPanelOpen ? y : 0
+                                    }
+                                }
+                            )
                             .padding(.horizontal, 10)
-                            .padding(.bottom, FloatingTabBar.zoneHeight - 8
+                            .padding(.bottom, FloatingTabBar.zoneHeight - FloatingTabBar.bottomMargin
                                      + (state.isPanelOpen && state.panelDrag == 0 ? FloatingTabBar.openLift : 0))
                             .animation(.easeInOut(duration: 0.25), value: state.isPanelOpen)
                             .offset(y: state.panelOffset)
@@ -402,7 +409,7 @@ struct ContentView: View {
                                         .frame(height: 140)
                                 }
                             }
-                            .padding(.bottom, 8)
+                            .padding(.bottom, FloatingTabBar.bottomMargin)
 
                         FloatingTabBar(merged: state.isPanelOpen && state.panelDrag == 0)
                             .panelChrome(state)
@@ -411,7 +418,7 @@ struct ContentView: View {
                             .overlay(alignment: .top) {
                                 if state.overlayModeActive && state.panelHiddenFraction > 0.5 {
                                     OverlayModeLabel()
-                                        .offset(y: -30)
+                                        .offset(y: -34)
                                         .transition(.opacity)
                                 }
                             }

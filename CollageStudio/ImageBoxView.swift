@@ -46,7 +46,9 @@ struct ImageBoxView: View {
                 .clipShape(RoundedRectangle(cornerRadius: state.cornerRadius * scale))
                 .overlay(
                     Group {
-                        if state.borderThickness > 0 {
+                        // Empty placeholders never take the global border —
+                        // they stay an intentional blank space.
+                        if state.borderThickness > 0, imgData?.isPlaceholder != true {
                             let lineWidth = CGFloat(state.borderThickness) * scale
                             if state.borderStyle.usesStamps {
                                 StampedBorderView(cornerRadius: state.cornerRadius * scale,
@@ -162,29 +164,30 @@ struct ImageBoxView: View {
                 // SEQUENCED after the long press instead (see below), and the
                 // popover itself lives on the canvas container.
                 .simultaneousGesture(replaceLongPressGesture)
-                // A single tap on a text box opens it for live editing.
+                // Double-tap resets this image; on a text box a single tap
+                // opens it for live editing instead (exclusive, so a double
+                // tap never also opens the editor). Simultaneous (not high
+                // priority) so it never delays the pan drag from starting.
                 // Zoom and rotate need two fingers, pan needs a drag, so a
                 // plain tap can't be mistaken for any of them.
                 .simultaneousGesture(
-                    TapGesture().onEnded {
-                        if imgData?.isText == true { state.beginEditText(id: imageId) }
-                    }
-                )
-                // Double-tap resets this image. Simultaneous (not high
-                // priority) so it never delays the pan drag from starting.
-                .simultaneousGesture(
-                    TapGesture(count: 2).onEnded {
-                        // Reset this image, and clear any transient
-                        // interaction flags so a double-tap always unfreezes
-                        // the page if a gesture ever left one stuck.
-                        state.clearInteractionLocks()
-                        withAnimation(.easeInOut(duration: 0.2)) {
-                            state.resetTransform(id: imageId)
+                    TapGesture(count: 2)
+                        .onEnded {
+                            // Reset this image, and clear any transient
+                            // interaction flags so a double-tap always
+                            // unfreezes the page if a gesture ever left one
+                            // stuck.
+                            state.clearInteractionLocks()
+                            withAnimation(.easeInOut(duration: 0.2)) {
+                                state.resetTransform(id: imageId)
+                            }
+                            #if canImport(UIKit)
+                            UIImpactFeedbackGenerator(style: .light).impactOccurred()
+                            #endif
                         }
-                        #if canImport(UIKit)
-                        UIImpactFeedbackGenerator(style: .light).impactOccurred()
-                        #endif
-                    }
+                        .exclusively(before: TapGesture().onEnded {
+                            if imgData?.isText == true { state.beginEditText(id: imageId) }
+                        })
                 )
                 // Drive the global "an image is being pinched" flag from the
                 // @GestureState — which always resets — so it can never stick

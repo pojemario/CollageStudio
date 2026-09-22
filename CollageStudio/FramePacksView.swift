@@ -1,13 +1,14 @@
 import SwiftUI
 
-/// Frames tab / sidebar section: a chip per frame collection — "Basic" (the
-/// adaptive frame sets that follow any format) plus every bundled frame pack —
-/// and the frames of the chosen collection below. One collection at a time
+/// Frames tab / sidebar section: a chip per bundled frame pack and the
+/// frames of the chosen pack below. (The "Basic" adaptive frame sets are
+/// still in the code but not offered here.) One collection at a time
 /// keeps the panel the same height no matter how many packs are bundled.
 struct FramesPanel: View {
     @EnvironmentObject var state: CollageState
-    /// nil shows the basic, format-independent frames.
-    @State private var selectedPackId: String? = nil
+    /// nil would show the basic, format-independent frames — hidden from
+    /// the picker for now, so a pack is always selected.
+    @State private var selectedPackId: String? = CollageState.framePacks.first?.id
 
     private var selectedPack: FramePack? {
         CollageState.framePacks.first { $0.id == selectedPackId }
@@ -17,7 +18,6 @@ struct FramesPanel: View {
         VStack(alignment: .leading, spacing: 10) {
             ScrollView(.horizontal, showsIndicators: false) {
                 HStack(spacing: 8) {
-                    PackChip(title: "Basic", isActive: selectedPackId == nil) { selectedPackId = nil }
                     ForEach(CollageState.framePacks) { pack in
                         PackChip(title: pack.title, isActive: selectedPackId == pack.id) {
                             selectedPackId = pack.id
@@ -30,8 +30,9 @@ struct FramesPanel: View {
         }
         .onAppear {
             // Open on the collection the current frame comes from.
-            if let frame = state.canvasFrame {
-                selectedPackId = CollageState.framePacks.first { $0.frames.contains(frame) }?.id
+            if let frame = state.canvasFrame,
+               let pack = CollageState.framePacks.first(where: { $0.frames.contains(frame) }) {
+                selectedPackId = pack.id
             }
         }
     }

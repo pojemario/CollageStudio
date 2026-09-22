@@ -343,12 +343,16 @@ struct RatioButton: View {
             }
             .frame(maxWidth: .infinity)
             .padding(.vertical, 9)
-            // White text on a dark fill so it stays readable over the very
-            // transparent glass panel.
-            .foregroundColor(.white)
+            // Selected: accent. Others: a touch darker than the backdrop
+            // with a hairline, so they read as buttons on the glass card.
+            .foregroundColor(isActive ? .white : .primary)
             .background(
                 RoundedRectangle(cornerRadius: 9)
-                    .fill(isActive ? Color.accentColor : Color.black.opacity(0.55))
+                    .fill(isActive ? Color.accentColor : Color.primary.opacity(0.06))
+            )
+            .overlay(
+                RoundedRectangle(cornerRadius: 9)
+                    .strokeBorder(Color.primary.opacity(isActive ? 0 : 0.18), lineWidth: 1)
             )
         }
         .buttonStyle(.plain)
@@ -362,13 +366,29 @@ struct EmbossedKnobThumb: View {
 
     var body: some View {
         Circle()
-            .fill(RadialGradient(colors: [Color(white: 0.99), Color(white: 0.87), Color(white: 0.66)],
+            .fill(RadialGradient(colors: [Color(white: 1.0), Color(white: 0.90), Color(white: 0.68)],
                                  center: UnitPoint(x: 0.35, y: 0.28),
                                  startRadius: 1,
                                  endRadius: size * 0.95))
+            // Glossy cap: a bright crescent of light across the upper half
+            .overlay(
+                Ellipse()
+                    .fill(LinearGradient(colors: [Color.white.opacity(0.95), Color.white.opacity(0)],
+                                         startPoint: .top, endPoint: .bottom))
+                    .frame(width: size * 0.7, height: size * 0.42)
+                    .offset(y: -size * 0.22)
+            )
+            // Small specular hot spot
+            .overlay(
+                Circle()
+                    .fill(Color.white)
+                    .frame(width: size * 0.16, height: size * 0.16)
+                    .blur(radius: 0.6)
+                    .offset(x: -size * 0.16, y: -size * 0.2)
+            )
             .overlay(
                 Circle().strokeBorder(
-                    LinearGradient(colors: [Color.white.opacity(0.95), Color(white: 0.45)],
+                    LinearGradient(colors: [Color.white.opacity(0.95), Color(white: 0.5)],
                                    startPoint: .topLeading, endPoint: .bottomTrailing),
                     lineWidth: 1)
             )
@@ -408,26 +428,21 @@ struct ModernSlider: View {
             ZStack(alignment: .leading) {
                 // Debossed metallic shell: pressed into the panel — dark upper
                 // edge with an inner shadow, bright lower lip catching light
+                // Soft shell: barely darker than the panel, no hard rim, so
+                // the track melts into the background.
                 Capsule()
                     .fill(
                         LinearGradient(colors: isDark
                                        ? [Color(white: 0.13), Color(white: 0.30)]
-                                       : [Color(white: 0.70), Color(white: 0.94)],
+                                       : [Color.black.opacity(0.10), Color.black.opacity(0.04)],
                                        startPoint: .top, endPoint: .bottom)
-                        .shadow(.inner(color: .black.opacity(isDark ? 0.7 : 0.45),
-                                       radius: 2, y: 1.5))
+                        .shadow(.inner(color: .black.opacity(isDark ? 0.7 : 0.16),
+                                       radius: 2, y: 1))
                     )
                     .overlay(
-                        Capsule().strokeBorder(
-                            LinearGradient(colors: isDark
-                                           ? [Color.black.opacity(0.8), Color.white.opacity(0.15)]
-                                           : [Color(white: 0.45), Color.white.opacity(0.95)],
-                                           startPoint: .top, endPoint: .bottom),
-                            lineWidth: 1)
+                        Capsule().strokeBorder(Color.black.opacity(isDark ? 0.5 : 0.06), lineWidth: 0.6)
                     )
-                    .frame(height: 22)
-                    // Light catching the bottom lip of the recess
-                    .shadow(color: .white.opacity(isDark ? 0.08 : 0.8), radius: 0.5, y: 1)
+                    .frame(height: 18)
 
                 // Recessed inner track — a subtle gray groove (not hard black)
                 // with a soft inner shadow for a gentle 3D dip
@@ -435,12 +450,12 @@ struct ModernSlider: View {
                     .fill(
                         LinearGradient(colors: isDark
                                        ? [Color(white: 0.22), Color(white: 0.32)]
-                                       : [Color(white: 0.52), Color(white: 0.66)],
+                                       : [Color.black.opacity(0.22), Color.black.opacity(0.12)],
                                        startPoint: .top, endPoint: .bottom)
-                        .shadow(.inner(color: .black.opacity(isDark ? 0.45 : 0.30),
+                        .shadow(.inner(color: .black.opacity(isDark ? 0.45 : 0.22),
                                        radius: 1, y: 1))
                     )
-                    .frame(height: 14)
+                    .frame(height: 11)
                     .padding(.horizontal, 4)
 
                 // Value fill inside the recess
@@ -516,8 +531,8 @@ struct LabeledSlider: View {
                          },
                          resetValue: resetValue)
             Text(String(format: format, value))
-                .font(.system(size: 14, design: .monospaced))
-                .foregroundColor(.accentColor)
+                .font(.system(size: 14, weight: .medium, design: .monospaced))
+                .foregroundColor(.primary.opacity(0.85))
                 .lineLimit(1)
                 .fixedSize()
                 .frame(width: 44, alignment: .center)
@@ -792,73 +807,8 @@ struct BorderPlacementRow: View {
     }
 }
 
-/// Tappable color circle that opens the system color picker in a popover:
-/// no background dimming, and the collage stays visible while the color
-/// updates live.
-/// A compact grid of large, curated color blocks for quick selection,
-/// shown above the full color picker.
-struct PalettePickerGrid: View {
-    @Binding var color: Color
-
-    private let palette: [Color] = [
-        .white,
-        Color(hex: "F5EFE6"),   // cream
-        Color(hex: "D9D9D9"),   // light gray
-        Color(hex: "9CAF88"),   // sage
-        Color(hex: "F3C8AB"),   // peach
-        Color(hex: "C96F4A"),   // terracotta
-        Color(hex: "D9A441"),   // mustard
-        Color(hex: "7C9CB0"),   // dusty blue
-        Color(hex: "2E3A59"),   // navy
-        Color(hex: "E8B4B8"),   // blush
-        Color(hex: "3A3A3A"),   // charcoal
-        .black,
-    ]
-
-    private let columns = [GridItem(.adaptive(minimum: 50), spacing: 10)]
-
-    var body: some View {
-        LazyVGrid(columns: columns, spacing: 10) {
-            ForEach(palette.indices, id: \.self) { i in
-                let c = palette[i]
-                Button {
-                    color = c
-                } label: {
-                    RoundedRectangle(cornerRadius: 10, style: .continuous)
-                        .fill(c)
-                        .frame(height: 50)
-                        .overlay(
-                            RoundedRectangle(cornerRadius: 10, style: .continuous)
-                                .strokeBorder(Color.primary.opacity(0.15), lineWidth: 1)
-                        )
-                        .overlay {
-                            if isSelected(c) {
-                                Image(systemName: "checkmark")
-                                    .font(.system(size: 15, weight: .bold))
-                                    .foregroundStyle(.white)
-                                    .shadow(color: .black.opacity(0.5), radius: 1)
-                            }
-                        }
-                }
-                .buttonStyle(.plain)
-            }
-        }
-    }
-
-    /// Rough equality so the current color shows a checkmark.
-    private func isSelected(_ c: Color) -> Bool {
-        #if canImport(UIKit)
-        var r1: CGFloat = 0, g1: CGFloat = 0, b1: CGFloat = 0, a1: CGFloat = 0
-        var r2: CGFloat = 0, g2: CGFloat = 0, b2: CGFloat = 0, a2: CGFloat = 0
-        UIColor(c).getRed(&r1, green: &g1, blue: &b1, alpha: &a1)
-        UIColor(color).getRed(&r2, green: &g2, blue: &b2, alpha: &a2)
-        return abs(r1 - r2) < 0.02 && abs(g1 - g2) < 0.02 && abs(b1 - b2) < 0.02
-        #else
-        return false
-        #endif
-    }
-}
-
+/// Tappable color circle that opens the system color picker in a sheet
+/// from the bottom of the screen; the sheet closes on the first pick.
 struct ColorSwatchButton: View {
     @Binding var color: Color
     var supportsOpacity: Bool = true
@@ -928,8 +878,10 @@ struct ColorSwatchButton: View {
             .frame(width: size, height: size)
         }
         .buttonStyle(.plain)
-        .popover(isPresented: $showPicker, arrowEdge: .bottom) {
-            VStack(spacing: 12) {
+        // The system picker rides up from the bottom, over the panel, and
+        // closes as soon as a color is picked.
+        .sheet(isPresented: $showPicker) {
+            VStack(spacing: 0) {
                 if let presetTitle, let presetColor {
                     Button {
                         color = presetColor()
@@ -938,22 +890,19 @@ struct ColorSwatchButton: View {
                         Label(presetTitle, systemImage: "circle.lefthalf.filled")
                             .font(.subheadline.weight(.medium))
                             .frame(maxWidth: .infinity)
-                            .padding(.vertical, 8)
-                            .background(RoundedRectangle(cornerRadius: 8).fill(Color(.systemFill)))
+                            .padding(.vertical, 9)
+                            .background(RoundedRectangle(cornerRadius: 10).fill(Color(.systemFill)))
                     }
                     .buttonStyle(.plain)
+                    .padding(.horizontal, 16)
+                    .padding(.top, 14)
                 }
-                // Quick big-block palette — a few curated colors.
-                PalettePickerGrid(color: $color)
                 UIKitColorPicker(color: $color, supportsAlpha: supportsOpacity) {
-                    // Double-selecting the same color commits and closes
                     showPicker = false
                 }
             }
-            // Even padding around the whole dialog on every side.
-            .padding(14)
-            .frame(width: 300, height: presetTitle == nil ? 470 : 510)
-            .presentationCompactAdaptation(.popover)
+            .presentationDetents([.medium, .large])
+            .presentationDragIndicator(.visible)
         }
         .alert(lockedMessage ?? "", isPresented: $showLockedAlert) {
             Button("OK", role: .cancel) {}
@@ -987,8 +936,7 @@ struct CheckerboardSwatch: View {
 struct UIKitColorPicker: UIViewControllerRepresentable {
     @Binding var color: Color
     let supportsAlpha: Bool
-    /// Called when the user re-selects the currently selected color (a
-    /// double-tap on the same swatch), to commit and dismiss.
+    /// Called on every discrete pick, to commit and dismiss.
     var onCommit: (() -> Void)? = nil
 
     func makeUIViewController(context: Context) -> UIColorPickerViewController {
@@ -1013,8 +961,6 @@ struct UIKitColorPicker: UIViewControllerRepresentable {
     class Coordinator: NSObject, UIColorPickerViewControllerDelegate {
         var parent: UIKitColorPicker
         var isPicking = false
-        private var lastColor: UIColor?
-        private var lastSelectTime: Date?
 
         init(_ parent: UIKitColorPicker) { self.parent = parent }
 
@@ -1025,18 +971,9 @@ struct UIKitColorPicker: UIViewControllerRepresentable {
             parent.color = Color(color)
             if !continuously {
                 isPicking = false
-                // A discrete re-selection of the same color within a short
-                // window = double-tap → commit and close.
-                let now = Date()
-                if let last = lastColor, last == color,
-                   let t = lastSelectTime, now.timeIntervalSince(t) < 0.5 {
-                    lastColor = nil
-                    lastSelectTime = nil
-                    parent.onCommit?()
-                } else {
-                    lastColor = color
-                    lastSelectTime = now
-                }
+                // A discrete pick (a tap on a swatch, or the end of a drag)
+                // commits and closes the sheet.
+                parent.onCommit?()
             }
         }
     }
@@ -1152,6 +1089,7 @@ struct SpreadMenuButton: View {
             .foregroundColor(.primary)
             .background(Color(.systemFill))
             .cornerRadius(10)
+            .overlay(RoundedRectangle(cornerRadius: 10).strokeBorder(Color.primary.opacity(0.18), lineWidth: 1))
         }
         .buttonStyle(.plain)
         .disabled(state.totalImageCount < 2)
@@ -1218,6 +1156,12 @@ struct ActionButton: View {
             .foregroundColor(isPrimary ? .white : .primary)
             .background(isPrimary ? Color.accentColor : Color(.systemFill))
             .cornerRadius(10)
+            // Uncolored buttons get a hairline so they read as buttons on
+            // the glass panel.
+            .overlay(
+                RoundedRectangle(cornerRadius: 10)
+                    .strokeBorder(Color.primary.opacity(isPrimary ? 0 : 0.18), lineWidth: 1)
+            )
         }
         .buttonStyle(.plain)
     }
@@ -1400,7 +1344,7 @@ struct PageGroupsView: View {
         )
         .contentShape(Rectangle())
         .onTapGesture {
-            state.currentPageIndex = pi
+            state.goToPage(pi)
         }
         // Accept a thumbnail dropped from another page row
         .dropDestination(for: String.self) { items, _ in

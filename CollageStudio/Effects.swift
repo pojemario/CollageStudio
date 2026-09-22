@@ -8,8 +8,9 @@ import CoreImage.CIFilterBuiltins
 
 // MARK: - Tone (per-pixel color adjustments)
 
-/// The effects that are pure color math — B&W, sepia and the contrast side
-/// of fade — applied to the collage and to its background color alike.
+/// The effects that are pure color math — B&W and the contrast side of
+/// fade (negative fade adds contrast and saturation instead) — applied to
+/// the collage and to its background color alike.
 struct EffectToning: ViewModifier {
     @ObservedObject var state: CollageState
     let enabled: Bool
@@ -17,13 +18,11 @@ struct EffectToning: ViewModifier {
     func body(content: Content) -> some View {
         let fade = enabled ? state.effectAmount(.fade) : 0
         let bw = enabled ? state.effectAmount(.blackWhite) : 0
-        let sepia = enabled ? state.effectAmount(.sepia) : 0
         content
-            .grayscale(min(1, bw + sepia * 0.9))
-            .colorMultiply(Color(red: 1, green: 1 - 0.14 * sepia, blue: 1 - 0.36 * sepia))
-            .saturation(1 - 0.25 * fade)
-            .contrast(1 - 0.24 * fade)
-            .brightness(0.03 * fade + 0.05 * sepia)
+            .grayscale(bw)
+            .saturation(1 - 0.4 * fade)
+            .contrast(1 - 0.45 * fade)
+            .brightness(0.06 * fade)
     }
 }
 
@@ -46,7 +45,7 @@ struct EffectLayers: View {
         ZStack {
             // Fade: a screened haze lifts the blacks into a matte gray.
             if fade > 0 {
-                Color(white: 0.2 * fade).blendMode(.screen)
+                Color(white: 0.34 * fade).blendMode(.screen)
             }
             if glow > 0, let map = maps.glow {
                 mapLayer(map).opacity(glow).blendMode(.screen)
@@ -55,9 +54,12 @@ struct EffectLayers: View {
                 mapLayer(map).opacity(halation).blendMode(.screen)
             }
             if vignette > 0 {
-                RadialGradient(colors: [.clear, .black.opacity(0.85 * vignette)],
+                // Starts closer to the center and goes fully dark at the
+                // corners when maxed.
+                RadialGradient(colors: [.clear, .black.opacity(0.5 * vignette), .black.opacity(1.0 * vignette)],
                                center: .center,
-                               startRadius: longEdge * 0.30, endRadius: longEdge * 0.74)
+                               startRadius: longEdge * (0.30 - 0.12 * vignette),
+                               endRadius: longEdge * 0.68)
             }
             if grain > 0, let texture = PlatformImage.named("EffectGrain") {
                 mapLayer(texture).opacity(0.75 * grain).blendMode(.overlay)
@@ -149,8 +151,7 @@ final class EffectMaps: ObservableObject {
 
 // MARK: - Effects tab / sidebar section
 
-/// One intensity slider per effect (double-tap a value to zero it) plus a
-/// reset for the whole set.
+/// One intensity slider per effect (double-tap a label or value to zero it).
 struct EffectsPanel: View {
     @EnvironmentObject var state: CollageState
 
@@ -161,9 +162,10 @@ struct EffectsPanel: View {
                               value: Binding(
                                 get: { state.effects[effect] ?? 0 },
                                 set: { state.effects[effect] = $0 }),
-                              range: 0...100, step: 1, format: "%.0f", resetValue: 0)
+                              range: effect.range, step: 1, format: "%.0f", resetValue: 0)
             }
-            HStack {
+            HStack(spacing: 8) {
+                EffectShuffleButton().panelChrome(state, keep: "Shuffle")
                 Spacer()
                 ActionButton(label: "Reset", sf: "arrow.counterclockwise", fillWidth: false) {
                     state.resetEffects()
@@ -173,5 +175,70 @@ struct EffectsPanel: View {
                 .panelChrome(state)
             }
         }
+    }
+}
+
+/// Shuffle for the Effects tab, styled like the Layout one: the left segment
+/// randomizes the chosen effects, the gear picks which ones (all by default).
+struct EffectShuffleButton: View {
+    @EnvironmentObject var state: CollageState
+    @State private var showOptions = false
+
+    var body: some View {
+        HStack(spacing: 0) {
+            Button { state.shuffleEffects() } label: {
+                Label("Shuffle", systemImage: "dice")
+                    .font(.footnote.weight(.medium))
+                    .lineLimit(1)
+                    .padding(.horizontal, 14)
+                    .frame(maxHeight: .infinity)
+                    .contentShape(Rectangle())
+            }
+            .buttonStyle(.plain)
+
+            Rectangle()
+                .fill(Color.white.opacity(0.35))
+                .frame(width: 1)
+                .padding(.vertical, 8)
+
+            Button { showOptions = true } label: {
+                Image(systemName: "gearshape.fill")
+                    .font(.system(size: 14, weight: .semibold))
+                    .padding(.horizontal, 10)
+                    .frame(maxHeight: .infinity)
+                    .contentShape(Rectangle())
+            }
+            .buttonStyle(.plain)
+            .popover(isPresented: $showOptions, arrowEdge: .bottom) {
+                VStack(alignment: .leading, spacing: 2) {
+                    Text("What to shuffle")
+                        .font(.caption.weight(.semibold))
+                        .foregroundColor(.secondary)
+                        .padding(.horizontal, 12)
+                        .padding(.top, 10)
+                        .padding(.bottom, 4)
+                    ForEach(CollageEffect.allCases) { effect in
+                        Toggle(effect.title, isOn: Binding(
+                            get: { state.effectShuffleOptions.contains(effect) },
+                            set: { on in
+                                if on { state.effectShuffleOptions.insert(effect) }
+                                else { state.effectShuffleOptions.remove(effect) }
+                            }))
+                            .toggleStyle(.switch)
+                            .font(.subheadline)
+                            .padding(.horizontal, 12)
+                            .padding(.vertical, 4)
+                    }
+                }
+                .padding(.bottom, 8)
+                .frame(width: 230)
+                .foregroundColor(.primary)
+                .presentationCompactAdaptation(.popover)
+            }
+        }
+        .foregroundColor(.white)
+        .frame(height: 38)
+        .background(Color.accentColor)
+        .cornerRadius(10)
     }
 }

@@ -20,15 +20,20 @@ struct CollageGridView_Grid: View {
             let canvasSize = geo.size
             let gap = state.gap * scale
             let resolvedFrame = state.resolvedFrame()
-            // Ratio-mismatch fallback: the square 1:1 frame is scaled so the
-            // complete canvas fits inside it (side = longer canvas edge,
-            // centered). Its overflow on the short axis is clipped off-canvas,
-            // so the frame's baked-in margins only apply where its border is
-            // actually visible.
-            let isSquareFallback = resolvedFrame?.isSquareFallback == true
-            let frameSide = max(canvasSize.width, canvasSize.height)
-            let overflowX = isSquareFallback ? (frameSide - canvasSize.width) / 2 : 0
-            let overflowY = isSquareFallback ? (frameSide - canvasSize.height) / 2 : 0
+            // The canvas ratio always wins: a frame keeps its own proportions
+            // and is scaled, undistorted, to COVER the canvas (centered). On a
+            // ratio mismatch its overflow on the longer axis is clipped
+            // off-canvas, so the frame's baked-in margins only apply where
+            // its border is actually visible.
+            let frameDrawSize: CGSize = {
+                guard let img = resolvedFrame?.image, img.size.width > 0, img.size.height > 0 else {
+                    return canvasSize
+                }
+                let k = max(canvasSize.width / img.size.width, canvasSize.height / img.size.height)
+                return CGSize(width: img.size.width * k, height: img.size.height * k)
+            }()
+            let overflowX = max(0, (frameDrawSize.width - canvasSize.width) / 2)
+            let overflowY = max(0, (frameDrawSize.height - canvasSize.height) / 2)
             // Effective margins: the frame's built-in minimums (reduced by any
             // off-canvas overflow).
             let base = state.frameBaseMargins
@@ -55,6 +60,15 @@ struct CollageGridView_Grid: View {
                 // the user-chosen collage background applies.
                 if cols.isEmpty {
                     Color.clear
+                } else if resolvedFrame != nil {
+                    // With a frame on, the collage background only fills the
+                    // frame's window; everything outside it is plain white
+                    // under the frame image.
+                    Color.white
+                    state.backgroundColor
+                        .modifier(EffectToning(state: state, enabled: decorated))
+                        .frame(width: contentSize.width, height: contentSize.height)
+                        .offset(x: (insetL - insetR) / 2, y: (insetT - insetB) / 2)
                 } else {
                     state.backgroundColor
                         .modifier(EffectToning(state: state, enabled: decorated))
@@ -76,6 +90,10 @@ struct CollageGridView_Grid: View {
                     .scaleEffect(marginScale)
                     // Tilt the whole collage within the canvas
                     .rotationEffect(.degrees(state.canvasRotation))
+                    // With a frame on, nothing may show outside its window —
+                    // a rotated or zoomed collage is clipped to it.
+                    .frame(width: contentSize.width, height: contentSize.height)
+                    .clipped(active: resolvedFrame != nil)
                     // Asymmetric margins shift the content block off-center
                     .offset(x: (insetL - insetR) / 2, y: (insetT - insetB) / 2)
                     .modifier(EffectToning(state: state, enabled: decorated))
@@ -87,14 +105,10 @@ struct CollageGridView_Grid: View {
 
                         overlayLayers(aboveFrame: false, canvasSize: canvasSize)
 
-                        // Decorative PNG frame. Exact-ratio frames cover the
-                        // canvas; the square fallback is drawn undistorted at the
-                        // longer canvas edge, centered, cropped by the canvas.
+                        // Decorative PNG frame, undistorted, covering the
+                        // canvas, centered, cropped by the canvas.
                         if let resolvedFrame {
-                            frameOverlay(image: resolvedFrame.image,
-                                         size: isSquareFallback
-                                             ? CGSize(width: frameSide, height: frameSide)
-                                             : canvasSize)
+                            frameOverlay(image: resolvedFrame.image, size: frameDrawSize)
                         }
 
                         overlayLayers(aboveFrame: true, canvasSize: canvasSize)
@@ -175,17 +189,23 @@ struct CollageGridView_Grid: View {
     /// Invisible surface covering the canvas in overlay mode. It swallows
     /// every touch meant for the collage; drag moves the edited overlay,
     /// pinch zooms and rotates it, and a double tap resets its placement.
-    /// The first touch also whisks the panel away so the canvas is in view.
+    /// The first touch whisks the panel away so the canvas is in view; it
+    /// returns a second after the gesture ends.
     private var overlayGestureSurface: some View {
         Color.clear
             .contentShape(Rectangle())
+            // Every gesture also drives the panel: away while it runs, back
+            // a second after it ends (the touch watcher below covers the
+            // rest, but two-finger gestures don't always reach it).
             .gesture(
                 DragGesture(minimumDistance: 2)
                     .updating($overlayDrag) { value, drag, _ in
                         drag = value.translation
                     }
+                    .onChanged { _ in state.beginOverlayGesture() }
                     .onEnded { value in
                         defer { overlayDragTainted = false }
+                        state.endOverlayGesture()
                         guard !overlayDragTainted, !overlayPinching else { return }
                         state.transformEditedOverlay(
                             translation: CGSize(width: value.translation.width / scale,
@@ -194,7 +214,10 @@ struct CollageGridView_Grid: View {
             )
             .simultaneousGesture(
                 SimultaneousGesture(MagnificationGesture(), RotationGesture())
-                    .onChanged { _ in overlayDragTainted = true }
+                    .onChanged { _ in
+                        overlayDragTainted = true
+                        state.beginOverlayGesture()
+                    }
                     .updating($overlayPinching) { _, pinching, _ in pinching = true }
                     .updating($overlayPinchScale) { value, zoom, _ in
                         if let m = value.first { zoom = m }
@@ -203,6 +226,7 @@ struct CollageGridView_Grid: View {
                         if let a = value.second { angle = a }
                     }
                     .onEnded { value in
+                        state.endOverlayGesture()
                         state.transformEditedOverlay(scaleBy: value.first ?? 1,
                                                      rotateBy: CGFloat((value.second ?? .zero).radians))
                     }
@@ -215,19 +239,21 @@ struct CollageGridView_Grid: View {
                     #endif
                 }
             )
-            // Touch-down watcher: fires the moment a finger lands.
+            // Touch watcher: hides the panel the moment a finger lands and
+            // brings it back a second after the last finger lifts.
             .simultaneousGesture(
                 DragGesture(minimumDistance: 0)
                     .updating($overlayTouching) { _, touching, _ in
                         guard !touching else { return }
                         touching = true
                         DispatchQueue.main.async {
-                            state.collapsePanel(animated: false)
+                            state.beginOverlayGesture()
                             // A fresh touch starts clean — a pinch that ended
                             // without its stray drag must not block this one.
                             if !overlayPinching { overlayDragTainted = false }
                         }
                     }
+                    .onEnded { _ in state.endOverlayGesture() }
             )
     }
 
@@ -439,5 +465,12 @@ private struct BoxResizeHandle: View {
                 }
                 .onEnded { _ in state.endResize() }
         )
+    }
+}
+
+private extension View {
+    @ViewBuilder
+    func clipped(active: Bool) -> some View {
+        if active { self.clipped() } else { self }
     }
 }

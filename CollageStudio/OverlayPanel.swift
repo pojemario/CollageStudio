@@ -36,12 +36,6 @@ struct OverlayPanel: View {
                 if let pack = selectedPack {
                     textureRow(pack: pack)
                 }
-
-                layerRow
-
-                if let preview = state.overlayPreview {
-                    previewBar(preview)
-                }
             }
             .panelChrome(state)
 
@@ -49,6 +43,8 @@ struct OverlayPanel: View {
                 LabeledSlider(label: "Opacity", value: binding(for: layer.id, \.opacity),
                               range: 0...100, step: 1, format: "%.0f", resetValue: 100)
             }
+
+            layerRow.panelChrome(state)
         }
         .animation(.easeInOut(duration: 0.2), value: state.overlayPreview?.id)
         .onAppear {
@@ -67,64 +63,60 @@ struct OverlayPanel: View {
         }
     }
 
-    // MARK: - Textures (tap to preview)
+    // MARK: - Textures (tap to preview; the previewed one carries a "+"
+    // badge that adds it as a layer)
 
     private func textureRow(pack: OverlayPack) -> some View {
         ScrollView(.horizontal, showsIndicators: false) {
             HStack(alignment: .top, spacing: 10) {
                 ForEach(pack.assets, id: \.self) { asset in
                     let isPreviewed = state.overlayPreview?.asset == asset
-                    Button {
-                        state.previewOverlay(asset: asset, kind: pack.kind)
-                    } label: {
-                        VStack(spacing: 4) {
-                            OverlayThumbnail(asset: asset, height: 72)
-                                .padding(2)
-                                .overlay(
-                                    RoundedRectangle(cornerRadius: 8)
-                                        .stroke(isPreviewed ? Color.accentColor : .clear, lineWidth: 2)
-                                )
-                            Text(OverlayPack.label(forAsset: asset))
-                                .font(.caption2)
-                                .foregroundColor(isPreviewed ? .accentColor : .secondary)
-                        }
+                    VStack(spacing: 5) {
+                        OverlayThumbnail(asset: asset, height: 72)
+                            .padding(2)
+                            .overlay(
+                                RoundedRectangle(cornerRadius: 8)
+                                    .stroke(isPreviewed ? Color.accentColor : .clear, lineWidth: 3)
+                            )
+                            .shadow(color: isPreviewed ? Color.accentColor.opacity(0.5) : .clear, radius: 6)
+                            .contentShape(Rectangle())
+                            .onTapGesture {
+                                state.previewOverlay(asset: asset, kind: pack.kind)
+                            }
+                            // Previewed: a "+" badge at the bottom edge adds
+                            // the layer.
+                            .overlay(alignment: .bottom) {
+                                if isPreviewed {
+                                    Button {
+                                        #if canImport(UIKit)
+                                        UIImpactFeedbackGenerator(style: .light).impactOccurred()
+                                        #endif
+                                        state.commitOverlayPreview()
+                                    } label: {
+                                        Image(systemName: "plus")
+                                            .font(.system(size: 13, weight: .bold))
+                                            .foregroundColor(.white)
+                                            .frame(width: 26, height: 26)
+                                            .background(Circle().fill(Color.accentColor))
+                                            .overlay(Circle().strokeBorder(Color.white, lineWidth: 2))
+                                            .shadow(color: .black.opacity(0.3), radius: 3, y: 1)
+                                    }
+                                    .buttonStyle(.plain)
+                                    .offset(y: 10)
+                                    .transition(.scale.combined(with: .opacity))
+                                }
+                            }
+                        Text(OverlayPack.label(forAsset: asset))
+                            .font(.system(size: 11, weight: isPreviewed ? .bold : .regular))
+                            .foregroundColor(isPreviewed ? .accentColor : .primary.opacity(0.75))
+                            .padding(.top, isPreviewed ? 8 : 0)
                     }
-                    .buttonStyle(.plain)
                 }
             }
+            .padding(.bottom, 2)
         }
         .disabled(!state.canAddOverlay)
         .opacity(state.canAddOverlay ? 1 : 0.4)
-    }
-
-    // MARK: - Preview bar (confirm the texture being tried; tapping its
-    // thumbnail again or leaving the tab dismisses it)
-
-    private func previewBar(_ preview: OverlayLayer) -> some View {
-        HStack(spacing: 8) {
-            Image(systemName: "eye")
-                .font(.system(size: 15, weight: .medium))
-            Spacer(minLength: 4)
-            Button {
-                #if canImport(UIKit)
-                UIImpactFeedbackGenerator(style: .light).impactOccurred()
-                #endif
-                state.commitOverlayPreview()
-            } label: {
-                Label("Layer", systemImage: "plus")
-                    .font(.system(size: 13, weight: .semibold))
-                    .padding(.horizontal, 12)
-                    .padding(.vertical, 7)
-                    .background(Capsule().fill(Color.accentColor))
-            }
-            .buttonStyle(.plain)
-        }
-        .foregroundColor(.white)
-        .padding(.leading, 12)
-        .padding(.trailing, 6)
-        .padding(.vertical, 6)
-        .background(RoundedRectangle(cornerRadius: 12).fill(Color.black.opacity(0.55)))
-        .transition(.opacity)
     }
 
     // MARK: - Layer stack
