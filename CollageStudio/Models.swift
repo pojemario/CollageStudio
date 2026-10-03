@@ -591,6 +591,7 @@ struct OverlayLayer: Identifiable, Equatable {
 /// top, untouched.
 enum CollageEffect: String, CaseIterable, Identifiable {
     case temperature = "Temperature" // + warmer, − cooler
+    case tint = "Tint"              // + magenta, − green
     case brightness = "Brightness"
     case contrast = "Contrast"
     case clarity = "Clarity"        // + local (micro) contrast, − softer
@@ -605,15 +606,27 @@ enum CollageEffect: String, CaseIterable, Identifiable {
     var title: String { rawValue }
 
     /// Basic corrections, on the Edit page.
-    static let adjustments: [CollageEffect] = [.temperature, .brightness, .contrast, .clarity, .sharpness]
+    static let adjustments: [CollageEffect] = [.temperature, .tint, .brightness, .contrast, .clarity, .sharpness]
     /// Looks, on the Effects page (and what Shuffle can touch).
     static let looks: [CollageEffect] = allCases.filter { !adjustments.contains($0) }
+
+    /// Slider track colors showing which way the slider pushes, if any.
+    var trackColors: [Color]? {
+        switch self {
+        case .temperature:
+            return [Color(red: 0.25, green: 0.5, blue: 1), Color(white: 0.85), Color(red: 1, green: 0.62, blue: 0.15)]
+        case .tint:
+            return [Color(red: 0.3, green: 0.8, blue: 0.3), Color(white: 0.85), Color(red: 0.9, green: 0.3, blue: 0.8)]
+        default:
+            return nil
+        }
+    }
 
     /// Most corrections and fade run both ways (negative fade = punchier
     /// contrast).
     var range: ClosedRange<Double> {
         switch self {
-        case .temperature, .brightness, .contrast, .clarity, .fade: return -100...100
+        case .temperature, .tint, .brightness, .contrast, .clarity, .fade: return -100...100
         default: return 0...100
         }
     }
@@ -636,17 +649,24 @@ struct ContentGrade: Hashable {
 
 /// The eight color ranges the HSL panel adjusts, by center hue.
 enum HSLBand: String, CaseIterable, Identifiable {
+    /// Not a color range: shifts the whole image (every hue, all of the
+    /// saturation, the full tonal range including grays), on top of the
+    /// per-color shifts.
+    case master = "Master"
     case red = "Red", orange = "Orange", yellow = "Yellow", green = "Green"
     case aqua = "Aqua", blue = "Blue", purple = "Purple", magenta = "Magenta"
 
     var id: String { rawValue }
     var title: String { rawValue }
 
+    /// The eight color ranges, by hue (everything but Master).
+    static let colors: [HSLBand] = allCases.filter { $0 != .master }
+
     /// Center hue in degrees. Spacing is uneven on purpose (like Lightroom):
     /// the warm tones that matter most for skin get the narrow bands.
     var hue: Double {
         switch self {
-        case .red: return 0
+        case .master, .red: return 0
         case .orange: return 30
         case .yellow: return 60
         case .green: return 120
@@ -660,9 +680,10 @@ enum HSLBand: String, CaseIterable, Identifiable {
     var swatch: Color { Color(hue: hue / 360, saturation: 0.85, brightness: 0.95) }
 
     /// What the Hue slider turns this color into, from −100 to +100 (the
-    /// grader shifts by up to ±30°).
-    var hueSweep: [Color] {
-        stride(from: -30.0, through: 30.0, by: 7.5).map { d in
+    /// grader shifts by up to ±30°). None for Master, which turns every color.
+    var hueSweep: [Color]? {
+        guard self != .master else { return nil }
+        return stride(from: -30.0, through: 30.0, by: 7.5).map { d in
             let h = (hue + d + 360).truncatingRemainder(dividingBy: 360)
             return Color(hue: h / 360, saturation: 0.85, brightness: 0.95)
         }

@@ -41,6 +41,7 @@ struct EffectLayers: View {
 
     var body: some View {
         let temperature = state.effectAmount(.temperature)
+        let tint = state.effectAmount(.tint)
         let fade = state.effectAmount(.fade)
         let glow = state.effectAmount(.glow)
         let halation = state.effectAmount(.halation)
@@ -55,6 +56,13 @@ struct EffectLayers: View {
                 (temperature > 0 ? Color(red: 1, green: 0.55, blue: 0.12)
                                  : Color(red: 0.15, green: 0.45, blue: 1))
                     .opacity(0.65 * abs(temperature))
+                    .blendMode(.softLight)
+            }
+            // Tint: the same kind of wash on the green–magenta axis.
+            if tint != 0 {
+                (tint > 0 ? Color(red: 0.95, green: 0.2, blue: 0.75)
+                          : Color(red: 0.25, green: 0.85, blue: 0.3))
+                    .opacity(0.55 * abs(tint))
                     .blendMode(.softLight)
             }
             // Fade: a screened haze lifts the blacks into a matte gray.
@@ -233,11 +241,23 @@ enum HSLGrader {
     /// One sRGB color through the per-band shifts. A pixel's hue blends the
     /// two nearest bands; grays (low chroma) are left alone so neutral
     /// areas never pick up a tint.
+    /// Lightens toward white (+) or darkens toward black (−), by at most
+    /// half the way at ±1.
+    private static func shiftLuminance(_ l: Double, by d: Double) -> Double {
+        d >= 0 ? l + (1 - l) * d * 0.5 : l * (1 + d * 0.5)
+    }
+
     static func adjust(_ r: Double, _ g: Double, _ b: Double,
                        _ hsl: HSLAdjustments) -> (r: Double, g: Double, b: Double) {
         let maxC = max(r, g, b), minC = min(r, g, b)
         let chroma = maxC - minC
-        guard chroma > 0.0001 else { return (r, g, b) }
+        let master = hsl[.master]
+        guard chroma > 0.0001 else {
+            // Grays have no hue or saturation: only Master's luminance
+            // reaches them.
+            let l = shiftLuminance((maxC + minC) / 2, by: master.luminance / 100)
+            return (l, l, l)
+        }
 
         var l = (maxC + minC) / 2
         var s = chroma / (1 - abs(2 * l - 1))
@@ -249,7 +269,7 @@ enum HSLGrader {
         if h < 0 { h += 360 }
 
         // The two bands around this hue, blended smoothly.
-        let bands = HSLBand.allCases
+        let bands = HSLBand.colors
         var lower = bands[bands.count - 1], upper = bands[0]
         var lowerHue = lower.hue - 360, upperHue = upper.hue
         for (i, band) in bands.enumerated() where band.hue <= h {
@@ -269,7 +289,12 @@ enum HSLGrader {
 
         h = (h + dh * maxHueShift + 360).truncatingRemainder(dividingBy: 360)
         s = min(max(s * (1 + ds), 0), 1)
-        l = dl >= 0 ? l + (1 - l) * dl * 0.5 : l * (1 + dl * 0.5)
+        l = shiftLuminance(l, by: dl)
+
+        // Master, over the whole image.
+        h = (h + master.hue / 100 * maxHueShift + 360).truncatingRemainder(dividingBy: 360)
+        s = min(max(s * (1 + master.saturation / 100), 0), 1)
+        l = shiftLuminance(l, by: master.luminance / 100)
 
         // Back to RGB.
         let c2 = (1 - abs(2 * l - 1)) * s
@@ -355,7 +380,7 @@ struct EffectsPanel: View {
     @EnvironmentObject var state: CollageState
     enum Page: String, CaseIterable { case edit = "Edit", effects = "Effects", hsl = "HSL" }
     @State private var page: Page = .edit
-    @State private var band: HSLBand = .red
+    @State private var band: HSLBand = .master
 
     var body: some View {
         VStack(spacing: 10) {
@@ -381,7 +406,8 @@ struct EffectsPanel: View {
                           value: Binding(
                             get: { state.effects[effect] ?? 0 },
                             set: { state.effects[effect] = $0 }),
-                          range: effect.range, step: 1, format: "%.0f", resetValue: 0)
+                          range: effect.range, step: 1, format: "%.0f", resetValue: 0,
+                          trackColors: effect.trackColors)
         }
     }
 
@@ -426,8 +452,18 @@ struct EffectsPanel: View {
                 ForEach(HSLBand.allCases) { b in
                     Button { band = b } label: {
                         VStack(spacing: 3) {
-                            Circle()
-                                .fill(b.swatch)
+                            Group {
+                                if b == .master {
+                                    // A full color wheel: it touches every color.
+                                    Circle().fill(AngularGradient(
+                                        colors: stride(from: 0.0, through: 1.0, by: 1.0 / 12).map {
+                                            Color(hue: $0, saturation: 0.85, brightness: 0.95)
+                                        },
+                                        center: .center))
+                                } else {
+                                    Circle().fill(b.swatch)
+                                }
+                            }
                                 .frame(width: 24, height: 24)
                                 .padding(3)
                                 .overlay(Circle().stroke(band == b ? Color.primary : .clear, lineWidth: 2))

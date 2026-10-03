@@ -518,6 +518,7 @@ class CollageState: ObservableObject {
         for effect in effectShuffleOptions {
             switch effect {
             case .temperature: effects[effect] = Double(Int.random(in: -25...25))
+            case .tint:       effects[effect] = Double(Int.random(in: -15...15))
             case .clarity:    effects[effect] = Double(Int.random(in: 0...30))
             case .sharpness:  effects[effect] = Double(Int.random(in: 0...30))
             case .brightness: effects[effect] = Double(Int.random(in: -15...15))
