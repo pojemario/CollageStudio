@@ -38,7 +38,7 @@ struct FramesPanel: View {
     }
 }
 
-/// Capsule chip for choosing a pack in the Frames and Overlay panels.
+/// Chip for choosing a pack in the Frames and Overlay panels.
 struct PackChip: View {
     let title: String
     let isActive: Bool
@@ -51,12 +51,8 @@ struct PackChip: View {
                 .lineLimit(1)
                 .padding(.horizontal, 12)
                 .padding(.vertical, 7)
-                // White text on a dark fill so it stays readable over the very
-                // transparent glass panel.
-                .foregroundColor(.white)
-                .background(
-                    Capsule().fill(isActive ? Color.accentColor : Color.black.opacity(0.55))
-                )
+                .foregroundColor(isActive ? .white : .primary)
+                .appButtonBackground(prominent: isActive)
         }
         .buttonStyle(.plain)
     }

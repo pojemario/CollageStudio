@@ -370,18 +370,6 @@ struct EffectsPanel: View {
             LabeledSlider(label: "Luminance", value: shift(\.luminance),
                           range: -100...100, step: 1, format: "%.0f", resetValue: 0)
 
-            HStack(spacing: 8) {
-                Text(band.title)
-                    .font(.footnote.weight(.semibold))
-                    .foregroundColor(.secondary)
-                Spacer()
-                ActionButton(label: "Reset", sf: "arrow.counterclockwise", fillWidth: false) {
-                    state.resetHSL()
-                }
-                .disabled(state.hsl.isIdentity)
-                .opacity(state.hsl.isIdentity ? 0.5 : 1)
-            }
-            .panelChrome(state)
         }
     }
 
@@ -451,7 +439,6 @@ struct EffectShuffleButton: View {
         }
         .foregroundColor(.white)
         .frame(height: 38)
-        .background(Color.accentColor)
-        .cornerRadius(10)
+        .appButtonBackground(prominent: true)
     }
 }

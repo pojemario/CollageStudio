@@ -58,7 +58,7 @@ struct FloatingTabBar: View {
                     // glance over any canvas.
                     .background {
                         if active {
-                            let shape = RoundedRectangle(cornerRadius: Self.cornerRadius - 5, style: .continuous)
+                            let shape = RoundedRectangle(cornerRadius: ButtonStyleGuide.cornerRadius, style: .continuous)
                             shape
                                 .fill(LinearGradient(colors: [Color.accentColor.opacity(0.85), Color.accentColor],
                                                      startPoint: .top, endPoint: .bottom))
@@ -79,7 +79,7 @@ struct FloatingTabBar: View {
                 let shape = RoundedRectangle(cornerRadius: Self.cornerRadius, style: .continuous)
                 shape
                     .fill(.ultraThinMaterial)
-                    .overlay(shape.strokeBorder(Color.white.opacity(0.6), lineWidth: 0.8))
+                    .overlay(shape.strokeBorder(ColorManager.glassStroke, lineWidth: 0.8))
                     .shadow(color: .black.opacity(0.14), radius: 16, y: 6)
             }
         }
@@ -121,7 +121,6 @@ struct FloatingTabBar: View {
 /// sheet that rises above the tab pill.
 struct BottomPanelView: View {
     @EnvironmentObject var state: CollageState
-    @State private var photoItems: [PhotosPickerItem] = []
     @State private var showOneOnOneConfirm = false
     @State private var showBurstConfirm = false
     @State private var showBurstAllConfirm = false
@@ -179,7 +178,7 @@ struct BottomPanelView: View {
         .background {
             card
                 .fill(.ultraThinMaterial)
-                .overlay(card.strokeBorder(Color.white.opacity(0.55), lineWidth: 0.8))
+                .overlay(card.strokeBorder(ColorManager.glassStroke, lineWidth: 0.8))
                 .shadow(color: .black.opacity(0.12), radius: 18, y: 6)
                 .padding(.bottom, merged ? -(FloatingTabBar.zoneHeight - FloatingTabBar.bottomMargin + FloatingTabBar.openLift) : 0)
                 .animation(.easeInOut(duration: 0.25), value: merged)
@@ -197,9 +196,6 @@ struct BottomPanelView: View {
                     }
             }
         )
-        .onChange(of: photoItems) { _, items in
-            Task { await loadPhotos(items) }
-        }
     }
 
     // MARK: - Images tab
@@ -208,44 +204,15 @@ struct BottomPanelView: View {
         VStack(spacing: 10) {
             // Fixed button bar — does not scroll with the page list
             HStack(spacing: 8) {
-                PhotosPicker(selection: $photoItems, maxSelectionCount: 30, matching: .images) {
-                    Image(systemName: "photo.badge.plus")
-                        .font(.system(size: 17, weight: .medium))
-                        .frame(maxWidth: .infinity)
-                        .padding(.vertical, 10)
-                        .foregroundColor(.white)
-                        .background(Color.accentColor)
-                        .cornerRadius(10)
-                }
-                .buttonStyle(.plain)
-
-                // Adds a transparent placeholder — an intentional empty slot.
-                Button { state.addEmptyImage() } label: {
-                    Image(systemName: "rectangle.dashed.badge.record")
-                        .font(.system(size: 17, weight: .medium))
-                        .frame(maxWidth: .infinity)
-                        .padding(.vertical, 10)
-                        .foregroundColor(.white)
-                        .background(Color.accentColor)
-                        .cornerRadius(10)
-                }
-                .buttonStyle(.plain)
-
-                // Adds an editable text box rendered as an image.
-                Button { state.addTextImage() } label: {
-                    Image(systemName: "character.textbox")
-                        .font(.system(size: 17, weight: .medium))
-                        .frame(maxWidth: .infinity)
-                        .padding(.vertical, 10)
-                        .foregroundColor(.white)
-                        .background(Color.accentColor)
-                        .cornerRadius(10)
-                }
-                .buttonStyle(.plain)
-
-                ActionButton(label: "", sf: "doc.badge.plus") { state.addPage() }
+                ToolbarTile(sf: "doc.badge.plus", title: "Page") { state.addPage() }
                     .disabled(state.pages.count >= CollageState.maxPages)
                     .opacity(state.pages.count >= CollageState.maxPages ? 0.5 : 1)
+
+                // Adds an editable text box rendered as an image.
+                ToolbarTile(sf: "character.textbox", title: "Text") { state.addTextImage() }
+
+                // Adds a transparent placeholder — an intentional empty slot.
+                ToolbarTile(sf: "rectangle.dashed.badge.record", title: "Empty") { state.addEmptyImage() }
 
                 SpreadMenuButton(
                     onBurst: { showBurstConfirm = true },
@@ -253,7 +220,7 @@ struct BottomPanelView: View {
                     onAllOnOne: { showAllOnOneConfirm = true },
                     onBurstAll: { showBurstAllConfirm = true })
 
-                ActionButton(label: "", sf: "trash", fillWidth: false) { state.clear() }
+                ToolbarTile(sf: "trash", title: "Clear", prominent: false) { state.clear() }
             }
             .alert("Burst!", isPresented: $showBurstAllConfirm) {
                 Button("Proceed") { state.burstBalanced() }
@@ -313,11 +280,6 @@ struct BottomPanelView: View {
 
             LabeledSlider(label: "Rounding", value: $state.cornerRadius, range: 0...100, step: 1, format: "%.0f",
                           resetValue: 20, reservesSwatchSlot: true)
-                // The chain sits in this row's empty swatch slot, visually
-                // connecting the Background and Border color circles
-                .overlay(alignment: .trailing) {
-                    ColorLinkToggle().panelChrome(state)
-                }
 
             BorderStyleRow()
 
@@ -366,35 +328,6 @@ struct BottomPanelView: View {
 
     var effectsTab: some View {
         EffectsPanel()
-    }
-
-    // MARK: - Load photos
-
-    @MainActor
-    func loadPhotos(_ items: [PhotosPickerItem]) async {
-        guard !items.isEmpty else { return }
-        state.isBusy = true
-        state.isLoading = true
-        Task {
-            var loaded: [PlatformImage] = []
-            for item in items {
-                if let data = try? await item.loadTransferable(type: Data.self),
-                   let img = PlatformImage(data: data) {
-                    loaded.append(img)
-                }
-            }
-            // Generate proxies/thumbnails off the main thread
-            let images = loaded
-            let prepared = await Task.detached(priority: .userInitiated) {
-                images.map { CollageImage(image: $0) }
-            }.value
-            await MainActor.run {
-                state.addPreparedImages(prepared)
-                photoItems = []
-                state.isBusy = false
-                state.isLoading = false
-            }
-        }
     }
 }
 

@@ -10,7 +10,6 @@ struct CollageApp: App {
             ContentView()
                 // The backdrop and glass chrome are designed light; keep the
                 // system from flipping the text white in dark mode.
-                .preferredColorScheme(.light)
                 .environmentObject(state)
                 // Cap Dynamic Type scaling so the compact editor controls keep
                 // their designed proportions regardless of the device's system

@@ -46,11 +46,10 @@ struct TextEditPanel: View {
                 .lineLimit(1...4)
                 .focused($typing)
                 .font(.body)
-                .foregroundColor(.white)
-                .tint(.white)
+                .foregroundColor(.primary)
                 .padding(.horizontal, 10)
                 .padding(.vertical, 8)
-                .background(RoundedRectangle(cornerRadius: 10).fill(Color.black.opacity(0.45)))
+                .appButtonBackground(prominent: false)
 
             Button {
                 // First put the keyboard away, then leave text editing.
@@ -61,7 +60,7 @@ struct TextEditPanel: View {
                     .foregroundColor(.white)
                     .padding(.horizontal, 12)
                     .padding(.vertical, 9)
-                    .background(RoundedRectangle(cornerRadius: 10).fill(Color.accentColor))
+                    .appButtonBackground(prominent: true)
             }
             .buttonStyle(.plain)
         }
@@ -82,10 +81,8 @@ struct TextEditPanel: View {
                             .lineLimit(1)
                             .padding(.horizontal, 12)
                             .padding(.vertical, 7)
-                            .foregroundColor(.white)
-                            .background(
-                                Capsule().fill(isActive ? Color.accentColor : Color.black.opacity(0.55))
-                            )
+                            .foregroundColor(isActive ? .white : .primary)
+                            .appButtonBackground(prominent: isActive)
                     }
                     .buttonStyle(.plain)
                 }

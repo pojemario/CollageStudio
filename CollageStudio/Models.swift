@@ -363,6 +363,51 @@ struct PageStyle: Equatable {
     var linkBorderToBackground: Bool = true
 }
 
+extension PageStyle {
+    /// Plist form for UserDefaults (the last-used Layout settings).
+    var defaultsValue: [String: Any] {
+        ["numCols": numCols, "gap": gap, "cornerRadius": cornerRadius,
+         "backgroundColor": backgroundColor.srgbComponents,
+         "borderColor": borderColor.srgbComponents,
+         "borderThickness": borderThickness, "borderStyle": borderStyle.rawValue,
+         "borderPlacement": borderPlacement.rawValue,
+         "linkBorderToBackground": linkBorderToBackground]
+    }
+
+    /// Missing or malformed entries keep their defaults.
+    init(defaultsValue d: [String: Any]) {
+        self.init()
+        if let v = d["numCols"] as? Int { numCols = max(1, v) }
+        if let v = d["gap"] as? Double { gap = v }
+        if let v = d["cornerRadius"] as? Double { cornerRadius = v }
+        if let v = d["backgroundColor"] as? [Double], let c = Color(srgbComponents: v) { backgroundColor = c }
+        if let v = d["borderColor"] as? [Double], let c = Color(srgbComponents: v) { borderColor = c }
+        if let v = d["borderThickness"] as? Double { borderThickness = v }
+        if let v = d["borderStyle"] as? String, let s = BorderStyle(rawValue: v) { borderStyle = s }
+        if let v = d["borderPlacement"] as? String, let p = BorderPlacement(rawValue: v) { borderPlacement = p }
+        if let v = d["linkBorderToBackground"] as? Bool { linkBorderToBackground = v }
+    }
+}
+
+extension Color {
+    /// sRGB red, green, blue, alpha.
+    var srgbComponents: [Double] {
+        #if canImport(UIKit)
+        var r: CGFloat = 1, g: CGFloat = 1, b: CGFloat = 1, a: CGFloat = 1
+        _ = UIColor(self).getRed(&r, green: &g, blue: &b, alpha: &a)
+        return [r, g, b, a].map(Double.init)
+        #else
+        guard let c = NSColor(self).usingColorSpace(.sRGB) else { return [1, 1, 1, 1] }
+        return [c.redComponent, c.greenComponent, c.blueComponent, c.alphaComponent].map(Double.init)
+        #endif
+    }
+
+    init?(srgbComponents c: [Double]) {
+        guard c.count == 4 else { return nil }
+        self.init(.sRGB, red: c[0], green: c[1], blue: c[2], opacity: c[3])
+    }
+}
+
 /// One page of the collage document: its own images, ordering, layout and
 /// visual style.
 struct CollagePage: Identifiable {

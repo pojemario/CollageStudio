@@ -454,17 +454,34 @@ struct ImageBoxView: View {
 
 // MARK: - Box action menu (long-press popover)
 
-/// Replace / Move / Delete menu shown in a popover anchored at the pressed
-/// point on an image box. Mirrors the options of the old bottom dialog.
+/// Replace / Move / Delete menu: a floating card placed at the pressed point
+/// on an image box (see CanvasContainerView).
 struct BoxActionMenu: View {
     @EnvironmentObject var state: CollageState
     let imageId: UUID
 
-    var body: some View {
+    static let width: CGFloat = 230
+    private static let rowHeight: CGFloat = 44
+
+    private static func movablePages(_ state: CollageState, _ imageId: UUID) -> [Int] {
         let source = state.pageIndex(containing: imageId)
-        let movablePages = state.pages.indices.filter { pi in
+        return state.pages.indices.filter { pi in
             pi != source && state.pages[pi].images.count < CollageState.maxImagesPerPage
         }
+    }
+
+    /// Hugs the rows, but never taller than a comfortable menu. Static, so
+    /// the container can place the card before it's on screen.
+    static func height(state: CollageState, imageId: UUID) -> CGFloat {
+        let rows = 2 + movablePages(state, imageId).count
+            + (state.pages.count < CollageState.maxPages ? 1 : 0)
+        return min(CGFloat(rows) * rowHeight + 8, 320)
+    }
+
+    var body: some View {
+        let movablePages = Self.movablePages(state, imageId)
+        let height = Self.height(state: state, imageId: imageId)
+        let shape = RoundedRectangle(cornerRadius: ButtonStyleGuide.cornerRadius, style: .continuous)
 
         ScrollView {
             VStack(alignment: .leading, spacing: 0) {
@@ -492,10 +509,14 @@ struct BoxActionMenu: View {
                     dismissMenu()
                 }
             }
+            .padding(.vertical, 4)
         }
-        .frame(width: 220)
-        // Hug the content, but never grow taller than a comfortable popover.
-        .frame(maxHeight: min(CGFloat(3 + movablePages.count) * 44 + 8, 320))
+        .scrollBounceBehavior(.basedOnSize)
+        .frame(width: Self.width, height: height)
+        .background(.regularMaterial, in: shape)
+        .overlay(shape.strokeBorder(ColorManager.glassStroke, lineWidth: 0.8))
+        .clipShape(shape)
+        .shadow(color: .black.opacity(0.22), radius: 18, y: 8)
     }
 
     private func dismissMenu() {
@@ -506,10 +527,11 @@ struct BoxActionMenu: View {
     private func menuButton(_ title: String, sf: String, destructive: Bool = false,
                             action: @escaping () -> Void) -> some View {
         Button(action: action) {
-            HStack {
-                Text(title)
-                Spacer()
+            HStack(spacing: 12) {
                 Image(systemName: sf)
+                    .frame(width: 22)
+                Text(title)
+                Spacer(minLength: 0)
             }
             .font(.subheadline)
             .foregroundColor(destructive ? .red : .primary)

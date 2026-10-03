@@ -840,7 +840,9 @@ class CollageState: ObservableObject {
     /// Target images per page when auto-distributing a fresh batch.
     static let defaultImagesPerPage = 5
 
-    func addPreparedImages(_ prepared: [CollageImage]) {
+    /// Adds images to page `target` (default: the current page), spilling
+    /// onto new pages once it's full.
+    func addPreparedImages(_ prepared: [CollageImage], toPage target: Int? = nil) {
         let wasEmpty = pages.allSatisfy { $0.images.isEmpty }
 
         // Fresh collage: spread the batch across auto-created pages at
@@ -854,7 +856,7 @@ class CollageState: ObservableObject {
         }
 
         var remaining = prepared[...]
-        var pi = safePageIndex
+        var pi = target.flatMap { pages.indices.contains($0) ? $0 : nil } ?? safePageIndex
 
         while !remaining.isEmpty {
             let capacity = Self.maxImagesPerPage - pages[pi].images.count
@@ -1258,7 +1260,7 @@ class CollageState: ObservableObject {
     }
 
     func clear() {
-        pages = [CollagePage()]
+        pages = [CollagePage(style: currentPage.style)]
         currentPageIndex = 0
         imageFrames.removeAll()
         clearSwapDrag()
@@ -1302,15 +1304,39 @@ class CollageState: ObservableObject {
         static let customHeight = "customHeight"
         static let customUnit = "customUnit"
         static let shuffle = "shuffleOptions"
+        static let pageStyle = "lastPageStyle"
     }
 
     init() {
         restoreSettings()
         observeEffectSources()
+        observePageStyle()
+    }
+
+    /// The Layout settings last used — new collages start with them, so a
+    /// look (say, no border) sticks across launches.
+    private var rememberedPageStyle: PageStyle {
+        guard let d = UserDefaults.standard.dictionary(forKey: DefaultsKey.pageStyle) else { return PageStyle() }
+        return PageStyle(defaultsValue: d)
+    }
+    private var pageStyleSaver: AnyCancellable?
+
+    /// Saves the current page's style shortly after it settles.
+    private func observePageStyle() {
+        pageStyleSaver = $pages.combineLatest($currentPageIndex)
+            .map { pages, index in pages[min(max(index, 0), pages.count - 1)].style }
+            .removeDuplicates()
+            .debounce(for: .milliseconds(500), scheduler: RunLoop.main)
+            .sink { style in
+                UserDefaults.standard.set(style.defaultsValue, forKey: DefaultsKey.pageStyle)
+            }
     }
 
     private func restoreSettings() {
         let d = UserDefaults.standard
+
+        // Layout settings from last time
+        pages[0].style = rememberedPageStyle
 
         // Shuffle options
         if let raw = d.array(forKey: DefaultsKey.shuffle) as? [Bool], raw.count == 7 {

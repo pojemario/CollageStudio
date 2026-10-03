@@ -5,7 +5,6 @@ import PhotosUI
 
 struct SidebarView: View {
     @EnvironmentObject var state: CollageState
-    @State private var photoItems: [PhotosPickerItem] = []
     @State private var showingCustom = false
     @State private var showOneOnOneConfirm = false
     @State private var showBurstConfirm = false
@@ -29,9 +28,6 @@ struct SidebarView: View {
                 overlaySection
                 effectsSection
             }
-        }
-        .onChange(of: photoItems) { _, newItems in
-            loadPhotos(newItems)
         }
     }
 
@@ -68,44 +64,15 @@ struct SidebarView: View {
     var imagesSection: some View {
         SidebarSection(title: "Images") {
             HStack(spacing: 8) {
-                PhotosPicker(selection: $photoItems, maxSelectionCount: 30, matching: .images) {
-                    Image(systemName: "photo.badge.plus")
-                        .font(.system(size: 17, weight: .medium))
-                        .frame(maxWidth: .infinity)
-                        .padding(.vertical, 10)
-                        .foregroundColor(.white)
-                        .background(Color.accentColor)
-                        .cornerRadius(10)
-                }
-                .buttonStyle(.plain)
-
-                // Adds a transparent placeholder — an intentional empty slot.
-                Button { state.addEmptyImage() } label: {
-                    Image(systemName: "rectangle.dashed.badge.record")
-                        .font(.system(size: 17, weight: .medium))
-                        .frame(maxWidth: .infinity)
-                        .padding(.vertical, 10)
-                        .foregroundColor(.white)
-                        .background(Color.accentColor)
-                        .cornerRadius(10)
-                }
-                .buttonStyle(.plain)
-
-                // Adds an editable text box rendered as an image.
-                Button { state.addTextImage() } label: {
-                    Image(systemName: "character.textbox")
-                        .font(.system(size: 17, weight: .medium))
-                        .frame(maxWidth: .infinity)
-                        .padding(.vertical, 10)
-                        .foregroundColor(.white)
-                        .background(Color.accentColor)
-                        .cornerRadius(10)
-                }
-                .buttonStyle(.plain)
-
-                ActionButton(label: "", sf: "doc.badge.plus") { state.addPage() }
+                ToolbarTile(sf: "doc.badge.plus", title: "Page") { state.addPage() }
                     .disabled(state.pages.count >= CollageState.maxPages)
                     .opacity(state.pages.count >= CollageState.maxPages ? 0.5 : 1)
+
+                // Adds an editable text box rendered as an image.
+                ToolbarTile(sf: "character.textbox", title: "Text") { state.addTextImage() }
+
+                // Adds a transparent placeholder — an intentional empty slot.
+                ToolbarTile(sf: "rectangle.dashed.badge.record", title: "Empty") { state.addEmptyImage() }
 
                 SpreadMenuButton(
                     onBurst: { showBurstConfirm = true },
@@ -113,7 +80,7 @@ struct SidebarView: View {
                     onAllOnOne: { showAllOnOneConfirm = true },
                     onBurstAll: { showBurstAllConfirm = true })
 
-                ActionButton(label: "", sf: "trash", fillWidth: false) { state.clear() }
+                ToolbarTile(sf: "trash", title: "Clear", prominent: false) { state.clear() }
             }
             .alert("Burst!", isPresented: $showBurstAllConfirm) {
                 Button("Proceed") { state.burstBalanced() }
@@ -179,11 +146,6 @@ struct SidebarView: View {
 
             LabeledSlider(label: "Rounding", value: $state.cornerRadius, range: 0...100, step: 1, format: "%.0f",
                           resetValue: 20, reservesSwatchSlot: true)
-                // The chain sits in this row's empty swatch slot, visually
-                // connecting the Background and Border color circles
-                .overlay(alignment: .trailing) {
-                    ColorLinkToggle().panelChrome(state)
-                }
 
             BorderStyleRow()
 
@@ -232,34 +194,6 @@ struct SidebarView: View {
     var effectsSection: some View {
         SidebarSection(title: "Effects") {
             EffectsPanel()
-        }
-    }
-
-    // MARK: - Load photos
-
-    func loadPhotos(_ items: [PhotosPickerItem]) {
-        guard !items.isEmpty else { return }
-        state.isBusy = true
-        state.isLoading = true
-        Task {
-            var loaded: [PlatformImage] = []
-            for item in items {
-                if let data = try? await item.loadTransferable(type: Data.self),
-                   let img = PlatformImage(data: data) {
-                    loaded.append(img)
-                }
-            }
-            // Generate proxies/thumbnails off the main thread
-            let images = loaded
-            let prepared = await Task.detached(priority: .userInitiated) {
-                images.map { CollageImage(image: $0) }
-            }.value
-            await MainActor.run {
-                state.addPreparedImages(prepared)
-                photoItems = []
-                state.isBusy = false
-                state.isLoading = false
-            }
         }
     }
 }
@@ -347,14 +281,7 @@ struct RatioButton: View {
             // Selected: accent. Others: a touch darker than the backdrop
             // with a hairline, so they read as buttons on the glass card.
             .foregroundColor(isActive ? .white : .primary)
-            .background(
-                RoundedRectangle(cornerRadius: 9)
-                    .fill(isActive ? Color.accentColor : Color.primary.opacity(0.06))
-            )
-            .overlay(
-                RoundedRectangle(cornerRadius: 9)
-                    .strokeBorder(Color.primary.opacity(isActive ? 0 : 0.18), lineWidth: 1)
-            )
+            .appButtonBackground(prominent: isActive)
         }
         .buttonStyle(.plain)
     }
@@ -523,7 +450,7 @@ struct LabeledSlider: View {
     var resetValue: Double? = nil
     /// Wide enough for the longest label ("Temperature") on one line.
     var labelWidth: CGFloat = 92
-    /// Optional color bound to a trailing swatch circle.
+    /// Optional color bound to a swatch circle right after the label.
     var swatchColor: Binding<Color>? = nil
     /// Keeps an empty swatch-sized slot on rows without a swatch, so they
     /// line up with rows that have one (the Layout tab). Elsewhere the
@@ -543,6 +470,13 @@ struct LabeledSlider: View {
                 // Double-tapping the label resets to default, like the value
                 .contentShape(Rectangle())
                 .onTapGesture(count: 2) { resetToDefault() }
+            if let swatchColor {
+                ColorSwatchButton(color: swatchColor, depth: 0.55)
+                    // Pure minimal in focus mode: only label + slider + value.
+                    .panelChrome(state)
+            } else if reservesSwatchSlot {
+                Color.clear.frame(width: 24, height: 24)
+            }
             ModernSlider(value: $value, range: range, step: step,
                          onEditingChanged: { editing in
                             withAnimation(.easeInOut(duration: 0.2)) {
@@ -560,13 +494,6 @@ struct LabeledSlider: View {
                 // Double-tapping the value also resets to default
                 .contentShape(Rectangle())
                 .onTapGesture(count: 2) { resetToDefault() }
-            if let swatchColor {
-                ColorSwatchButton(color: swatchColor, depth: 0.55)
-                    // Pure minimal in focus mode: only label + slider + value.
-                    .panelChrome(state)
-            } else if reservesSwatchSlot {
-                Color.clear.frame(width: 24, height: 24)
-            }
         }
         // A small "private" glass panel appears behind this row while it's the
         // one being adjusted, so its label stays readable over the canvas.
@@ -662,7 +589,7 @@ struct BorderStylePicker: View {
             }
             .padding(.horizontal, 7)
             .padding(.vertical, 7)
-            .background(RoundedRectangle(cornerRadius: 8).fill(Color(.systemFill)))
+            .appButtonBackground(prominent: false)
         }
         .buttonStyle(.plain)
         .popover(isPresented: $showChooser, arrowEdge: .bottom) {
@@ -696,46 +623,7 @@ struct BorderStylePicker: View {
     }
 }
 
-/// Chain toggle rendered between the Background swatch (Spacing row) and the
-/// Border swatch (Border row). When linked, the border color follows the
-/// background color; tapping toggles the link.
-struct ColorLinkToggle: View {
-    @EnvironmentObject var state: CollageState
-
-    var body: some View {
-        Button {
-            withAnimation(.easeInOut(duration: 0.15)) {
-                state.linkBorderToBackground.toggle()
-            }
-        } label: {
-            VStack(spacing: 2) {
-                strand
-                Image(systemName: "link")
-                    .font(.system(size: 12, weight: .semibold))
-                    .foregroundColor(state.linkBorderToBackground
-                                     ? .accentColor
-                                     : .secondary.opacity(0.45))
-                strand
-            }
-            .frame(width: 24)
-            // Reach out of the row toward the color circles above and below
-            .padding(.vertical, -14)
-            .contentShape(Rectangle())
-        }
-        .buttonStyle(.plain)
-        .help("Link border color to background color")
-    }
-
-    private var strand: some View {
-        RoundedRectangle(cornerRadius: 1)
-            .fill(state.linkBorderToBackground
-                  ? Color.accentColor
-                  : Color.secondary.opacity(0.25))
-            .frame(width: 2, height: 14)
-    }
-}
-
-/// Border row: pattern chooser first, then the thickness slider, so the
+/// Border row: color and pattern first, then the thickness slider, so the
 /// value number docks to the right edge like the other slider rows.
 struct BorderStyleRow: View {
     @EnvironmentObject var state: CollageState
@@ -747,6 +635,11 @@ struct BorderStyleRow: View {
                 .font(.subheadline)
                 .foregroundColor(.primary)
                 .frame(width: 92, alignment: .leading)
+            ColorSwatchButton(color: $state.borderColor,
+                              presetTitle: "Same as Background color",
+                              presetColor: { state.backgroundColor },
+                              depth: 0.55)
+                .panelChrome(state)
             BorderStylePicker()
                 .fixedSize()
                 .disabled(state.borderThickness <= 0)
@@ -759,8 +652,8 @@ struct BorderStyleRow: View {
                          },
                          resetValue: 0)
             Text(String(format: "%.0f", state.borderThickness))
-                .font(.system(size: 14, design: .monospaced))
-                .foregroundColor(.accentColor)
+                .font(.system(size: 14, weight: .medium, design: .monospaced))
+                .foregroundColor(.primary.opacity(0.85))
                 .lineLimit(1)
                 .fixedSize()
                 // Room for four characters ("-100", "-60°").
@@ -773,14 +666,6 @@ struct BorderStyleRow: View {
                     UIImpactFeedbackGenerator(style: .light).impactOccurred()
                     #endif
                 }
-            ColorSwatchButton(color: $state.borderColor,
-                              presetTitle: "Same as Background color",
-                              presetColor: { state.backgroundColor },
-                              lockedMessage: state.linkBorderToBackground
-                                  ? "Unlink colors to change the border color"
-                                  : nil,
-                              depth: 0.55)
-                .panelChrome(state)
         }
         .background { focusGlass(active: state.activeAdjustment == "Border") }
         .opacity(state.chromeVisible(for: "Border") ? 1 : 0)
@@ -812,7 +697,9 @@ struct BorderPlacementRow: View {
                 .font(.subheadline)
                 .foregroundColor(.primary)
                 .opacity(disabled ? 0.35 : 1)
-                .frame(width: 76, alignment: .leading)
+                .frame(width: 92, alignment: .leading)
+            // The color-swatch column of the rows above
+            Color.clear.frame(width: 24, height: 24)
             Picker("", selection: $state.borderPlacement) {
                 ForEach(BorderPlacement.allCases) { p in
                     Text(p.rawValue).tag(p)
@@ -822,8 +709,8 @@ struct BorderPlacementRow: View {
             .labelsHidden()
             .disabled(disabled)
             .opacity(disabled ? 0.4 : 1)
-            // Match the sliders' value + swatch trailing block width
-            Color.clear.frame(width: 44 + 8 + 24, height: 24)
+            // Match the sliders' value column
+            Color.clear.frame(width: 38, height: 24)
         }
         .panelChrome(state)
     }
@@ -913,7 +800,7 @@ struct ColorSwatchButton: View {
                             .font(.subheadline.weight(.medium))
                             .frame(maxWidth: .infinity)
                             .padding(.vertical, 9)
-                            .background(RoundedRectangle(cornerRadius: 10).fill(Color(.systemFill)))
+                            .appButtonBackground(prominent: false)
                     }
                     .buttonStyle(.plain)
                     .padding(.horizontal, 16)
@@ -1067,8 +954,7 @@ struct ShuffleButton: View {
         }
         .foregroundColor(.white)
         .frame(height: 38)
-        .background(Color.accentColor)
-        .cornerRadius(10)
+        .appButtonBackground(prominent: true)
     }
 
     private func toggle(_ label: String, _ keyPath: WritableKeyPath<CollageState.ShuffleOptions, Bool>) -> some View {
@@ -1096,22 +982,14 @@ struct SpreadMenuButton: View {
 
     var body: some View {
         Button { show = true } label: {
-            HStack(spacing: 4) {
-                Image(systemName: "rectangle.split.3x1")
-                Image(systemName: "chevron.down")
-                    .font(.system(size: 9, weight: .semibold))
-                    .opacity(0.6)
+            ToolbarTileLabel(prominent: false, title: "Spread") {
+                HStack(spacing: 3) {
+                    Image(systemName: "rectangle.split.3x1")
+                    Image(systemName: "chevron.down")
+                        .font(.system(size: 8, weight: .semibold))
+                        .opacity(0.6)
+                }
             }
-            .font(.footnote.weight(.medium))
-            .lineLimit(1)
-            .minimumScaleFactor(0.7)
-            .padding(.horizontal, 8)
-            .frame(maxWidth: .infinity)
-            .padding(.vertical, 10)
-            .foregroundColor(.primary)
-            .background(Color(.systemFill))
-            .cornerRadius(10)
-            .overlay(RoundedRectangle(cornerRadius: 10).strokeBorder(Color.primary.opacity(0.18), lineWidth: 1))
         }
         .buttonStyle(.plain)
         .disabled(state.totalImageCount < 2)
@@ -1152,6 +1030,45 @@ struct SpreadMenuButton: View {
     }
 }
 
+/// Images toolbar button: icon with a small caption under it.
+struct ToolbarTile: View {
+    let sf: String
+    let title: String
+    /// Accent-filled; otherwise a plain outlined tile.
+    var prominent = true
+    let action: () -> Void
+
+    var body: some View {
+        Button(action: action) {
+            ToolbarTileLabel(prominent: prominent, title: title) { Image(systemName: sf) }
+        }
+        .buttonStyle(.plain)
+    }
+}
+
+struct ToolbarTileLabel<Icon: View>: View {
+    let prominent: Bool
+    let title: String
+    @ViewBuilder let icon: Icon
+
+    var body: some View {
+        VStack(spacing: 3) {
+            icon
+                .font(.system(size: 16, weight: .medium))
+                .frame(height: 20)
+            Text(title)
+                .font(.system(size: 10, weight: .semibold))
+                .lineLimit(1)
+                .minimumScaleFactor(0.8)
+        }
+        .frame(maxWidth: .infinity)
+        .padding(.vertical, 7)
+        .padding(.horizontal, 4)
+        .foregroundColor(prominent ? .white : .primary)
+        .appButtonBackground(prominent: prominent)
+    }
+}
+
 struct ActionButton: View {
     let label: String
     let sf: String
@@ -1176,14 +1093,7 @@ struct ActionButton: View {
             .frame(maxWidth: fillWidth ? .infinity : nil)
             .padding(.vertical, 10)
             .foregroundColor(isPrimary ? .white : .primary)
-            .background(isPrimary ? Color.accentColor : Color(.systemFill))
-            .cornerRadius(10)
-            // Uncolored buttons get a hairline so they read as buttons on
-            // the glass panel.
-            .overlay(
-                RoundedRectangle(cornerRadius: 10)
-                    .strokeBorder(Color.primary.opacity(isPrimary ? 0 : 0.18), lineWidth: 1)
-            )
+            .appButtonBackground(prominent: isPrimary)
         }
         .buttonStyle(.plain)
     }
@@ -1319,6 +1229,9 @@ struct PageGroupsView: View {
                 .contentShape(Rectangle())
                 .gesture(pageDragGesture(pageIndex: pi))
 
+            // Add photos straight into this page.
+            PageAddPhotosButton(pageIndex: pi)
+
             if page.images.isEmpty {
                 Text("No images")
                     .font(.caption2)
@@ -1389,6 +1302,59 @@ struct PageGroupsView: View {
                     }
             }
         )
+    }
+}
+
+// MARK: - Per-page "add photos" tile
+
+/// First tile of a page row: picks photos into that page (spilling onto new
+/// pages once it's full) and shows it.
+struct PageAddPhotosButton: View {
+    @EnvironmentObject var state: CollageState
+    let pageIndex: Int
+    var size: CGFloat = 58
+    @State private var items: [PhotosPickerItem] = []
+
+    var body: some View {
+        PhotosPicker(selection: $items, maxSelectionCount: 30, matching: .images) {
+            Image(systemName: "plus")
+                .font(.system(size: 20, weight: .semibold))
+                .foregroundColor(.white)
+                .frame(width: size, height: size)
+                .appButtonBackground(prominent: true)
+                .padding(.vertical, 2)
+        }
+        .buttonStyle(.plain)
+        .accessibilityLabel("Add photos to page \(pageIndex + 1)")
+        .onChange(of: items) { _, picked in load(picked) }
+    }
+
+    private func load(_ picked: [PhotosPickerItem]) {
+        guard !picked.isEmpty else { return }
+        let target = pageIndex
+        state.isBusy = true
+        state.isLoading = true
+        Task {
+            var loaded: [PlatformImage] = []
+            for item in picked {
+                if let data = try? await item.loadTransferable(type: Data.self),
+                   let img = PlatformImage(data: data) {
+                    loaded.append(img)
+                }
+            }
+            // Generate proxies/thumbnails off the main thread
+            let images = loaded
+            let prepared = await Task.detached(priority: .userInitiated) {
+                images.map { CollageImage(image: $0) }
+            }.value
+            await MainActor.run {
+                state.addPreparedImages(prepared, toPage: target)
+                state.goToPage(target)
+                items = []
+                state.isBusy = false
+                state.isLoading = false
+            }
+        }
     }
 }
 

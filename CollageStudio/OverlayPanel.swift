@@ -169,11 +169,8 @@ struct OverlayPanel: View {
         .padding(.leading, 4)
         .padding(.trailing, 8)
         .padding(.vertical, 4)
-        .foregroundColor(.white)
-        .background(
-            RoundedRectangle(cornerRadius: 9)
-                .fill(isSelected ? Color.accentColor : Color.black.opacity(0.55))
-        )
+        .foregroundColor(isSelected ? .white : .primary)
+        .appButtonBackground(prominent: isSelected)
         .contentShape(Rectangle())
         .onTapGesture {
             // Tapping the selected layer deselects it (in the sidebar that

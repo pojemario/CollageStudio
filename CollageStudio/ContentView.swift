@@ -33,7 +33,7 @@ struct SavingOverlay: View {
             .background(.ultraThinMaterial, in: RoundedRectangle(cornerRadius: 20, style: .continuous))
             .overlay(
                 RoundedRectangle(cornerRadius: 20, style: .continuous)
-                    .strokeBorder(Color.white.opacity(0.18), lineWidth: 1)
+                    .strokeBorder(ColorManager.glassStroke, lineWidth: 1)
             )
             .shadow(color: .black.opacity(0.25), radius: 24, y: 10)
         }
@@ -84,7 +84,7 @@ struct PageTabBar: View {
             .background(
                 Capsule(style: .continuous)
                     .fill(.ultraThinMaterial)
-                    .overlay(Capsule(style: .continuous).strokeBorder(Color.white.opacity(0.18), lineWidth: 1))
+                    .overlay(Capsule(style: .continuous).strokeBorder(ColorManager.glassStroke, lineWidth: 1))
                     .shadow(color: .black.opacity(0.15), radius: 8, y: 2)
             )
             // Long-press to delete the current page.
@@ -258,10 +258,8 @@ struct ContentView: View {
                         .foregroundColor(state.isRatioOpen ? .white : .primary)
                         .padding(.horizontal, 12)
                         .frame(height: 34)
-                        .background(
-                            Capsule().fill(state.isRatioOpen ? Color.accentColor : Color.primary.opacity(0.07))
-                        )
-                        .contentShape(Capsule())
+                        .appButtonBackground(prominent: state.isRatioOpen)
+                        .contentShape(Rectangle())
                     }
                     .buttonStyle(.plain)
                     .background(
@@ -309,7 +307,7 @@ struct ContentView: View {
                 .padding(.horizontal, 5)
                 .frame(height: 44)
                 .background(.ultraThinMaterial, in: Capsule(style: .continuous))
-                .overlay(Capsule(style: .continuous).strokeBorder(Color.white.opacity(0.6), lineWidth: 0.8))
+                .overlay(Capsule(style: .continuous).strokeBorder(ColorManager.glassStroke, lineWidth: 0.8))
                 .shadow(color: .black.opacity(0.10), radius: 12, y: 4)
             }
             // Fixed height so the bar doesn't collapse before any images are
@@ -342,7 +340,7 @@ struct ContentView: View {
                         RoundedRectangle(cornerRadius: 22, style: .continuous)
                             .fill(.ultraThinMaterial)
                             .overlay(RoundedRectangle(cornerRadius: 22, style: .continuous)
-                                .strokeBorder(Color.white.opacity(0.55), lineWidth: 0.8))
+                                .strokeBorder(ColorManager.glassStroke, lineWidth: 0.8))
                             .shadow(color: .black.opacity(0.12), radius: 16, y: 6)
                     }
                     .padding(.horizontal, 12)
