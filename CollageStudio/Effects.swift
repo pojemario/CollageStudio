@@ -8,41 +8,55 @@ import CoreImage.CIFilterBuiltins
 
 // MARK: - Tone (per-pixel color adjustments)
 
-/// The effects that are pure color math — B&W and the contrast side of
-/// fade (negative fade adds contrast and saturation instead) — applied to
-/// the collage and to its background color alike.
+/// The effects that are pure color math — brightness, contrast and the
+/// contrast side of fade (negative fade adds contrast and saturation
+/// instead) — applied to the collage and to its background color alike.
+/// Never to overlays or the frame: those are drawn outside it.
 struct EffectToning: ViewModifier {
     @ObservedObject var state: CollageState
     let enabled: Bool
 
     func body(content: Content) -> some View {
         let fade = enabled ? state.effectAmount(.fade) : 0
-        let bw = enabled ? state.effectAmount(.blackWhite) : 0
+        let brightness = enabled ? state.effectAmount(.brightness) : 0
+        let contrast = enabled ? state.effectAmount(.contrast) : 0
         content
-            .grayscale(bw)
             .saturation(1 - 0.4 * fade)
-            .contrast(1 - 0.45 * fade)
-            .brightness(0.06 * fade)
+            .contrast((1 - 0.45 * fade) * (1 + 0.5 * contrast))
+            .brightness(0.06 * fade + 0.2 * brightness)
     }
 }
 
 // MARK: - Layers (effects that add something on top)
 
 /// Stacked right above the collage, under the overlays and the frame.
+/// `window` is the content area (the frame's opening, or the whole canvas
+/// without a frame): the layers are masked to it, so nothing lands on the
+/// frame even where its PNG is see-through.
 struct EffectLayers: View {
     @EnvironmentObject var state: CollageState
     @ObservedObject var maps: EffectMaps
     let canvasSize: CGSize
+    let window: CGRect
 
     var body: some View {
+        let temperature = state.effectAmount(.temperature)
         let fade = state.effectAmount(.fade)
         let glow = state.effectAmount(.glow)
         let halation = state.effectAmount(.halation)
         let vignette = state.effectAmount(.vignette)
         let grain = state.effectAmount(.grain)
-        let longEdge = max(canvasSize.width, canvasSize.height)
+        let longEdge = max(window.width, window.height)
 
         ZStack {
+            // Temperature: an amber or blue wash, soft-light blended so it
+            // shifts the midtones and leaves blacks and whites mostly alone.
+            if temperature != 0 {
+                (temperature > 0 ? Color(red: 1, green: 0.55, blue: 0.12)
+                                 : Color(red: 0.15, green: 0.45, blue: 1))
+                    .opacity(0.65 * abs(temperature))
+                    .blendMode(.softLight)
+            }
             // Fade: a screened haze lifts the blacks into a matte gray.
             if fade > 0 {
                 Color(white: 0.34 * fade).blendMode(.screen)
@@ -57,7 +71,8 @@ struct EffectLayers: View {
                 // Starts closer to the center and goes fully dark at the
                 // corners when maxed.
                 RadialGradient(colors: [.clear, .black.opacity(0.5 * vignette), .black.opacity(1.0 * vignette)],
-                               center: .center,
+                               center: UnitPoint(x: window.midX / max(canvasSize.width, 1),
+                                                 y: window.midY / max(canvasSize.height, 1)),
                                startRadius: longEdge * (0.30 - 0.12 * vignette),
                                endRadius: longEdge * 0.68)
             }
@@ -66,6 +81,11 @@ struct EffectLayers: View {
             }
         }
         .frame(width: canvasSize.width, height: canvasSize.height)
+        .mask(alignment: .topLeading) {
+            Rectangle()
+                .frame(width: window.width, height: window.height)
+                .offset(x: window.minX, y: window.minY)
+        }
         .allowsHitTesting(false)
     }
 
@@ -149,13 +169,152 @@ final class EffectMaps: ObservableObject {
     }
 }
 
+// MARK: - HSL grading
+
+/// Per-color hue / saturation / luminance, baked into a color cube and run
+/// over the pictures with Core Image (so the export matches the screen).
+/// The background color goes through the same math directly.
+enum HSLGrader {
+    private static let context = CIContext()
+    private static let cubeSize = 32
+    /// Hue shift at ±100, in degrees.
+    private static let maxHueShift = 30.0
+
+    static func apply(_ hsl: HSLAdjustments, to image: PlatformImage) -> PlatformImage {
+        #if canImport(UIKit)
+        guard let cg = image.cgImage else { return image }
+        #else
+        guard let cg = image.cgImage(forProposedRect: nil, context: nil, hints: nil) else { return image }
+        #endif
+        let sRGB = CGColorSpace(name: CGColorSpace.sRGB)!
+        let filter = CIFilter.colorCubeWithColorSpace()
+        filter.inputImage = CIImage(cgImage: cg)
+        filter.cubeDimension = Float(cubeSize)
+        filter.cubeData = cubeData(hsl)
+        filter.colorSpace = sRGB
+        guard let output = filter.outputImage,
+              let graded = context.createCGImage(output, from: output.extent) else { return image }
+        #if canImport(UIKit)
+        return UIImage(cgImage: graded, scale: image.scale, orientation: image.imageOrientation)
+        #else
+        return NSImage(cgImage: graded, size: image.size)
+        #endif
+    }
+
+    static func apply(_ hsl: HSLAdjustments, to color: Color) -> Color {
+        guard !hsl.isIdentity else { return color }
+        #if canImport(UIKit)
+        var r: CGFloat = 0, g: CGFloat = 0, b: CGFloat = 0, a: CGFloat = 0
+        guard UIColor(color).getRed(&r, green: &g, blue: &b, alpha: &a) else { return color }
+        #else
+        guard let ns = NSColor(color).usingColorSpace(.sRGB) else { return color }
+        let r = ns.redComponent, g = ns.greenComponent, b = ns.blueComponent, a = ns.alphaComponent
+        #endif
+        let out = adjust(Double(r), Double(g), Double(b), hsl)
+        return Color(.sRGB, red: out.r, green: out.g, blue: out.b, opacity: Double(a))
+    }
+
+    private static func cubeData(_ hsl: HSLAdjustments) -> Data {
+        let n = cubeSize
+        var values = [Float]()
+        values.reserveCapacity(n * n * n * 4)
+        for bi in 0..<n {
+            for gi in 0..<n {
+                for ri in 0..<n {
+                    let out = adjust(Double(ri) / Double(n - 1), Double(gi) / Double(n - 1),
+                                     Double(bi) / Double(n - 1), hsl)
+                    values += [Float(out.r), Float(out.g), Float(out.b), 1]
+                }
+            }
+        }
+        return values.withUnsafeBufferPointer { Data(buffer: $0) }
+    }
+
+    /// One sRGB color through the per-band shifts. A pixel's hue blends the
+    /// two nearest bands; grays (low chroma) are left alone so neutral
+    /// areas never pick up a tint.
+    static func adjust(_ r: Double, _ g: Double, _ b: Double,
+                       _ hsl: HSLAdjustments) -> (r: Double, g: Double, b: Double) {
+        let maxC = max(r, g, b), minC = min(r, g, b)
+        let chroma = maxC - minC
+        guard chroma > 0.0001 else { return (r, g, b) }
+
+        var l = (maxC + minC) / 2
+        var s = chroma / (1 - abs(2 * l - 1))
+        var h: Double
+        if maxC == r { h = (g - b) / chroma }
+        else if maxC == g { h = (b - r) / chroma + 2 }
+        else { h = (r - g) / chroma + 4 }
+        h = (h * 60).truncatingRemainder(dividingBy: 360)
+        if h < 0 { h += 360 }
+
+        // The two bands around this hue, blended smoothly.
+        let bands = HSLBand.allCases
+        var lower = bands[bands.count - 1], upper = bands[0]
+        var lowerHue = lower.hue - 360, upperHue = upper.hue
+        for (i, band) in bands.enumerated() where band.hue <= h {
+            lower = band
+            lowerHue = band.hue
+            upper = i + 1 < bands.count ? bands[i + 1] : bands[0]
+            upperHue = i + 1 < bands.count ? upper.hue : 360
+        }
+        let t = (h - lowerHue) / (upperHue - lowerHue)
+        let wUpper = (1 - cos(.pi * t)) / 2, wLower = 1 - wUpper
+        let a = hsl[lower], c = hsl[upper]
+        // Fade the adjustment out toward gray.
+        let strength = min(1, chroma / 0.15)
+        let dh = (a.hue * wLower + c.hue * wUpper) / 100 * strength
+        let ds = (a.saturation * wLower + c.saturation * wUpper) / 100 * strength
+        let dl = (a.luminance * wLower + c.luminance * wUpper) / 100 * strength
+
+        h = (h + dh * maxHueShift + 360).truncatingRemainder(dividingBy: 360)
+        s = min(max(s * (1 + ds), 0), 1)
+        l = dl >= 0 ? l + (1 - l) * dl * 0.5 : l * (1 + dl * 0.5)
+
+        // Back to RGB.
+        let c2 = (1 - abs(2 * l - 1)) * s
+        let x = c2 * (1 - abs((h / 60).truncatingRemainder(dividingBy: 2) - 1))
+        let m = l - c2 / 2
+        let (r1, g1, b1): (Double, Double, Double)
+        switch h {
+        case ..<60:  (r1, g1, b1) = (c2, x, 0)
+        case ..<120: (r1, g1, b1) = (x, c2, 0)
+        case ..<180: (r1, g1, b1) = (0, c2, x)
+        case ..<240: (r1, g1, b1) = (0, x, c2)
+        case ..<300: (r1, g1, b1) = (x, 0, c2)
+        default:     (r1, g1, b1) = (c2, 0, x)
+        }
+        return (r1 + m, g1 + m, b1 + m)
+    }
+}
+
 // MARK: - Effects tab / sidebar section
 
-/// One intensity slider per effect (double-tap a label or value to zero it).
+/// One intensity slider per effect (double-tap a label or value to zero it),
+/// with the per-color HSL controls on a second page.
 struct EffectsPanel: View {
     @EnvironmentObject var state: CollageState
+    @State private var showingHSL = false
+    @State private var band: HSLBand = .red
 
     var body: some View {
+        VStack(spacing: 10) {
+            HStack(spacing: 8) {
+                PackChip(title: "Effects", isActive: !showingHSL) { showingHSL = false }
+                PackChip(title: "HSL", isActive: showingHSL) { showingHSL = true }
+                Spacer()
+            }
+            .panelChrome(state)
+
+            if showingHSL {
+                hslControls
+            } else {
+                effectControls
+            }
+        }
+    }
+
+    private var effectControls: some View {
         VStack(spacing: 10) {
             ForEach(CollageEffect.allCases) { effect in
                 LabeledSlider(label: effect.title,
@@ -175,6 +334,60 @@ struct EffectsPanel: View {
                 .panelChrome(state)
             }
         }
+    }
+
+    private var hslControls: some View {
+        VStack(spacing: 10) {
+            // Band picker: a dot per color; a ring marks the selected one,
+            // a small mark under it any band that has been adjusted.
+            HStack(spacing: 0) {
+                ForEach(HSLBand.allCases) { b in
+                    Button { band = b } label: {
+                        VStack(spacing: 3) {
+                            Circle()
+                                .fill(b.swatch)
+                                .frame(width: 24, height: 24)
+                                .padding(3)
+                                .overlay(Circle().stroke(band == b ? Color.primary : .clear, lineWidth: 2))
+                            Circle()
+                                .fill(Color.primary.opacity(state.hsl[b].isZero ? 0 : 0.6))
+                                .frame(width: 4, height: 4)
+                        }
+                        .frame(maxWidth: .infinity)
+                        .contentShape(Rectangle())
+                    }
+                    .buttonStyle(.plain)
+                    .accessibilityLabel(b.title)
+                }
+            }
+            .panelChrome(state)
+
+            LabeledSlider(label: "Hue", value: shift(\.hue),
+                          range: -100...100, step: 1, format: "%.0f", resetValue: 0,
+                          trackColors: band.hueSweep)
+            LabeledSlider(label: "Saturation", value: shift(\.saturation),
+                          range: -100...100, step: 1, format: "%.0f", resetValue: 0)
+            LabeledSlider(label: "Luminance", value: shift(\.luminance),
+                          range: -100...100, step: 1, format: "%.0f", resetValue: 0)
+
+            HStack(spacing: 8) {
+                Text(band.title)
+                    .font(.footnote.weight(.semibold))
+                    .foregroundColor(.secondary)
+                Spacer()
+                ActionButton(label: "Reset", sf: "arrow.counterclockwise", fillWidth: false) {
+                    state.resetHSL()
+                }
+                .disabled(state.hsl.isIdentity)
+                .opacity(state.hsl.isIdentity ? 0.5 : 1)
+            }
+            .panelChrome(state)
+        }
+    }
+
+    private func shift(_ key: WritableKeyPath<HSLShift, Double>) -> Binding<Double> {
+        Binding(get: { state.hsl[band][keyPath: key] },
+                set: { state.hsl[band][keyPath: key] = $0 })
     }
 }
 

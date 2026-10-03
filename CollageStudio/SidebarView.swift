@@ -160,7 +160,8 @@ struct SidebarView: View {
             LabeledSlider(label: "Columns", value: Binding(
                 get: { Double(min(state.numCols, state.maxSelectableCols)) },
                 set: { v in state.numCols = Int(v); state.rebuildLayout(resetGrows: true) }
-            ), range: 1...Double(state.maxSelectableCols), step: 1, format: "%.0f", resetValue: 2)
+            ), range: 1...Double(state.maxSelectableCols), step: 1, format: "%.0f", resetValue: 2,
+               reservesSwatchSlot: true)
                 .disabled(state.maxSelectableCols <= 1)
                 .opacity(state.maxSelectableCols <= 1 ? 0.4 : 1)
             
@@ -177,7 +178,7 @@ struct SidebarView: View {
                           resetValue: 10, swatchColor: $state.backgroundColor)
 
             LabeledSlider(label: "Rounding", value: $state.cornerRadius, range: 0...100, step: 1, format: "%.0f",
-                          resetValue: 20)
+                          resetValue: 20, reservesSwatchSlot: true)
                 // The chain sits in this row's empty swatch slot, visually
                 // connecting the Background and Border color circles
                 .overlay(alignment: .trailing) {
@@ -226,7 +227,7 @@ struct SidebarView: View {
         }
     }
 
-    // MARK: - Effects (fade, halation, glow, B&W, …)
+    // MARK: - Effects (brightness, contrast, fade, glow, …)
 
     var effectsSection: some View {
         SidebarSection(title: "Effects") {
@@ -406,6 +407,9 @@ struct ModernSlider: View {
     var onEditingChanged: ((Bool) -> Void)? = nil
     /// Double-tapping the slider snaps back to this value (the Reset default).
     var resetValue: Double? = nil
+    /// When set, the groove shows these colors left to right (e.g. what a
+    /// hue shift turns a color into) instead of the accent value fill.
+    var trackColors: [Color]? = nil
 
     @Environment(\.colorScheme) private var colorScheme
     @State private var isDragging = false
@@ -458,12 +462,20 @@ struct ModernSlider: View {
                     .frame(height: 11)
                     .padding(.horizontal, 4)
 
-                // Value fill inside the recess
-                Capsule()
-                    .fill(LinearGradient(colors: [Color.accentColor.opacity(0.55), Color.accentColor],
-                                         startPoint: .leading, endPoint: .trailing))
-                    .frame(width: max(thumbX - 4, 14), height: 14)
-                    .padding(.leading, 4)
+                if let trackColors {
+                    Capsule()
+                        .fill(LinearGradient(colors: trackColors, startPoint: .leading, endPoint: .trailing))
+                        .overlay(Capsule().strokeBorder(Color.black.opacity(0.15), lineWidth: 0.6))
+                        .frame(height: 12)
+                        .padding(.horizontal, 4)
+                } else {
+                    // Value fill inside the recess
+                    Capsule()
+                        .fill(LinearGradient(colors: [Color.accentColor.opacity(0.55), Color.accentColor],
+                                             startPoint: .leading, endPoint: .trailing))
+                        .frame(width: max(thumbX - 4, 14), height: 14)
+                        .padding(.leading, 4)
+                }
 
                 EmbossedKnobThumb(size: thumbSize)
                     .shadow(color: .black.opacity(0.4), radius: isDragging ? 5 : 2.5, y: 2)
@@ -509,16 +521,24 @@ struct LabeledSlider: View {
     let format: String
     /// Double-tap reset value, forwarded to the slider.
     var resetValue: Double? = nil
-    var labelWidth: CGFloat = 76
-    /// Optional color bound to a leading swatch circle. Rows without one show
-    /// an empty slot of the same size so all labels stay aligned.
+    /// Wide enough for the longest label ("Temperature") on one line.
+    var labelWidth: CGFloat = 92
+    /// Optional color bound to a trailing swatch circle.
     var swatchColor: Binding<Color>? = nil
+    /// Keeps an empty swatch-sized slot on rows without a swatch, so they
+    /// line up with rows that have one (the Layout tab). Elsewhere the
+    /// slider takes that room.
+    var reservesSwatchSlot = false
+    /// Forwarded to the slider's track (see ModernSlider.trackColors).
+    var trackColors: [Color]? = nil
 
     var body: some View {
         HStack(spacing: 8) {
             Text(label)
                 .font(.subheadline)
                 .foregroundColor(.primary)
+                .lineLimit(1)
+                .minimumScaleFactor(0.85)
                 .frame(width: labelWidth, alignment: .leading)
                 // Double-tapping the label resets to default, like the value
                 .contentShape(Rectangle())
@@ -529,13 +549,14 @@ struct LabeledSlider: View {
                                 state.activeAdjustment = editing ? label : nil
                             }
                          },
-                         resetValue: resetValue)
+                         resetValue: resetValue, trackColors: trackColors)
             Text(String(format: format, value))
                 .font(.system(size: 14, weight: .medium, design: .monospaced))
                 .foregroundColor(.primary.opacity(0.85))
                 .lineLimit(1)
                 .fixedSize()
-                .frame(width: 44, alignment: .center)
+                // Room for four characters ("-100", "-60°").
+                .frame(width: 38, alignment: .trailing)
                 // Double-tapping the value also resets to default
                 .contentShape(Rectangle())
                 .onTapGesture(count: 2) { resetToDefault() }
@@ -543,7 +564,7 @@ struct LabeledSlider: View {
                 ColorSwatchButton(color: swatchColor, depth: 0.55)
                     // Pure minimal in focus mode: only label + slider + value.
                     .panelChrome(state)
-            } else {
+            } else if reservesSwatchSlot {
                 Color.clear.frame(width: 24, height: 24)
             }
         }
@@ -725,7 +746,7 @@ struct BorderStyleRow: View {
             Text("Border")
                 .font(.subheadline)
                 .foregroundColor(.primary)
-                .frame(width: 76, alignment: .leading)
+                .frame(width: 92, alignment: .leading)
             BorderStylePicker()
                 .fixedSize()
                 .disabled(state.borderThickness <= 0)
@@ -742,7 +763,8 @@ struct BorderStyleRow: View {
                 .foregroundColor(.accentColor)
                 .lineLimit(1)
                 .fixedSize()
-                .frame(width: 44, alignment: .center)
+                // Room for four characters ("-100", "-60°").
+                .frame(width: 38, alignment: .trailing)
                 // Double-tapping the value resets border thickness to zero.
                 .contentShape(Rectangle())
                 .onTapGesture(count: 2) {

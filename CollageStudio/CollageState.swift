@@ -261,6 +261,14 @@ class CollageState: ObservableObject {
             "Film916_Corner_m32323232_r9x16",
             "Film916_Hairline_m30303030_r9x16",
         ]),
+        FramePack(name: "Film Slim", ratio: .portrait916, assets: [
+            "FilmSlim916_Thin_m14141414_r9x16",
+            "FilmSlim916_Nicked_m15151515_r9x16",
+            "FilmSlim916_Scuffed_m14141414_r9x16",
+            "FilmSlim916_Uneven_m13161416_r9x16",
+            "FilmSlim916_Corner_m15151515_r9x16",
+            "FilmSlim916_Hairline_m14141414_r9x16",
+        ]),
     ]
 
     /// Applies a pack frame. The canvas keeps its ratio; the frame is laid
@@ -348,6 +356,7 @@ class CollageState: ObservableObject {
         var layer = OverlayLayer(asset: asset, kind: kind)
         if let current = overlayPreview {
             layer.opacity = current.opacity
+            layer.blur = current.blur
             layer.aboveFrame = current.aboveFrame
             layer.scale = current.scale
             layer.rotation = current.rotation
@@ -454,7 +463,7 @@ class CollageState: ObservableObject {
         }
     }
 
-    // MARK: - Effects (fade, halation, glow, B&W, …)
+    // MARK: - Effects (brightness, contrast, fade, glow, …)
 
     /// Intensity per effect, 0...100; absent or 0 means off. Like the frame
     /// and overlays, effects apply to every page.
@@ -477,12 +486,74 @@ class CollageState: ObservableObject {
     func shuffleEffects() {
         for effect in effectShuffleOptions {
             switch effect {
+            case .temperature: effects[effect] = Double(Int.random(in: -25...25))
+            case .brightness: effects[effect] = Double(Int.random(in: -15...15))
+            case .contrast:   effects[effect] = Double(Int.random(in: -20...30))
             case .fade:       effects[effect] = Double(Int.random(in: -40...60))
             case .halation:   effects[effect] = Double(Int.random(in: 0...70))
             case .glow:       effects[effect] = Double(Int.random(in: 0...60))
-            case .blackWhite: effects[effect] = Bool.random() ? Double(Int.random(in: 60...100)) : 0
             case .vignette:   effects[effect] = Double(Int.random(in: 10...80))
             case .grain:      effects[effect] = Double(Int.random(in: 0...70))
+            }
+        }
+    }
+
+    // MARK: - HSL
+
+    /// Per-color hue / saturation / luminance, applied to every page.
+    @Published var hsl = HSLAdjustments() {
+        didSet {
+            if hsl.isIdentity, !hslProxies.isEmpty { hslProxies = [:] }
+        }
+    }
+
+    func resetHSL() { hsl = HSLAdjustments() }
+
+    struct HSLGraded {
+        let source: PlatformImage
+        let hsl: HSLAdjustments
+        let image: PlatformImage
+    }
+
+    /// Canvas proxies graded off the main thread, by image id. While a slider
+    /// moves, a box keeps showing its last grade until the next one lands.
+    @Published private(set) var hslProxies: [UUID: HSLGraded] = [:]
+    private var hslInFlight: Set<UUID> = []
+    /// Full-resolution grades for the export in progress (made synchronously
+    /// while it renders; dropped when it ends).
+    private var hslExportCache: [UUID: HSLGraded] = [:]
+
+    /// The picture a box should draw: its proxy (or the original while
+    /// exporting) with the current HSL applied.
+    func hslDisplayImage(for img: CollageImage) -> PlatformImage {
+        let source = renderFullResolution ? img.image : img.proxy
+        guard !hsl.isIdentity, !img.isPlaceholder else { return source }
+        if renderFullResolution {
+            if let g = hslExportCache[img.id], g.source === source, g.hsl == hsl { return g.image }
+            let graded = HSLGrader.apply(hsl, to: source)
+            hslExportCache[img.id] = HSLGraded(source: source, hsl: hsl, image: graded)
+            return graded
+        }
+        if let g = hslProxies[img.id], g.source === source { return g.image }
+        return source
+    }
+
+    /// Grades a box's proxy for the current HSL unless that's already done
+    /// or underway; a grade that finishes stale immediately catches up.
+    func gradeHSLIfNeeded(_ img: CollageImage) {
+        let hsl = self.hsl, source = img.proxy, id = img.id
+        guard !hsl.isIdentity, !img.isPlaceholder, !hslInFlight.contains(id) else { return }
+        if let g = hslProxies[id], g.source === source, g.hsl == hsl { return }
+        hslInFlight.insert(id)
+        Task.detached(priority: .userInitiated) {
+            let graded = HSLGrader.apply(hsl, to: source)
+            await MainActor.run {
+                self.hslInFlight.remove(id)
+                guard !self.hsl.isIdentity else { return }
+                self.hslProxies[id] = HSLGraded(source: source, hsl: hsl, image: graded)
+                if let current = self.currentPage.images.first(where: { $0.id == id }) {
+                    self.gradeHSLIfNeeded(current)
+                }
             }
         }
     }
@@ -1782,6 +1853,7 @@ class CollageState: ObservableObject {
 
         currentPageIndex = originalIndex
         renderFullResolution = false
+        hslExportCache = [:]
         isExporting = false
         isBusy = false
         isLoading = false

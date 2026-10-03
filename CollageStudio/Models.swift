@@ -483,6 +483,8 @@ struct OverlayLayer: Identifiable, Equatable {
     let kind: OverlayKind
     /// Percent, 0...100.
     var opacity: Double = 100
+    /// Gaussian blur, percent 0...100 of `maxBlur`.
+    var blur: Double = 0
     var aboveFrame: Bool = false
     // Placement, adjusted by finger on the canvas: scale and rotation about
     // the center of the canvas-filling texture, then an offset in canvas pixels.
@@ -493,6 +495,15 @@ struct OverlayLayer: Identifiable, Equatable {
     /// Drawn long edge limits, in canvas pixels — the failsafe that keeps a
     /// texture from being pinched into a speck or blown up past recognition.
     static let longEdgeRange: ClosedRange<CGFloat> = 200...4000
+    /// Blur radius at 100%, in canvas pixels.
+    static let maxBlur: CGFloat = 40
+
+    /// The slider's percent on a quadratic curve: most of its travel goes
+    /// to the subtle low end (10 → 0.4 px, 50 → 10 px, 100 → 40 px).
+    var blurRadius: CGFloat {
+        let t = min(max(blur, 0), 100) / 100
+        return CGFloat(t * t) * Self.maxBlur
+    }
 
     var label: String { OverlayPack.label(forAsset: asset) }
 
@@ -528,18 +539,85 @@ struct OverlayLayer: Identifiable, Equatable {
 /// They act on the pictures and background — overlays and the frame sit on
 /// top, untouched.
 enum CollageEffect: String, CaseIterable, Identifiable {
+    case temperature = "Temperature" // + warmer, − cooler
+    case brightness = "Brightness"
+    case contrast = "Contrast"
     case fade = "Fade"              // + lifted blacks, softer contrast; − more contrast
     case halation = "Halation"      // red-orange bleed around highlights
     case glow = "Glow"              // soft bloom
-    case blackWhite = "B&W"
     case vignette = "Vignette"
     case grain = "Grain"
 
     var id: String { rawValue }
     var title: String { rawValue }
 
-    /// Fade runs both ways (negative = punchier contrast).
-    var range: ClosedRange<Double> { self == .fade ? -100...100 : 0...100 }
+    /// Brightness, contrast and fade run both ways (negative fade = punchier
+    /// contrast).
+    var range: ClosedRange<Double> {
+        switch self {
+        case .temperature, .brightness, .contrast, .fade: return -100...100
+        default: return 0...100
+        }
+    }
+}
+
+// MARK: - HSL
+
+/// The eight color ranges the HSL panel adjusts, by center hue.
+enum HSLBand: String, CaseIterable, Identifiable {
+    case red = "Red", orange = "Orange", yellow = "Yellow", green = "Green"
+    case aqua = "Aqua", blue = "Blue", purple = "Purple", magenta = "Magenta"
+
+    var id: String { rawValue }
+    var title: String { rawValue }
+
+    /// Center hue in degrees. Spacing is uneven on purpose (like Lightroom):
+    /// the warm tones that matter most for skin get the narrow bands.
+    var hue: Double {
+        switch self {
+        case .red: return 0
+        case .orange: return 30
+        case .yellow: return 60
+        case .green: return 120
+        case .aqua: return 180
+        case .blue: return 225
+        case .purple: return 270
+        case .magenta: return 315
+        }
+    }
+
+    var swatch: Color { Color(hue: hue / 360, saturation: 0.85, brightness: 0.95) }
+
+    /// What the Hue slider turns this color into, from −100 to +100 (the
+    /// grader shifts by up to ±30°).
+    var hueSweep: [Color] {
+        stride(from: -30.0, through: 30.0, by: 7.5).map { d in
+            let h = (hue + d + 360).truncatingRemainder(dividingBy: 360)
+            return Color(hue: h / 360, saturation: 0.85, brightness: 0.95)
+        }
+    }
+}
+
+/// Hue / saturation / luminance shift for one band, each −100...100.
+struct HSLShift: Hashable {
+    var hue: Double = 0
+    var saturation: Double = 0
+    var luminance: Double = 0
+
+    var isZero: Bool { hue == 0 && saturation == 0 && luminance == 0 }
+}
+
+/// Per-band HSL shifts for the whole collage. Like the effects, they apply
+/// to the pictures and background only — never to overlays or the frame.
+struct HSLAdjustments: Hashable {
+    var shifts: [HSLBand: HSLShift] = [:]
+
+    subscript(band: HSLBand) -> HSLShift {
+        get { shifts[band] ?? HSLShift() }
+        set { shifts[band] = newValue.isZero ? nil : newValue }
+    }
+
+    var isIdentity: Bool { shifts.values.allSatisfy(\.isZero) }
 }
 
 // MARK: - Canvas Ratio

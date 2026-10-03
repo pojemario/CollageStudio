@@ -53,6 +53,11 @@ struct CollageGridView_Grid: View {
             // The effect-source snapshot wants the bare collage: no effects,
             // overlays, frame or gesture surface.
             let decorated = !state.isRenderingEffectSource
+            // Effects only touch the content, never the frame: this is the
+            // frame's opening (the whole canvas without a frame).
+            let contentWindow = CGRect(x: insetL, y: insetT,
+                                       width: contentSize.width, height: contentSize.height)
+            let background = HSLGrader.apply(state.hsl, to: state.backgroundColor)
 
             ZStack {
                 // Empty canvas is transparent so the app background shows
@@ -64,13 +69,15 @@ struct CollageGridView_Grid: View {
                     // With a frame on, the collage background only fills the
                     // frame's window; everything outside it is plain white
                     // under the frame image.
-                    Color.white
-                    state.backgroundColor
+                    // (Left out of the effect-source snapshot so glow and
+                    // halation don't bleed in from the frame's surround.)
+                    if decorated { Color.white }
+                    background
                         .modifier(EffectToning(state: state, enabled: decorated))
                         .frame(width: contentSize.width, height: contentSize.height)
                         .offset(x: (insetL - insetR) / 2, y: (insetT - insetB) / 2)
                 } else {
-                    state.backgroundColor
+                    background
                         .modifier(EffectToning(state: state, enabled: decorated))
                 }
 
@@ -101,7 +108,10 @@ struct CollageGridView_Grid: View {
                     if decorated {
                         // Looks that need their own layers: fade haze, glow
                         // and halation maps, vignette, grain.
-                        EffectLayers(maps: state.effectMaps, canvasSize: canvasSize)
+                        EffectLayers(maps: state.effectMaps, canvasSize: canvasSize,
+                                     window: resolvedFrame != nil
+                                        ? contentWindow
+                                        : CGRect(origin: .zero, size: canvasSize))
 
                         overlayLayers(aboveFrame: false, canvasSize: canvasSize)
 
@@ -177,6 +187,7 @@ struct CollageGridView_Grid: View {
                 .scaleEffect(shown.scale)
                 .rotationEffect(.radians(shown.rotation))
                 .offset(x: shown.offset.width * scale, y: shown.offset.height * scale)
+                .blur(radius: layer.blurRadius * scale)
                 .frame(width: canvasSize.width, height: canvasSize.height)
                 .clipped()
                 .opacity(layer.opacity / 100)

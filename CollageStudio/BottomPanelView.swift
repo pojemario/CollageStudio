@@ -50,19 +50,20 @@ struct FloatingTabBar: View {
                             .minimumScaleFactor(0.8)
                     }
                     .padding(.horizontal, 8)
-                    .foregroundStyle(active ? Color.accentColor : Color.primary.opacity(0.72))
+                    .foregroundStyle(active ? Color.white : Color.primary.opacity(0.72))
                     .frame(maxWidth: .infinity)
                     .frame(height: 50)
-                    // Selection bubble: a denser, matte piece of glass sitting
-                    // in the pill, the icon and label in the accent color.
+                    // Selection bubble: a solid accent-colored chip with the
+                    // icon and label in white, so the active tab reads at a
+                    // glance over any canvas.
                     .background {
                         if active {
                             let shape = RoundedRectangle(cornerRadius: Self.cornerRadius - 5, style: .continuous)
                             shape
-                                .fill(.regularMaterial)
-                                .overlay(shape.fill(Color.primary.opacity(0.07)))
-                                .overlay(shape.strokeBorder(Color.white.opacity(0.5), lineWidth: 0.8))
-                                .shadow(color: .black.opacity(0.08), radius: 4, y: 1)
+                                .fill(LinearGradient(colors: [Color.accentColor.opacity(0.85), Color.accentColor],
+                                                     startPoint: .top, endPoint: .bottom))
+                                .overlay(shape.strokeBorder(Color.white.opacity(0.35), lineWidth: 0.8))
+                                .shadow(color: Color.accentColor.opacity(0.45), radius: 6, y: 2)
                                 .matchedGeometryEffect(id: "bubble", in: bubble)
                         }
                     }
@@ -302,7 +303,8 @@ struct BottomPanelView: View {
             LabeledSlider(label: "Columns", value: Binding(
                 get: { Double(min(state.numCols, state.maxSelectableCols)) },
                 set: { v in state.numCols = Int(v); state.rebuildLayout(resetGrows: true) }
-            ), range: 1...Double(state.maxSelectableCols), step: 1, format: "%.0f", resetValue: 2)
+            ), range: 1...Double(state.maxSelectableCols), step: 1, format: "%.0f", resetValue: 2,
+               reservesSwatchSlot: true)
                 .disabled(state.maxSelectableCols <= 1)
                 .opacity(state.maxSelectableCols <= 1 ? 0.4 : 1)
 
@@ -310,7 +312,7 @@ struct BottomPanelView: View {
                           resetValue: 10, swatchColor: $state.backgroundColor)
 
             LabeledSlider(label: "Rounding", value: $state.cornerRadius, range: 0...100, step: 1, format: "%.0f",
-                          resetValue: 20)
+                          resetValue: 20, reservesSwatchSlot: true)
                 // The chain sits in this row's empty swatch slot, visually
                 // connecting the Background and Border color circles
                 .overlay(alignment: .trailing) {
@@ -360,7 +362,7 @@ struct BottomPanelView: View {
         OverlayPanel()
     }
 
-    // MARK: - Effects tab (fade, halation, glow, B&W, …)
+    // MARK: - Effects tab (brightness, contrast, fade, glow, …)
 
     var effectsTab: some View {
         EffectsPanel()

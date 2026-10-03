@@ -209,8 +209,17 @@ struct ImageBoxView: View {
                         }
                     }
                 }
+                // Re-grade the picture whenever the HSL or the picture changes.
+                .task(id: HSLGradeKey(proxy: imgData.map { ObjectIdentifier($0.proxy) }, hsl: state.hsl)) {
+                    if let img = imgData { state.gradeHSLIfNeeded(img) }
+                }
                 .id(imgData?.gestureEpoch ?? 0)
         }
+    }
+
+    private struct HSLGradeKey: Equatable {
+        let proxy: ObjectIdentifier?
+        let hsl: HSLAdjustments
     }
 
     func updateTrackedGeometry(frame: CGRect, boxSize: CGSize) {
@@ -255,7 +264,7 @@ struct ImageBoxView: View {
             // Canvas uses the downscaled proxy; export swaps in the original.
             // Both share the same aspect ratio and target frame, so geometry
             // is identical either way.
-            let displayImage = state.renderFullResolution ? img.image : img.proxy
+            let displayImage = state.hslDisplayImage(for: img)
             // Guard against any non-finite geometry that would collapse the
             // image to a white box.
             let safeW = (rw.isFinite && rw > 0) ? rw : boxSize.width
@@ -271,7 +280,7 @@ struct ImageBoxView: View {
         } else if let img = imgData {
             // Degenerate box/image size — fall back to a plain fill so the
             // frame never goes blank.
-            let displayImage = state.renderFullResolution ? img.image : img.proxy
+            let displayImage = state.hslDisplayImage(for: img)
             #if canImport(UIKit)
             Image(uiImage: displayImage).resizable().scaledToFill().allowsHitTesting(false)
             #else

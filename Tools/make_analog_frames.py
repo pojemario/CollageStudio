@@ -414,7 +414,36 @@ FILM_FRAMES = [
          chips=7, gate_chips=6, dust=(12, 0, .35)),
 ]
 
-PACKS = [("Analog916", FRAMES), ("Film916", FILM_FRAMES)]
+# "Film Slim": the Film characters with a finer edge and a narrow paper gap.
+FILM_SLIM_FRAMES = [
+    dict(name="Thin", seed=231, gap=(24, 24, 24, 24), rebate=(8, 8, 8, 8), tuck=4,
+         film_rgb=(14, 14, 15), outer_rough=[(40, .9), (3, .4)], outer_soft=1.3,
+         inner_rough=[(50, .8), (4, .4)], gate_radius=4, inner_soft=1.8,
+         chips=2, gate_chips=2, dust=(8, 0, .35)),
+    dict(name="Nicked", seed=237, gap=(24, 24, 24, 24), rebate=(10, 10, 10, 10), tuck=4,
+         film_rgb=(15, 14, 14), outer_rough=[(30, 1.1), (3, .6)], outer_soft=1.3,
+         inner_rough=[(40, .9), (4, .5)], gate_radius=5, inner_soft=2.0,
+         chips=12, gate_chips=7, gate_fuzz=4, dust=(10, 0, .35)),
+    dict(name="Scuffed", seed=239, gap=(22, 22, 22, 22), rebate=(12, 12, 12, 12), tuck=5,
+         film_rgb=(17, 16, 15), outer_rough=[(36, 1.0), (3, .5)], outer_soft=1.4,
+         inner_rough=[(50, .9), (4, .5)], gate_radius=5, inner_soft=2.0,
+         chips=4, scuffs=30, dust=(40, 1, .5)),
+    dict(name="Uneven", seed=249, gap=(24, 22, 24, 26), rebate=(7, 15, 9, 11), tuck=4,
+         film_rgb=(14, 14, 14), outer_rough=[(90, 2.0), (20, 1.1), (3, .4)], outer_soft=1.6,
+         inner_rough=[(80, 1.6), (5, .4)], gate_radius=9, inner_soft=2.2,
+         chips=3, gate_chips=2, gate_fuzz=3, dust=(10, 0, .35)),
+    dict(name="Corner", seed=251, gap=(24, 24, 24, 24), rebate=(10, 10, 10, 10), tuck=4,
+         film_rgb=(16, 14, 13), outer_rough=[(40, 1.0), (3, .5)], outer_soft=1.3,
+         inner_rough=[(50, .9), (4, .5)], gate_radius=5, inner_soft=2.0,
+         chips=3, gate_chips=2, corner_lift=(W - 24 - 6, H - 24 - 8, 22), scuffs=6,
+         dust=(14, 1, .4)),
+    dict(name="Hairline", seed=257, gap=(26, 26, 26, 26), rebate=(5, 5, 5, 5), tuck=3,
+         film_rgb=(16, 16, 16), outer_rough=[(60, 1.1), (6, .7), (2, .5)], outer_soft=1.2,
+         inner_rough=[(60, 1.1), (6, .7), (2, .5)], gate_radius=3, inner_soft=1.5,
+         chips=5, gate_chips=4, dust=(8, 0, .3)),
+]
+
+PACKS = [("Analog916", FRAMES), ("Film916", FILM_FRAMES), ("FilmSlim916", FILM_SLIM_FRAMES)]
 
 
 THUMB_W, THUMB_H = 180, 320

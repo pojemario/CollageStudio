@@ -42,6 +42,8 @@ struct OverlayPanel: View {
             if let layer = state.editedOverlay {
                 LabeledSlider(label: "Opacity", value: binding(for: layer.id, \.opacity),
                               range: 0...100, step: 1, format: "%.0f", resetValue: 100)
+                LabeledSlider(label: "Blur", value: binding(for: layer.id, \.blur),
+                              range: 0...100, step: 0.5, format: "%.0f", resetValue: 0)
             }
 
             layerRow.panelChrome(state)
