@@ -1045,10 +1045,10 @@ struct ProtrusionLayer: View {
             }
         case .shadow:
             placed(placement: placement, box: box) {
-                Color.black.opacity(0.45).mask(Image(decorative: mask, scale: 1).resizable())
+                Color.black.opacity(0.65).mask(Image(decorative: mask, scale: 1).resizable())
             }
-            .blur(radius: 7 * scale)
-            .offset(y: 4 * scale)
+            .blur(radius: 9 * scale)
+            .offset(y: 6 * scale)
         }
     }
 
