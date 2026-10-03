@@ -104,9 +104,10 @@ struct FloatingTabBar: View {
         UIImpactFeedbackGenerator(style: .light).impactOccurred()
         #endif
         state.closeRatio()
-        if state.textEditTargetId != nil {
-            // Any tab leaves text editing and shows that tab.
+        if state.textEditTargetId != nil || state.protrusionTargetId != nil {
+            // Any tab leaves text / protrusion editing and shows that tab.
             state.endTextEditing()
+            state.endProtrusionEditing()
             state.selectedPanelTab = i
         } else if state.selectedPanelTab == i && state.isPanelOpen {
             withAnimation(.easeInOut(duration: 0.25)) { state.isPanelOpen = false }
@@ -158,6 +159,9 @@ struct BottomPanelView: View {
                 // Editing a text box takes over the panel until it's done.
                 if let textId = state.textEditTargetId {
                     TextEditPanel(imageId: textId)
+                } else if let protrudeId = state.protrusionTargetId {
+                    // So does a photo's protrusion (long-press → Protrude).
+                    ProtrusionPanel(imageId: protrudeId)
                 } else {
                     switch state.selectedPanelTab {
                     case 0: imagesTab

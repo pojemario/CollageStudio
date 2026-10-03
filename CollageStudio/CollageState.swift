@@ -830,6 +830,7 @@ class CollageState: ObservableObject {
         withTransaction(transaction) {
             isPanelOpen = false
             textEditTargetId = nil
+            protrusionTargetId = nil
             panelDrag = 0
             isPanelDragging = false
         }
@@ -920,6 +921,83 @@ class CollageState: ObservableObject {
     func endTextEditing() {
         guard textEditTargetId != nil else { return }
         withAnimation(.easeInOut(duration: 0.2)) { textEditTargetId = nil }
+    }
+
+    // MARK: - Protrusion
+
+    /// The photo whose protrusion settings fill the panel (long-press menu →
+    /// Protrude), like text editing.
+    @Published var protrusionTargetId: UUID? = nil
+    /// Subject masks by image id (made on demand, kept for the session).
+    @Published private(set) var subjectMasks: [UUID: SubjectMask] = [:]
+    private var maskInFlight: Set<UUID> = []
+    /// The photo being panned by finger right now: its protrusion hides
+    /// until the pan is committed (the copy follows committed values only).
+    @Published var panningImageId: UUID? = nil
+
+    func beginProtrusion(id: UUID) {
+        closeRatio()
+        textEditTargetId = nil
+        withAnimation(.easeInOut(duration: 0.25)) {
+            protrusionTargetId = id
+            isPanelOpen = true
+        }
+        if let img = images.first(where: { $0.id == id }) { requestSubjectMask(for: img) }
+    }
+
+    func endProtrusionEditing() {
+        guard protrusionTargetId != nil else { return }
+        withAnimation(.easeInOut(duration: 0.2)) { protrusionTargetId = nil }
+    }
+
+    /// The subject mask for a photo, if made (and still matching its image).
+    func subjectMask(for img: CollageImage) -> SubjectMask? {
+        guard let m = subjectMasks[img.id], m.source == ObjectIdentifier(img.image) else { return nil }
+        return m
+    }
+
+    func isFindingSubject(_ id: UUID) -> Bool { maskInFlight.contains(id) }
+
+    /// Finds the photo's subject with Vision, off the main thread, once.
+    func requestSubjectMask(for img: CollageImage) {
+        guard img.canProtrude, subjectMask(for: img) == nil, !maskInFlight.contains(img.id) else { return }
+        let id = img.id, image = img.image
+        maskInFlight.insert(id)
+        objectWillChange.send()
+        Task.detached(priority: .userInitiated) {
+            let mask = SubjectMasker.makeMask(for: image)
+            await MainActor.run {
+                self.maskInFlight.remove(id)
+                self.subjectMasks[id] = mask
+            }
+        }
+    }
+
+    func setProtrusion(_ edges: ProtrusionEdges?, for id: UUID) {
+        guard let pi = pageIndex(containing: id),
+              let idx = pages[pi].images.firstIndex(where: { $0.id == id }) else { return }
+        pages[pi].images[idx].protrusion = edges
+    }
+
+    /// The box edges the photo's subject currently crosses — where a
+    /// protrusion would actually show, given its zoom, pan and rotation.
+    func protrudableEdges(for id: UUID) -> ProtrusionEdges {
+        guard let img = images.first(where: { $0.id == id }), let mask = subjectMask(for: img),
+              mask.mask != nil, let box = imageFrames[id]?.size,
+              let placement = ImagePlacement.compute(natural: img.naturalSize, boxSize: box, zoom: img.zoom,
+                                                     rotation: img.rotation,
+                                                     pan: Self.panPixels(img.panOffset, in: box))
+        else { return [] }
+        let b = mask.bounds
+        let corners = [placement.boxPoint(b.minX, b.minY), placement.boxPoint(b.maxX, b.minY),
+                       placement.boxPoint(b.minX, b.maxY), placement.boxPoint(b.maxX, b.maxY)]
+        let tolerance: CGFloat = 1
+        var edges: ProtrusionEdges = []
+        if corners.contains(where: { $0.y < -box.height / 2 - tolerance }) { edges.insert(.top) }
+        if corners.contains(where: { $0.y > box.height / 2 + tolerance }) { edges.insert(.bottom) }
+        if corners.contains(where: { $0.x < -box.width / 2 - tolerance }) { edges.insert(.left) }
+        if corners.contains(where: { $0.x > box.width / 2 + tolerance }) { edges.insert(.right) }
+        return edges
     }
 
     /// A tap on a text box also reaches the canvas-wide tap handlers, in no

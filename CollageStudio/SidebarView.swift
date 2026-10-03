@@ -20,6 +20,11 @@ struct SidebarView: View {
                         TextEditPanel(imageId: textId)
                     }
                 }
+                if let protrudeId = state.protrusionTargetId {
+                    SidebarSection(title: "Protrude") {
+                        ProtrusionPanel(imageId: protrudeId)
+                    }
+                }
                 imagesSection
                 ratioSection
                 layoutSection

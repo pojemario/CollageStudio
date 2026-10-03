@@ -283,6 +283,11 @@ struct CollageImage: Identifiable, Equatable {
     /// kept so the text stays editable (tap the box).
     var textStyle: TextBoxStyle? = nil
     var isText: Bool { textStyle != nil }
+    /// Protrusion: the edges the photo's subject may break out of its box
+    /// across (over the border and neighbouring boxes). Nil = off.
+    var protrusion: ProtrusionEdges? = nil
+    /// Photos (not text boxes or empty slots) can protrude.
+    var canProtrude: Bool { !isPlaceholder && !isText }
     /// Bumped after every committed pinch. The box view uses it as its
     /// identity, forcing SwiftUI to rebuild the gesture recognizers — repeated
     /// two-finger gestures can otherwise corrupt a view's recognizers and
@@ -348,6 +353,66 @@ struct CollageImage: Identifiable, Equatable {
     /// the same frame, so geometry is identical in preview and export.
     var naturalSize: CGSize {
         image.size
+    }
+}
+
+// MARK: - Protrusion
+
+/// Box edges a subject may protrude across.
+struct ProtrusionEdges: OptionSet, Hashable {
+    let rawValue: Int
+    static let top = ProtrusionEdges(rawValue: 1)
+    static let bottom = ProtrusionEdges(rawValue: 2)
+    static let left = ProtrusionEdges(rawValue: 4)
+    static let right = ProtrusionEdges(rawValue: 8)
+    static let all: ProtrusionEdges = [.top, .bottom, .left, .right]
+
+    static let ordered: [(ProtrusionEdges, String)] = [(.top, "Top"), (.bottom, "Bottom"),
+                                                        (.left, "Left"), (.right, "Right")]
+}
+
+/// Where a photo sits inside its box: aspect-fill cover for the (possibly
+/// rotated) box, times zoom, shifted by the pan — clamped so no gap shows.
+/// Shared by the box itself and its protrusion copy, so both line up.
+struct ImagePlacement {
+    let size: CGSize
+    let rotation: CGFloat
+    let offset: CGSize
+
+    /// `pan` is in box points (stored pan converted, plus any live drag).
+    static func compute(natural: CGSize, boxSize: CGSize, zoom rawZoom: CGFloat,
+                        rotation rawRot: CGFloat, pan: CGSize) -> ImagePlacement? {
+        guard boxSize.width > 1, boxSize.height > 1, natural.width > 1, natural.height > 1 else { return nil }
+        let zoom = rawZoom.isFinite ? max(1.0, min(4.0, rawZoom)) : 1.0
+        let rotation = rawRot.isFinite ? rawRot : 0
+        // Exact aspect-fill cover for the *rotated* box: the box rotated
+        // into image space has extents (bw, bh); the image (keeping its
+        // aspect ratio) must be at least that big to leave no gaps at any
+        // angle.
+        let c = abs(cos(rotation)), s = abs(sin(rotation))
+        let bw = boxSize.width * c + boxSize.height * s
+        let bh = boxSize.width * s + boxSize.height * c
+        let aspect = max(0.05, min(20, natural.width / natural.height))
+        var rw = max(bw, bh * aspect) * zoom
+        var rh = rw / aspect
+        // Clamp against the rotated cover so panning can't reveal a gap.
+        let maxPanX = max(0, (rw - bw) / 2)
+        let maxPanY = max(0, (rh - bh) / 2)
+        let offset = CGSize(width: min(max(pan.width, -maxPanX), maxPanX),
+                            height: min(max(pan.height, -maxPanY), maxPanY))
+        // Guard against any non-finite geometry that would collapse the
+        // image to a white box.
+        if !(rw.isFinite && rw > 0) { rw = boxSize.width }
+        if !(rh.isFinite && rh > 0) { rh = boxSize.height }
+        return ImagePlacement(size: CGSize(width: rw, height: rh), rotation: rotation, offset: offset)
+    }
+
+    /// A point given in normalized image coordinates (0...1, y down) in box
+    /// coordinates relative to the box center.
+    func boxPoint(_ u: CGFloat, _ v: CGFloat) -> CGPoint {
+        let x = (u - 0.5) * size.width, y = (v - 0.5) * size.height
+        let c = cos(rotation), s = sin(rotation)
+        return CGPoint(x: x * c - y * s + offset.width, y: x * s + y * c + offset.height)
     }
 }
 
@@ -758,6 +823,11 @@ enum ColorFilter: String, CaseIterable, Identifiable {
     case classicNegative = "Classic Neg"
     /// Classic Neg with strong teal (instead of green-teal) shadows.
     case classicNegative2 = "Classic Neg 2"
+    /// Kodak Portra 400 look, matched to a gallery of Portra 400 scans: bright
+    /// and airy with gentle contrast, warm natural skin, cooler muted
+    /// blue-green foliage, clear cyan water / sky, muted blues, near-neutral
+    /// grays with faintly warm highlights.
+    case portra400 = "Portra 400"
 
     var id: String { rawValue }
     var title: String { rawValue }
@@ -771,6 +841,8 @@ enum ColorFilter: String, CaseIterable, Identifiable {
             return Self.brownie(r, g, b)
         case .classicNegative:
             return Self.classicNegative(r, g, b, shadow: [-0.018, 0.022, -0.002])   // dark green-teal
+        case .portra400:
+            return Self.portra400(r, g, b)
         case .classicNegative2:
             return Self.classicNegative(r, g, b, shadow: [-0.070, 0.046, 0.060])    // strong teal
         case .melancholy:
@@ -876,6 +948,49 @@ enum ColorFilter: String, CaseIterable, Identifiable {
         let wm = min(max(1 - abs(l - 0.5) / 0.3, 0), 1)
         let mid = [0.016, 0.008, -0.018]        // warm olive
         let out = (0..<3).map { min(max(c[$0] + ws * shadow[$0] + wm * mid[$0], 0), 1) }
+        return (out[0], out[1], out[2])
+    }
+
+    private static func portra400(_ r: Double, _ g: Double, _ b: Double) -> (r: Double, g: Double, b: Double) {
+        func bump(_ h: Double, _ center: Double, _ width: Double) -> Double {
+            var d = (h - center + 180).truncatingRemainder(dividingBy: 360)
+            if d < 0 { d += 360 }
+            d -= 180
+            let w = min(max(1 - abs(d) / width, 0), 1)
+            return w * w * (3 - 2 * w)
+        }
+        var (h, s, v) = hsv(r, g, b)
+        // Skin / warm tones: peachy, kept natural.
+        let ww = bump(h, 28, 22)
+        h += ww * (29 - h) * 0.35
+        s *= 1 - 0.05 * ww
+        // Greens: cooler blue-green, muted and a little darker.
+        let wg = bump(h, 110, 60)
+        h += wg * (128 - h) * 0.45
+        s *= 1 - 0.22 * wg
+        v *= 1 - 0.06 * wg
+        // Water / cyan: clear cyan-teal, a touch richer.
+        s = min(s * (1 + 0.10 * bump(h, 190, 22)), 1)
+        // Blues: toward cyan, muted.
+        let wb = bump(h, 225, 35)
+        h += wb * (205 - h) * 0.5
+        s *= 1 - 0.25 * wb
+        s *= 0.95
+        h = h.truncatingRemainder(dividingBy: 360)
+        if h < 0 { h += 360 }
+        var c = rgb(h, s, v)
+        // Airy tone: brighter mids, gentle contrast, soft top, near-black floor.
+        c = c.map { x in
+            let p = pow(max(x, 0), 0.92)
+            let sc = p * p * (3 - 2 * p)
+            return 0.018 + (0.985 - 0.018) * (p * 0.85 + sc * 0.15)
+        }
+        let l = 0.299 * c[0] + 0.587 * c[1] + 0.114 * c[2]
+        let wm = min(max(1 - abs(l - 0.5) / 0.3, 0), 1)
+        let wh = pow(min(max((l - 0.7) / 0.3, 0), 1), 1.2)
+        let mid = [0.0, 0.008, 0.0]             // whisper of green in the mids
+        let high = [0.008, -0.004, -0.002]      // faint warm-pink highlights
+        let out = (0..<3).map { min(max(c[$0] + wm * mid[$0] + wh * high[$0], 0), 1) }
         return (out[0], out[1], out[2])
     }
 

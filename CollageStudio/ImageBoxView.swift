@@ -1,4 +1,5 @@
 import SwiftUI
+import Vision
 
 struct ImageBoxView: View {
     /// Toggle to overlay live transform numbers on each image for debugging.
@@ -246,51 +247,30 @@ struct ImageBoxView: View {
 
     @ViewBuilder
     func imageLayer(boxSize: CGSize) -> some View {
+        // Committed transform combined with the live gesture deltas. Stored
+        // pan is normalized to box size; converted to points for this render
+        // scale (preview or export).
         if let img = imgData,
-           boxSize.width > 1, boxSize.height > 1,
-           img.naturalSize.width > 1, img.naturalSize.height > 1 {
-            let natural = img.naturalSize
-            // Committed transform combined with the live gesture deltas.
-            let rawZoom = img.zoom * gestureScale
-            let effectiveZoom = rawZoom.isFinite ? max(1.0, min(4.0, rawZoom)) : 1.0
-            let rawRot = img.rotation + CGFloat(gestureRotation.radians)
-            let effectiveRotation = rawRot.isFinite ? rawRot : 0
-            // Exact aspect-fill cover for the *rotated* box: the box rotated
-            // into image space has extents (bw, bh); the image (keeping its
-            // aspect ratio) must be at least that big to leave no gaps at any
-            // angle.
-            let c = abs(cos(effectiveRotation)), s = abs(sin(effectiveRotation))
-            let bw = boxSize.width * c + boxSize.height * s
-            let bh = boxSize.width * s + boxSize.height * c
-            let aspect = max(0.05, min(20, natural.width / natural.height))
-            let rw = max(bw, bh * aspect) * effectiveZoom
-            let rh = rw / aspect
-            // Stored pan is normalized to box size; convert to pixels for
-            // this render scale (preview or export). Clamp against the rotated
-            // cover so panning can't reveal a gap at any angle.
-            let basePan = CollageState.panPixels(img.panOffset, in: boxSize)
-            let maxPanX = max(0, (rw - bw) / 2)
-            let maxPanY = max(0, (rh - bh) / 2)
-            let livePan = CGSize(
-                width: min(max(basePan.width + livePanOffset.width, -maxPanX), maxPanX),
-                height: min(max(basePan.height + livePanOffset.height, -maxPanY), maxPanY)
-            )
-
+           let placement = ImagePlacement.compute(
+               natural: img.naturalSize, boxSize: boxSize,
+               zoom: img.zoom * gestureScale,
+               rotation: img.rotation + CGFloat(gestureRotation.radians),
+               pan: {
+                   let base = CollageState.panPixels(img.panOffset, in: boxSize)
+                   return CGSize(width: base.width + livePanOffset.width,
+                                 height: base.height + livePanOffset.height)
+               }()) {
             // Canvas uses the downscaled proxy; export swaps in the original.
             // Both share the same aspect ratio and target frame, so geometry
             // is identical either way.
             let displayImage = state.gradedDisplayImage(for: img)
-            // Guard against any non-finite geometry that would collapse the
-            // image to a white box.
-            let safeW = (rw.isFinite && rw > 0) ? rw : boxSize.width
-            let safeH = (rh.isFinite && rh > 0) ? rh : boxSize.height
             // Rendered via an Equatable subview so unrelated state changes
             // (other pages, busy flags, etc.) don't re-rasterize the image —
             // it only redraws when its own geometry/rotation actually change.
             CollageImageContent(image: displayImage,
-                                width: safeW, height: safeH,
-                                rotation: effectiveRotation,
-                                offset: livePan)
+                                width: placement.size.width, height: placement.size.height,
+                                rotation: placement.rotation,
+                                offset: placement.offset)
                 .equatable()
         } else if let img = imgData {
             // Degenerate box/image size — fall back to a plain fill so the
@@ -371,10 +351,13 @@ struct ImageBoxView: View {
                 // motion (no separate tap-to-close first).
                 state.collapsePanel()
                 state.closeRatio()
-                // Otherwise, live-pan inside the box
+                // Otherwise, live-pan inside the box (its protrusion hides
+                // until the pan is committed).
+                if state.panningImageId != imageId { state.panningImageId = imageId }
                 livePanOffset = value.translation
             }
             .onEnded { value in
+                if state.panningImageId == imageId { state.panningImageId = nil }
                 // Outlive the tap check above, then arm for the next touch.
                 DispatchQueue.main.asyncAfter(deadline: .now() + 0.2) { touchMoved = false }
                 // A two-finger pinch/rotate can spawn a stray single-finger
@@ -537,6 +520,10 @@ struct BoxActionMenu: View {
     static let width: CGFloat = 230
     private static let rowHeight: CGFloat = 44
 
+    private static func canProtrude(_ state: CollageState, _ imageId: UUID) -> Bool {
+        state.images.first { $0.id == imageId }?.canProtrude ?? false
+    }
+
     private static func movablePages(_ state: CollageState, _ imageId: UUID) -> [Int] {
         let source = state.pageIndex(containing: imageId)
         return state.pages.indices.filter { pi in
@@ -549,6 +536,7 @@ struct BoxActionMenu: View {
     static func height(state: CollageState, imageId: UUID) -> CGFloat {
         let rows = 2 + movablePages(state, imageId).count
             + (state.pages.count < CollageState.maxPages ? 1 : 0)
+            + (canProtrude(state, imageId) ? 1 : 0)
         return min(CGFloat(rows) * rowHeight + 8, 320)
     }
 
@@ -562,6 +550,13 @@ struct BoxActionMenu: View {
                 menuButton("Replace", sf: "photo.on.rectangle.angled") {
                     state.showReplacePicker = true
                     state.showBoxActionMenu = false
+                }
+                if Self.canProtrude(state, imageId) {
+                    Divider()
+                    menuButton("Protrude", sf: "person.crop.square") {
+                        state.beginProtrusion(id: imageId)
+                        dismissMenu()
+                    }
                 }
                 ForEach(movablePages, id: \.self) { pi in
                     Divider()
@@ -841,5 +836,257 @@ struct StampedBorderView: View {
             break
         }
         return p
+    }
+}
+
+// MARK: - Subject masks (protrusion)
+
+/// A photo's subject cut out by Vision (the same tech as Photos' "lift
+/// subject" / stickers): an alpha mask matching the upright picture, plus
+/// the subject's bounds in normalized image coordinates (0...1, y down).
+struct SubjectMask {
+    /// The original image it was made from (a replaced photo needs a new one).
+    let source: ObjectIdentifier
+    /// White, with the subject as alpha. Nil when no subject was found.
+    let mask: CGImage?
+    let bounds: CGRect
+}
+
+enum SubjectMasker {
+    /// Long edge the mask is computed at — sharp enough for export, quick to
+    /// compute, and the same mask serves the canvas and the export.
+    static let maskLongEdge: CGFloat = 1600
+
+    static func makeMask(for image: PlatformImage) -> SubjectMask {
+        let none = SubjectMask(source: ObjectIdentifier(image), mask: nil, bounds: .zero)
+        guard let cg = uprightCGImage(image, longEdge: maskLongEdge) else { return none }
+        let handler = VNImageRequestHandler(cgImage: cg, options: [:])
+        let request = VNGenerateForegroundInstanceMaskRequest()
+        do { try handler.perform([request]) } catch { return none }
+        guard let observation = request.results?.first, !observation.allInstances.isEmpty,
+              let buffer = try? observation.generateScaledMaskForImage(forInstances: observation.allInstances,
+                                                                       from: handler)
+        else { return none }
+        guard let (mask, bounds) = alphaMask(from: buffer) else { return none }
+        return SubjectMask(source: ObjectIdentifier(image), mask: mask, bounds: bounds)
+    }
+
+    /// The picture drawn upright (orientation applied) at most `longEdge`
+    /// long, so the mask lines up with how the photo is displayed.
+    private static func uprightCGImage(_ image: PlatformImage, longEdge: CGFloat) -> CGImage? {
+        let size = image.size
+        guard size.width > 0, size.height > 0 else { return nil }
+        let k = min(1, longEdge / max(size.width, size.height))
+        let target = CGSize(width: max(1, (size.width * k).rounded()), height: max(1, (size.height * k).rounded()))
+        #if canImport(UIKit)
+        let format = UIGraphicsImageRendererFormat()
+        format.scale = 1
+        return UIGraphicsImageRenderer(size: target, format: format).image { _ in
+            image.draw(in: CGRect(origin: .zero, size: target))
+        }.cgImage
+        #else
+        let rep = NSBitmapImageRep(bitmapDataPlanes: nil, pixelsWide: Int(target.width), pixelsHigh: Int(target.height),
+                                   bitsPerSample: 8, samplesPerPixel: 4, hasAlpha: true, isPlanar: false,
+                                   colorSpaceName: .deviceRGB, bytesPerRow: 0, bitsPerPixel: 0)
+        guard let rep else { return nil }
+        NSGraphicsContext.saveGraphicsState()
+        NSGraphicsContext.current = NSGraphicsContext(bitmapImageRep: rep)
+        image.draw(in: CGRect(origin: .zero, size: target))
+        NSGraphicsContext.restoreGraphicsState()
+        return rep.cgImage
+        #endif
+    }
+
+    /// Vision's float mask → a white RGBA image with the mask as alpha, and
+    /// the subject's normalized bounds.
+    private static func alphaMask(from buffer: CVPixelBuffer) -> (CGImage, CGRect)? {
+        CVPixelBufferLockBaseAddress(buffer, .readOnly)
+        defer { CVPixelBufferUnlockBaseAddress(buffer, .readOnly) }
+        guard CVPixelBufferGetPixelFormatType(buffer) == kCVPixelFormatType_OneComponent32Float,
+              let base = CVPixelBufferGetBaseAddress(buffer) else { return nil }
+        let w = CVPixelBufferGetWidth(buffer), h = CVPixelBufferGetHeight(buffer)
+        let rowBytes = CVPixelBufferGetBytesPerRow(buffer)
+        var pixels = [UInt8](repeating: 0, count: w * h * 4)
+        var minX = w, minY = h, maxX = -1, maxY = -1
+        for y in 0..<h {
+            let row = base.advanced(by: y * rowBytes).assumingMemoryBound(to: Float32.self)
+            for x in 0..<w {
+                let v = min(max(row[x], 0), 1)
+                let a = UInt8((v * 255).rounded())
+                let i = (y * w + x) * 4
+                // Premultiplied white: every channel equals alpha.
+                pixels[i] = a; pixels[i + 1] = a; pixels[i + 2] = a; pixels[i + 3] = a
+                if v > 0.5 {
+                    minX = min(minX, x); maxX = max(maxX, x)
+                    minY = min(minY, y); maxY = max(maxY, y)
+                }
+            }
+        }
+        guard maxX >= minX, maxY >= minY,
+              let provider = CGDataProvider(data: Data(pixels) as CFData),
+              let image = CGImage(width: w, height: h, bitsPerComponent: 8, bitsPerPixel: 32, bytesPerRow: w * 4,
+                                  space: CGColorSpaceCreateDeviceRGB(),
+                                  bitmapInfo: CGBitmapInfo(rawValue: CGImageAlphaInfo.premultipliedLast.rawValue),
+                                  provider: provider, decode: nil, shouldInterpolate: true, intent: .defaultIntent)
+        else { return nil }
+        let bounds = CGRect(x: CGFloat(minX) / CGFloat(w), y: CGFloat(minY) / CGFloat(h),
+                            width: CGFloat(maxX - minX + 1) / CGFloat(w), height: CGFloat(maxY - minY + 1) / CGFloat(h))
+        return (image, bounds)
+    }
+}
+
+// MARK: - Protrusion layer
+
+/// Draws each protruding photo's subject again above all boxes: the same
+/// graded picture with the same placement as in its box, but unclipped,
+/// masked to the subject, and limited to the box plus the space beyond its
+/// chosen edges. Inside the box it covers its own picture exactly, so only
+/// the parts the box crops away show — over the border and the neighbours.
+struct ProtrusionLayer: View {
+    @EnvironmentObject var state: CollageState
+    let canvasSize: CGSize
+    let gap: CGFloat
+
+    var body: some View {
+        let rects = state.layout.rects(canvasSize: canvasSize, gap: gap)
+        ZStack(alignment: .topLeading) {
+            ForEach(state.images.filter { $0.protrusion != nil && $0.canProtrude }) { img in
+                protrusion(img, box: rects[img.id])
+                    // Masks are made on demand (also after a photo is replaced).
+                    .task(id: ObjectIdentifier(img.image)) { state.requestSubjectMask(for: img) }
+            }
+        }
+        .frame(width: canvasSize.width, height: canvasSize.height, alignment: .topLeading)
+        .allowsHitTesting(false)
+    }
+
+    /// Hidden while its photo is being moved, zoomed or resized: the copy
+    /// follows committed values, and reappears where the photo lands.
+    private func isHidden(_ id: UUID) -> Bool {
+        state.draggingId == id || state.imageZoomingId == id || state.panningImageId == id || state.isResizing
+    }
+
+    @ViewBuilder
+    private func protrusion(_ img: CollageImage, box: CGRect?) -> some View {
+        if let box, let edges = img.protrusion, !edges.isEmpty, !isHidden(img.id),
+           let mask = state.subjectMask(for: img)?.mask,
+           let placement = ImagePlacement.compute(natural: img.naturalSize, boxSize: box.size,
+                                                  zoom: img.zoom, rotation: img.rotation,
+                                                  pan: CollageState.panPixels(img.panOffset, in: box.size)) {
+            let allowed = allowedRegion(box: box, edges: edges)
+            Group {
+                #if canImport(UIKit)
+                Image(uiImage: state.gradedDisplayImage(for: img)).resizable()
+                #else
+                Image(nsImage: state.gradedDisplayImage(for: img)).resizable()
+                #endif
+            }
+            .frame(width: placement.size.width, height: placement.size.height)
+            .mask(Image(decorative: mask, scale: 1).resizable())
+            .rotationEffect(.radians(Double(placement.rotation)))
+            .offset(x: placement.offset.width, y: placement.offset.height)
+            .frame(width: box.width, height: box.height)
+            .position(x: box.midX, y: box.midY)
+            .frame(width: canvasSize.width, height: canvasSize.height)
+            .mask(alignment: .topLeading) {
+                Rectangle()
+                    .frame(width: allowed.width, height: allowed.height)
+                    .offset(x: allowed.minX, y: allowed.minY)
+            }
+        }
+    }
+
+    /// The box, opened up to the canvas edge on every allowed side.
+    private func allowedRegion(box: CGRect, edges: ProtrusionEdges) -> CGRect {
+        let minX = edges.contains(.left) ? 0 : box.minX
+        let maxX = edges.contains(.right) ? canvasSize.width : box.maxX
+        let minY = edges.contains(.top) ? 0 : box.minY
+        let maxY = edges.contains(.bottom) ? canvasSize.height : box.maxY
+        return CGRect(x: minX, y: minY, width: max(maxX - minX, 0), height: max(maxY - minY, 0))
+    }
+}
+
+// MARK: - Protrusion panel
+
+/// Panel (long-press menu → Protrude) for one photo: turn its subject's
+/// protrusion on or off and pick the edges it may break out across.
+struct ProtrusionPanel: View {
+    @EnvironmentObject var state: CollageState
+    let imageId: UUID
+
+    private var img: CollageImage? { state.images.first { $0.id == imageId } }
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 10) {
+            HStack {
+                Label("Protrude", systemImage: "person.crop.square")
+                    .font(.headline)
+                Spacer()
+                Button { state.endProtrusionEditing() } label: {
+                    Label("Done", systemImage: "checkmark")
+                        .font(.system(size: 14, weight: .semibold))
+                        .foregroundColor(.white)
+                        .padding(.horizontal, 12)
+                        .padding(.vertical, 9)
+                        .appButtonBackground(prominent: true)
+                }
+                .buttonStyle(.plain)
+            }
+            if let img { content(img) }
+        }
+        .panelChrome(state)
+        // The photo was deleted or moved to another page: nothing to edit.
+        .onChange(of: img == nil, initial: true) { _, gone in
+            if gone { state.endProtrusionEditing() }
+        }
+    }
+
+    @ViewBuilder
+    private func content(_ img: CollageImage) -> some View {
+        if state.isFindingSubject(img.id) || state.subjectMask(for: img) == nil {
+            HStack(spacing: 8) {
+                ProgressView()
+                Text("Finding the subject…").foregroundColor(.secondary)
+            }
+            .font(.subheadline)
+            .onAppear { state.requestSubjectMask(for: img) }
+        } else if state.subjectMask(for: img)?.mask == nil {
+            Text("No clear subject found in this photo.")
+                .font(.subheadline)
+                .foregroundColor(.secondary)
+        } else {
+            let crossing = state.protrudableEdges(for: img.id)
+            Toggle("Subject breaks out of its box", isOn: Binding(
+                get: { img.protrusion != nil },
+                set: { on in
+                    state.setProtrusion(on ? (crossing.isEmpty ? .all : crossing) : nil, for: img.id)
+                }))
+                .font(.subheadline)
+                .tint(.accentColor)
+
+            if let edges = img.protrusion {
+                HStack(spacing: 8) {
+                    PackChip(title: "All", isActive: edges == .all) {
+                        state.setProtrusion(.all, for: img.id)
+                    }
+                    ForEach(ProtrusionEdges.ordered, id: \.1) { edge, title in
+                        PackChip(title: title, isActive: edges.contains(edge)) {
+                            var next = edges
+                            if next.contains(edge) { next.remove(edge) } else { next.insert(edge) }
+                            // Unticking the last edge turns protrusion off.
+                            state.setProtrusion(next.isEmpty ? nil : next, for: img.id)
+                        }
+                        // Dimmed: the subject doesn't reach that edge now.
+                        .opacity(crossing.contains(edge) ? 1 : 0.45)
+                    }
+                }
+                Text(crossing.isEmpty
+                     ? "The subject sits fully inside the box. Zoom or move the photo so the box cuts it off — that part will break out."
+                     : "Dimmed edges: the subject doesn't reach them right now.")
+                    .font(.caption)
+                    .foregroundColor(.secondary)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
+        }
     }
 }
