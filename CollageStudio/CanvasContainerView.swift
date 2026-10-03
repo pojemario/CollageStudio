@@ -141,40 +141,15 @@ struct CanvasContainerView: View {
             .onChange(of: photoItems) { _, newItems in
                 loadPhotos(newItems)
             }
-            // Long-press action menu: ONE floating card on this stable
-            // container, placed at the recorded press point (canvas space →
-            // this view's local space: the grid sits top-centered in the
-            // content area). Drawn in SwiftUI rather than as a popover, so it
-            // gets the app's corner radius — and per-box popovers must not be
-            // used anyway: after swaps they left orphaned UIKit presentation
-            // views over the box that swallowed all its touches.
-            .overlay {
-                if state.showBoxActionMenu, let id = state.boxActionTargetId {
-                    GeometryReader { geo in
-                        let menu = BoxActionMenu(imageId: id)
-                        let size = CGSize(width: BoxActionMenu.width,
-                                          height: BoxActionMenu.height(state: state, imageId: id))
-                        let press = CGPoint(x: state.boxActionPressPoint.x + (contentW - displayW) / 2,
-                                            y: state.boxActionPressPoint.y + padding)
-                        // Below the finger if it fits, otherwise above it;
-                        // always fully on screen.
-                        let below = press.y + 12 + size.height <= geo.size.height - 8
-                        let y = below ? press.y + 12 + size.height / 2 : press.y - 12 - size.height / 2
-                        let x = min(max(press.x, size.width / 2 + 8), geo.size.width - size.width / 2 - 8)
-                        ZStack {
-                            // Tap anywhere else to dismiss.
-                            Color.black.opacity(0.001)
-                                .contentShape(Rectangle())
-                                .onTapGesture { actionMenuShown.wrappedValue = false }
-                            menu
-                                .position(x: x, y: min(max(y, size.height / 2 + 8),
-                                                       geo.size.height - size.height / 2 - 8))
-                        }
-                    }
-                    .transition(.opacity.combined(with: .scale(scale: 0.96)))
-                }
+            // Where canvas space sits on screen, for the long-press action
+            // menu — drawn at the app's root (BoxActionMenuLayer) so it floats
+            // above the bottom panel too. The grid sits top-centered in the
+            // content area.
+            .onChange(of: CGPoint(x: geo.frame(in: .global).minX + (contentW - displayW) / 2,
+                                  y: geo.frame(in: .global).minY + padding),
+                      initial: true) { _, origin in
+                state.boxActionCanvasOrigin = origin
             }
-            .animation(.easeOut(duration: 0.15), value: state.showBoxActionMenu)
             // Single-image picker for the "Replace" action
             .photosPicker(isPresented: $state.showReplacePicker,
                           selection: $replaceItems,
@@ -185,20 +160,6 @@ struct CanvasContainerView: View {
             }
         }
     }
-    /// Dismissing the action menu (tap outside) clears the target unless the
-    /// Replace picker took over.
-    private var actionMenuShown: Binding<Bool> {
-        Binding(
-            get: { state.showBoxActionMenu },
-            set: { shown in
-                if !shown {
-                    state.showBoxActionMenu = false
-                    if !state.showReplacePicker { state.boxActionTargetId = nil }
-                }
-            }
-        )
-    }
-
     // MARK: - Load photos (empty-canvas add button)
 
     func loadPhotos(_ items: [PhotosPickerItem]) {

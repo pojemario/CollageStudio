@@ -454,6 +454,54 @@ struct ImageBoxView: View {
 
 // MARK: - Box action menu (long-press popover)
 
+/// Hosts the long-press action menu at the root of the app, above the canvas
+/// AND the bottom panel. The card is placed at the pressed point. It is drawn
+/// in SwiftUI rather than as a popover, so it gets the app's corner radius —
+/// and per-box popovers must not be used anyway: after swaps they left
+/// orphaned UIKit presentation views over the box that swallowed all its
+/// touches.
+struct BoxActionMenuLayer: View {
+    @EnvironmentObject var state: CollageState
+
+    var body: some View {
+        ZStack {
+            if state.showBoxActionMenu, let id = state.boxActionTargetId {
+                GeometryReader { geo in
+                    let frame = geo.frame(in: .global)
+                    let size = CGSize(width: BoxActionMenu.width,
+                                      height: BoxActionMenu.height(state: state, imageId: id))
+                    let press = CGPoint(
+                        x: state.boxActionCanvasOrigin.x + state.boxActionPressPoint.x - frame.minX,
+                        y: state.boxActionCanvasOrigin.y + state.boxActionPressPoint.y - frame.minY)
+                    // Below the finger if it fits, otherwise above it;
+                    // always fully on screen.
+                    let below = press.y + 12 + size.height <= geo.size.height - 8
+                    let y = below ? press.y + 12 + size.height / 2 : press.y - 12 - size.height / 2
+                    let x = min(max(press.x, size.width / 2 + 8), geo.size.width - size.width / 2 - 8)
+                    ZStack {
+                        // Tap anywhere else to dismiss.
+                        Color.black.opacity(0.001)
+                            .contentShape(Rectangle())
+                            .onTapGesture { dismiss() }
+                        BoxActionMenu(imageId: id)
+                            .position(x: x, y: min(max(y, size.height / 2 + 8),
+                                                   geo.size.height - size.height / 2 - 8))
+                    }
+                }
+                .transition(.opacity.combined(with: .scale(scale: 0.96)))
+            }
+        }
+        .animation(.easeOut(duration: 0.15), value: state.showBoxActionMenu)
+    }
+
+    /// Tapping outside clears the target too, unless the Replace picker
+    /// took over.
+    private func dismiss() {
+        state.showBoxActionMenu = false
+        if !state.showReplacePicker { state.boxActionTargetId = nil }
+    }
+}
+
 /// Replace / Move / Delete menu: a floating card placed at the pressed point
 /// on an image box (see CanvasContainerView).
 struct BoxActionMenu: View {

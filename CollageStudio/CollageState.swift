@@ -727,6 +727,8 @@ class CollageState: ObservableObject {
     /// Canvas-space ("collageCanvas") point of the long press, anchoring the
     /// action menu popover.
     @Published var boxActionPressPoint: CGPoint = .zero
+    /// Global position of the canvas-space origin (see CanvasContainerView).
+    @Published var boxActionCanvasOrigin: CGPoint = .zero
 
     // MARK: - Shared import (Share Extension)
     @Published var pendingSharedImages: [PlatformImage] = []

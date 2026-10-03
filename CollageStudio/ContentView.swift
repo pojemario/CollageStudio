@@ -182,15 +182,19 @@ struct ContentView: View {
     @State private var ratioButtonFrame: CGRect = .zero
 
     var body: some View {
-        #if os(macOS)
-        macLayout
-        #else
-        if hSizeClass == .compact {
-            iPhoneLayout
-        } else {
-            iPadLayout
+        Group {
+            #if os(macOS)
+            macLayout
+            #else
+            if hSizeClass == .compact {
+                iPhoneLayout
+            } else {
+                iPadLayout
+            }
+            #endif
         }
-        #endif
+        // Topmost: the long-press image menu floats above every panel.
+        .overlay { BoxActionMenuLayer() }
     }
 
     // MARK: - macOS / iPad landscape: sidebar + canvas
