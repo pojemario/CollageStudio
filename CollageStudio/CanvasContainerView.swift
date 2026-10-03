@@ -256,7 +256,48 @@ private struct EmptyCanvasContent: View {
     /// Keeps turning while photos load — the start page's own spinner.
     @State private var spinning = false
 
+    /// Natural size of the plus ring + "ADD PHOTOS" stack.
+    private static let promptSize = CGSize(width: 330, height: 220)
+
     var body: some View {
+        // Dashed outline in the canvas ratio, so the chosen format is visible
+        // before any photos are in. Centered, with the prompt inside it.
+        let aspect = max(state.canvasSize.width, 1) / max(state.canvasSize.height, 1)
+        let box = CGSize(width: canvasSize.width * 0.84, height: canvasSize.height * 0.84)
+        let rect = aspect > box.width / box.height
+            ? CGSize(width: box.width, height: box.width / aspect)
+            : CGSize(width: box.height * aspect, height: box.height)
+        // Wide formats leave little height: shrink the prompt to fit inside.
+        let promptScale = min(1, (rect.width - 32) / Self.promptSize.width,
+                              (rect.height - 48) / Self.promptSize.height)
+
+        ZStack {
+            RoundedRectangle(cornerRadius: ButtonStyleGuide.cornerRadius, style: .continuous)
+                .strokeBorder(Color.accentColor.opacity(0.5),
+                              style: StrokeStyle(lineWidth: 1.5, dash: [7, 6]))
+                .frame(width: rect.width, height: rect.height)
+                .overlay(alignment: .bottom) {
+                    Text(state.ratio == .custom
+                         ? "\(Int(state.canvasSize.width))×\(Int(state.canvasSize.height))"
+                         : state.ratio.rawValue.replacingOccurrences(of: ":", with: "×"))
+                        .font(.system(size: 13, weight: .medium, design: .monospaced))
+                        .foregroundColor(.accentColor.opacity(0.8))
+                        .padding(.bottom, 12)
+                }
+
+            prompt
+                .scaleEffect(max(promptScale, 0.3))
+        }
+        .frame(maxWidth: .infinity, maxHeight: .infinity)
+        .contentShape(Rectangle())
+        .onAppear {
+            withAnimation(.easeInOut(duration: 2.2).repeatForever(autoreverses: true)) {
+                breathing = true
+            }
+        }
+    }
+
+    private var prompt: some View {
         VStack(spacing: 24) {
             ZStack {
                 Circle()
@@ -280,15 +321,7 @@ private struct EmptyCanvasContent: View {
                 .font(.system(size: 38, weight: .ultraLight))
                 .tracking(6)
                 .foregroundColor(.accentColor)
-        }
-        .frame(maxWidth: .infinity, maxHeight: .infinity)
-        // Bias toward the top so it stays visible above the bottom panel.
-        .offset(y: -canvasSize.height * 0.06)
-        .contentShape(Rectangle())
-        .onAppear {
-            withAnimation(.easeInOut(duration: 2.2).repeatForever(autoreverses: true)) {
-                breathing = true
-            }
+                .fixedSize()
         }
     }
 }
