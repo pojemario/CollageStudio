@@ -553,16 +553,18 @@ struct EffectsPanel: View {
     /// Camera calibration, laid out like Lightroom's panel: shadows tint,
     /// then hue and saturation for each primary. Tracks show the direction.
     private var calibrationControls: some View {
-        func color(_ h: Double, _ s: Double = 0.85) -> Color { Color(hue: h / 360, saturation: s, brightness: 0.95) }
+        // Track colors sampled from Lightroom's Calibration panel (hues and
+        // direction kept, brightened to match the app's other tracks).
+        func c(_ r: Double, _ g: Double, _ b: Double) -> Color { Color(red: r / 255, green: g / 255, blue: b / 255) }
         let gray = Color(white: 0.6)
         return VStack(spacing: 10) {
-            calSlider("Shadow Tint", \.shadowsTint, [color(120, 0.7), Color(white: 0.85), color(300, 0.7)])
-            calSlider("Red Hue", \.redHue, [color(330), color(0), color(30)])
-            calSlider("Red Sat", \.redSaturation, [gray, color(0)])
-            calSlider("Green Hue", \.greenHue, [color(60), color(120), color(170)])
-            calSlider("Green Sat", \.greenSaturation, [gray, color(120)])
-            calSlider("Blue Hue", \.blueHue, [color(190), color(230), color(275)])
-            calSlider("Blue Sat", \.blueSaturation, [gray, color(230)])
+            calSlider("Shadow Tint", \.shadowsTint, [c(130, 219, 107), c(170, 160, 170), c(202, 96, 210)])
+            calSlider("Red Hue", \.redHue, [c(235, 57, 156), c(240, 60, 90), c(226, 146, 86)])
+            calSlider("Red Sat", \.redSaturation, [gray, c(200, 70, 65)])
+            calSlider("Green Hue", \.greenHue, [c(206, 217, 77), c(102, 227, 105), c(99, 221, 190)])
+            calSlider("Green Sat", \.greenSaturation, [gray, c(90, 195, 55)])
+            calSlider("Blue Hue", \.blueHue, [c(98, 220, 141), c(99, 221, 196), c(32, 85, 211), c(91, 71, 204)])
+            calSlider("Blue Sat", \.blueSaturation, [gray, c(90, 178, 209)])
             HStack(spacing: 8) {
                 Spacer()
                 ActionButton(label: "Reset", sf: "arrow.counterclockwise", fillWidth: false) {

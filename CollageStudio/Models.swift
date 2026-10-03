@@ -756,6 +756,8 @@ enum ColorFilter: String, CaseIterable, Identifiable {
     /// muted olive greens, vivid reds, cyan-leaning blues, strong contrast
     /// over green-teal shadows and near-neutral highlights.
     case classicNegative = "Classic Neg"
+    /// Classic Neg with blue-teal instead of green-teal shadows.
+    case classicNegative2 = "Classic Neg 2"
 
     var id: String { rawValue }
     var title: String { rawValue }
@@ -768,7 +770,9 @@ enum ColorFilter: String, CaseIterable, Identifiable {
         case .brownie:
             return Self.brownie(r, g, b)
         case .classicNegative:
-            return Self.classicNegative(r, g, b)
+            return Self.classicNegative(r, g, b, shadow: [-0.018, 0.022, -0.002])   // dark green-teal
+        case .classicNegative2:
+            return Self.classicNegative(r, g, b, shadow: [-0.030, 0.014, 0.032])    // blue-teal
         case .melancholy:
             // Foliage: greens toward olive / yellow-green, and muted; the
             // whole image lightly muted.
@@ -833,7 +837,10 @@ enum ColorFilter: String, CaseIterable, Identifiable {
     /// green foliage (greener in deep shade), vivid red-orange, muted
     /// cyan-leaning blues, a strong S-curve over a lifted green-teal black
     /// floor, warm-olive midtones and near-neutral highlights.
-    private static func classicNegative(_ r: Double, _ g: Double, _ b: Double) -> (r: Double, g: Double, b: Double) {
+    /// `shadow` is the tint added to the shadows (green-teal for Classic
+    /// Neg, blue-teal for Classic Neg 2).
+    private static func classicNegative(_ r: Double, _ g: Double, _ b: Double,
+                                        shadow: [Double]) -> (r: Double, g: Double, b: Double) {
         /// Smooth weight around `center` (degrees), 0 beyond ±`width`.
         func bump(_ h: Double, _ center: Double, _ width: Double) -> Double {
             var d = (h - center + 180).truncatingRemainder(dividingBy: 360)
@@ -867,7 +874,6 @@ enum ColorFilter: String, CaseIterable, Identifiable {
         let l = 0.299 * c[0] + 0.587 * c[1] + 0.114 * c[2]
         let ws = pow(min(max(1 - l / 0.4, 0), 1), 1.3)
         let wm = min(max(1 - abs(l - 0.5) / 0.3, 0), 1)
-        let shadow = [-0.018, 0.022, -0.002]    // dark green-teal
         let mid = [0.016, 0.008, -0.018]        // warm olive
         let out = (0..<3).map { min(max(c[$0] + ws * shadow[$0] + wm * mid[$0], 0), 1) }
         return (out[0], out[1], out[2])
