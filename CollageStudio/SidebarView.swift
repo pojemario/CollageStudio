@@ -42,6 +42,9 @@ struct SidebarView: View {
                 .grayscale(state.hasAnyImages ? 0 : 1)
                 .animation(.easeInOut(duration: 0.4), value: state.hasAnyImages)
                 .shimmering(state.isBusy)
+            Text(AppVersion.label)
+                .font(.system(size: 9, weight: .medium, design: .monospaced))
+                .foregroundColor(.secondary)
             Spacer()
             // Export / share the collage as PNG
             Button {

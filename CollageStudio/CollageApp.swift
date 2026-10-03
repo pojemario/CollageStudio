@@ -94,3 +94,20 @@ struct CollageApp: App {
         }
     }
 }
+
+/// Version shown next to the logo, e.g. "v1.0 (142 · ab12cd3)". The build
+/// number is the git commit count and GitCommit the short hash ("+" when
+/// built with uncommitted changes) — both stamped into Info.plist at build
+/// time by the "Stamp Build Version" phase — so any installed build can be
+/// traced to its commit and features.
+enum AppVersion {
+    static var label: String {
+        let info = Bundle.main.infoDictionary ?? [:]
+        let version = info["CFBundleShortVersionString"] as? String ?? "?"
+        let build = info["CFBundleVersion"] as? String ?? "?"
+        if let commit = info["GitCommit"] as? String {
+            return "v\(version) (\(build) · \(commit))"
+        }
+        return "v\(version) (\(build))"
+    }
+}

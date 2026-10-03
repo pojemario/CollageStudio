@@ -616,6 +616,11 @@ class CollageState: ObservableObject {
         }
         let cached = (gradedProxies[img.id] ?? []).filter { $0.source === source }
         if let exact = cached.first(where: { $0.grade == grade }) { return exact.image }
+        // Still grading (a slider is moving): keep showing the nearest
+        // previous step of the same look — the one with the same filter
+        // state, never the with / without-filter twin kept for the
+        // before / after peek, which made sliders flicker.
+        if let sameLook = cached.last(where: { $0.grade.filter == grade.filter }) { return sameLook.image }
         return cached.last?.image ?? source
     }
 
@@ -625,7 +630,9 @@ class CollageState: ObservableObject {
     /// before / after peek never waits.
     func gradeIfNeeded(_ img: CollageImage) {
         var grades = [contentGrade]
-        if fullGrade.hasFilter {
+        // The peek's twin is prepared only when no slider is moving, so a
+        // drag gets all the grading time.
+        if fullGrade.hasFilter, activeAdjustment == nil {
             var without = fullGrade
             without.filter = .none
             grades.append(filterBypass ? fullGrade : without)

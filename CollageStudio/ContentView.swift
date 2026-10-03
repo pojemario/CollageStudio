@@ -320,18 +320,25 @@ struct ContentView: View {
             // Logo overlay: larger than the toolbar and unclipped, so it
             // spills below the bar's bottom edge.
             .overlay(alignment: .bottomLeading) {
-                Image("DasKolazLogo")
-                    .resizable()
-                    .scaledToFit()
-                    .frame(height: 52)
-                    // Monochrome on the empty start screen; color arrives
-                    // with the first photos.
-                    .grayscale(state.hasAnyImages ? 0 : 1)
-                    .animation(.easeInOut(duration: 0.4), value: state.hasAnyImages)
-                    .shimmering(state.isBusy)
-                    .padding(.leading, 10)
-                    .offset(y: 2)
-                    .allowsHitTesting(false)
+                HStack(alignment: .bottom, spacing: 6) {
+                    Image("DasKolazLogo")
+                        .resizable()
+                        .scaledToFit()
+                        .frame(height: 52)
+                        // Monochrome on the empty start screen; color arrives
+                        // with the first photos.
+                        .grayscale(state.hasAnyImages ? 0 : 1)
+                        .animation(.easeInOut(duration: 0.4), value: state.hasAnyImages)
+                        .shimmering(state.isBusy)
+                    // Build version, to tell installed builds apart.
+                    Text(AppVersion.label)
+                        .font(.system(size: 9, weight: .medium, design: .monospaced))
+                        .foregroundColor(.secondary)
+                        .padding(.bottom, 6)
+                }
+                .padding(.leading, 10)
+                .offset(y: 2)
+                .allowsHitTesting(false)
             }
             // Keep the toolbar (and its spilling logo) above the canvas below
             .zIndex(1)

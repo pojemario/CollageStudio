@@ -608,8 +608,7 @@ struct EffectsPanel: View {
 struct FilterControls: View {
     @EnvironmentObject var state: CollageState
     @State private var previews: [ColorFilter: PlatformImage] = [:]
-    /// True while a tile is held (see `holdForBefore`).
-    @GestureState private var holding = false
+
 
     /// The picture the tiles preview: the current page's first real photo.
     private var sample: PlatformImage? {
@@ -634,13 +633,6 @@ struct FilterControls: View {
                 LabeledSlider(label: "Strength", value: $state.filterStrength,
                               range: 0...200, step: 1, format: "%.0f", resetValue: 100)
             }
-        }
-        // Holding any tile peeks at the pictures without the filter.
-        .onChange(of: holding) { _, held in
-            state.filterBypass = held
-            #if canImport(UIKit)
-            if held { UIImpactFeedbackGenerator(style: .light).impactOccurred() }
-            #endif
         }
         .onDisappear { state.filterBypass = false }
         // Re-render the previews when the sample photo changes.
@@ -679,24 +671,28 @@ struct FilterControls: View {
                 .foregroundColor(selected ? .accentColor : .primary)
         }
         .contentShape(Rectangle())
-        // Hold: before / after peek (without the filter) for as long as the
-        // finger stays down. A plain tap picks the filter; a hold never does.
-        .gesture(holdForBefore.exclusively(before: TapGesture().onEnded {
+        // Tap picks the filter. The built-in tap / long-press handlers (not a
+        // custom gesture) keep the row scrollable: a drag past their small
+        // movement allowance goes to the scroll view.
+        .onTapGesture {
             // Every newly chosen filter starts at full strength.
             if state.colorFilter != filter { state.filterStrength = 100 }
             state.colorFilter = filter
-        }))
+        }
+        // Hold: before / after peek (without the filter) while the finger
+        // stays down; lifting — or scrolling away — ends it.
+        .onLongPressGesture(minimumDuration: 0.18, maximumDistance: 12) {
+            state.filterBypass = true
+            #if canImport(UIKit)
+            UIImpactFeedbackGenerator(style: .light).impactOccurred()
+            #endif
+        } onPressingChanged: { pressing in
+            if !pressing { state.filterBypass = false }
+        }
         .accessibilityAddTraits(.isButton)
         .accessibilityHint("Touch and hold to see the photos without the filter")
     }
 
-    private var holdForBefore: some Gesture {
-        LongPressGesture(minimumDuration: 0.3)
-            .sequenced(before: DragGesture(minimumDistance: 0))
-            .updating($holding) { value, held, _ in
-                if case .second(true, _) = value { held = true }
-            }
-    }
 }
 
 /// Shuffle for the Effects tab, styled like the Layout one: the left segment

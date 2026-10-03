@@ -180,6 +180,7 @@
 			isa = PBXNativeTarget;
 			buildConfigurationList = AACL0001 /* Build configuration list for PBXNativeTarget "CollageStudio" */;
 			buildPhases = (
+				AABP0003 /* Stamp Build Version */,
 				AABP0000 /* Sources */,
 				AABP0001 /* Frameworks */,
 				AABP0002 /* Resources */,
@@ -249,6 +250,29 @@
 			runOnlyForDeploymentPostprocessing = 0;
 		};
 /* End PBXResourcesBuildPhase section */
+
+/* Begin PBXShellScriptBuildPhase section */
+		AABP0003 /* Stamp Build Version */ = {
+			isa = PBXShellScriptBuildPhase;
+			alwaysOutOfDate = 1;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			inputFileListPaths = (
+			);
+			inputPaths = (
+			);
+			name = "Stamp Build Version";
+			outputFileListPaths = (
+			);
+			outputPaths = (
+				"$(DERIVED_FILE_DIR)/BuildInfo.h",
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+			shellPath = /bin/sh;
+			shellScript = "# Writes the build number (git commit count) and short commit hash (with\n# a + when the working tree has uncommitted changes) into a header that\n# Info.plist preprocessing reads; shown next to the logo.\ncd \"$SRCROOT\"\nif git rev-parse --git-dir >/dev/null 2>&1; then\n  COUNT=$(git rev-list --count HEAD)\n  HASH=$(git rev-parse --short HEAD)\n  if [ -n \"$(git status --porcelain)\" ]; then HASH=\"$HASH+\"; fi\nelse\n  COUNT=0; HASH=unknown\nfi\nmkdir -p \"$DERIVED_FILE_DIR\"\nprintf '#define GIT_BUILD_NUMBER %s\\n#define GIT_COMMIT_HASH %s\\n' \"$COUNT\" \"$HASH\" > \"$DERIVED_FILE_DIR/BuildInfo.h\"\n";
+		};
+/* End PBXShellScriptBuildPhase section */
 
 /* Begin PBXSourcesBuildPhase section */
 		22CD51FD300B696A0026FB00 /* Sources */ = {
@@ -399,8 +423,11 @@
 				DEAD_CODE_STRIPPING = YES;
 				DEVELOPMENT_TEAM = Q74V8KTHTD;
 				ENABLE_PREVIEWS = YES;
+				ENABLE_USER_SCRIPT_SANDBOXING = NO;
 				GENERATE_INFOPLIST_FILE = NO;
 				INFOPLIST_FILE = CollageStudio/Info.plist;
+				INFOPLIST_PREFIX_HEADER = "$(DERIVED_FILE_DIR)/BuildInfo.h";
+				INFOPLIST_PREPROCESS = YES;
 				INFOPLIST_KEY_CFBundleDisplayName = "Das Kolaz";
 				INFOPLIST_KEY_LSApplicationCategoryType = "public.app-category.entertainment";
 				IPHONEOS_DEPLOYMENT_TARGET = 17.0;
@@ -436,8 +463,11 @@
 				CURRENT_PROJECT_VERSION = 1;
 				DEAD_CODE_STRIPPING = YES;
 				DEVELOPMENT_TEAM = Q74V8KTHTD;
+				ENABLE_USER_SCRIPT_SANDBOXING = NO;
 				GENERATE_INFOPLIST_FILE = NO;
 				INFOPLIST_FILE = CollageStudio/Info.plist;
+				INFOPLIST_PREFIX_HEADER = "$(DERIVED_FILE_DIR)/BuildInfo.h";
+				INFOPLIST_PREPROCESS = YES;
 				INFOPLIST_KEY_CFBundleDisplayName = "Das Kolaz";
 				INFOPLIST_KEY_LSApplicationCategoryType = "public.app-category.entertainment";
 				IPHONEOS_DEPLOYMENT_TARGET = 17.0;

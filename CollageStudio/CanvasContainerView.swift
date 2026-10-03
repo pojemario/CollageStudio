@@ -152,21 +152,25 @@ struct CanvasContainerView: View {
                 }
             }
             .animation(.easeInOut(duration: 0.2), value: state.isLoading)
-            // Before / after peek (holding a filter tile).
+            // Before / after peek (holding a filter tile). Only the badge
+            // fades — the pictures themselves switch instantly (animating
+            // the whole canvas made the swap flash).
             .overlay(alignment: .top) {
-                if state.filterBypass {
-                    Text("Before")
-                        .font(.system(size: 13, weight: .semibold))
-                        .foregroundColor(.white)
-                        .padding(.horizontal, 12)
-                        .padding(.vertical, 6)
-                        .background(Capsule().fill(Color.black.opacity(0.55)))
-                        .padding(.top, 12)
-                        .allowsHitTesting(false)
-                        .transition(.opacity)
+                ZStack {
+                    if state.filterBypass {
+                        Text("Before")
+                            .font(.system(size: 13, weight: .semibold))
+                            .foregroundColor(.white)
+                            .padding(.horizontal, 12)
+                            .padding(.vertical, 6)
+                            .background(Capsule().fill(Color.black.opacity(0.55)))
+                            .padding(.top, 12)
+                            .transition(.opacity)
+                    }
                 }
+                .animation(.easeInOut(duration: 0.12), value: state.filterBypass)
+                .allowsHitTesting(false)
             }
-            .animation(.easeInOut(duration: 0.15), value: state.filterBypass)
             .onChange(of: photoItems) { _, newItems in
                 loadPhotos(newItems)
             }
@@ -263,7 +267,7 @@ private struct EmptyCanvasContent: View {
 
         ZStack {
             RoundedRectangle(cornerRadius: ButtonStyleGuide.cornerRadius, style: .continuous)
-                .strokeBorder(Color.accentColor.opacity(0.5),
+                .strokeBorder(Color.accentColor.opacity(0.3),
                               style: StrokeStyle(lineWidth: 1.5, dash: [7, 6]))
                 .frame(width: rect.width, height: rect.height)
 

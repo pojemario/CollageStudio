@@ -772,7 +772,7 @@ enum ColorFilter: String, CaseIterable, Identifiable {
         case .classicNegative:
             return Self.classicNegative(r, g, b, shadow: [-0.018, 0.022, -0.002])   // dark green-teal
         case .classicNegative2:
-            return Self.classicNegative(r, g, b, shadow: [-0.048, 0.030, 0.042])    // strong teal
+            return Self.classicNegative(r, g, b, shadow: [-0.070, 0.046, 0.060])    // strong teal
         case .melancholy:
             // Foliage: greens toward olive / yellow-green, and muted; the
             // whole image lightly muted.
