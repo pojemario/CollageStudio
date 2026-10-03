@@ -541,11 +541,24 @@ class CollageState: ObservableObject {
 
     func resetHSL() { hsl = HSLAdjustments() }
 
+    // MARK: - Filter
+
+    /// Preset look (Edit tab → Filter), applied to every page.
+    @Published var colorFilter: ColorFilter = .none {
+        didSet { dropGradesIfIdentity() }
+    }
+    /// Percent, 0...100.
+    @Published var filterStrength: Double = 100 {
+        didSet { dropGradesIfIdentity() }
+    }
+
     // MARK: - Per-picture grading (HSL, clarity, sharpness)
 
     /// What the pictures currently get graded with.
     var contentGrade: ContentGrade {
-        ContentGrade(hsl: hsl,
+        ContentGrade(filter: colorFilter,
+                     filterStrength: filterStrength / 100,
+                     hsl: hsl,
                      clarity: effectAmount(.clarity),
                      sharpness: effectAmount(.sharpness))
     }

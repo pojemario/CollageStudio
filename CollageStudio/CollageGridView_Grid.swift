@@ -57,7 +57,7 @@ struct CollageGridView_Grid: View {
             // frame's opening (the whole canvas without a frame).
             let contentWindow = CGRect(x: insetL, y: insetT,
                                        width: contentSize.width, height: contentSize.height)
-            let background = HSLGrader.apply(state.hsl, to: state.backgroundColor)
+            let background = ContentGrader.apply(state.contentGrade, to: state.backgroundColor)
 
             ZStack {
                 // Empty canvas is transparent so the app background shows

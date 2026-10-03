@@ -189,6 +189,13 @@ enum HSLGrader {
     private static let maxHueShift = 30.0
 
     static func apply(_ hsl: HSLAdjustments, to image: PlatformImage) -> PlatformImage {
+        applyCube(to: image) { adjust($0, $1, $2, hsl) }
+    }
+
+    /// Runs any per-pixel sRGB transform over a picture, baked into a color
+    /// cube.
+    static func applyCube(to image: PlatformImage,
+                          _ transform: (Double, Double, Double) -> (r: Double, g: Double, b: Double)) -> PlatformImage {
         #if canImport(UIKit)
         guard let cg = image.cgImage else { return image }
         #else
@@ -198,7 +205,7 @@ enum HSLGrader {
         let filter = CIFilter.colorCubeWithColorSpace()
         filter.inputImage = CIImage(cgImage: cg)
         filter.cubeDimension = Float(cubeSize)
-        filter.cubeData = cubeData(hsl)
+        filter.cubeData = cubeData(transform)
         filter.colorSpace = sRGB
         guard let output = filter.outputImage,
               let graded = context.createCGImage(output, from: output.extent) else { return image }
@@ -211,6 +218,12 @@ enum HSLGrader {
 
     static func apply(_ hsl: HSLAdjustments, to color: Color) -> Color {
         guard !hsl.isIdentity else { return color }
+        return applyTransform(to: color) { adjust($0, $1, $2, hsl) }
+    }
+
+    /// Runs any per-pixel sRGB transform over a single color.
+    static func applyTransform(to color: Color,
+                               _ transform: (Double, Double, Double) -> (r: Double, g: Double, b: Double)) -> Color {
         #if canImport(UIKit)
         var r: CGFloat = 0, g: CGFloat = 0, b: CGFloat = 0, a: CGFloat = 0
         guard UIColor(color).getRed(&r, green: &g, blue: &b, alpha: &a) else { return color }
@@ -218,19 +231,19 @@ enum HSLGrader {
         guard let ns = NSColor(color).usingColorSpace(.sRGB) else { return color }
         let r = ns.redComponent, g = ns.greenComponent, b = ns.blueComponent, a = ns.alphaComponent
         #endif
-        let out = adjust(Double(r), Double(g), Double(b), hsl)
+        let out = transform(Double(r), Double(g), Double(b))
         return Color(.sRGB, red: out.r, green: out.g, blue: out.b, opacity: Double(a))
     }
 
-    private static func cubeData(_ hsl: HSLAdjustments) -> Data {
+    private static func cubeData(_ transform: (Double, Double, Double) -> (r: Double, g: Double, b: Double)) -> Data {
         let n = cubeSize
         var values = [Float]()
         values.reserveCapacity(n * n * n * 4)
         for bi in 0..<n {
             for gi in 0..<n {
                 for ri in 0..<n {
-                    let out = adjust(Double(ri) / Double(n - 1), Double(gi) / Double(n - 1),
-                                     Double(bi) / Double(n - 1), hsl)
+                    let out = transform(Double(ri) / Double(n - 1), Double(gi) / Double(n - 1),
+                                        Double(bi) / Double(n - 1))
                     values += [Float(out.r), Float(out.g), Float(out.b), 1]
                 }
             }
@@ -319,13 +332,31 @@ enum HSLGrader {
 /// (wide unsharp mask for local contrast, or a blur blend to soften), then
 /// sharpness (fine unsharp mask). Radii scale with the picture's size, so
 /// the canvas proxy and the full-resolution export look the same.
+extension ContentGrade {
+    /// The per-pixel part: the filter (mixed in by its strength), then HSL.
+    func color(_ r: Double, _ g: Double, _ b: Double) -> (r: Double, g: Double, b: Double) {
+        var c = (r: r, g: g, b: b)
+        if hasFilter {
+            let f = filter.apply(r, g, b), k = filterStrength
+            c = (r + (f.r - r) * k, g + (f.g - g) * k, b + (f.b - b) * k)
+        }
+        return hsl.isIdentity ? c : HSLGrader.adjust(c.r, c.g, c.b, hsl)
+    }
+}
+
 enum ContentGrader {
     private static let context = CIContext()
+
+    /// A flat color (the collage background) through the per-pixel part.
+    static func apply(_ grade: ContentGrade, to color: Color) -> Color {
+        guard grade.hasColorChange else { return color }
+        return HSLGrader.applyTransform(to: color) { grade.color($0, $1, $2) }
+    }
 
     static func apply(_ grade: ContentGrade, to image: PlatformImage) -> PlatformImage {
         guard !grade.isIdentity else { return image }
         var source = image
-        if !grade.hsl.isIdentity { source = HSLGrader.apply(grade.hsl, to: source) }
+        if grade.hasColorChange { source = HSLGrader.applyCube(to: source) { grade.color($0, $1, $2) } }
         guard grade.clarity != 0 || grade.sharpness > 0 else { return source }
 
         #if canImport(UIKit)
@@ -378,7 +409,7 @@ enum ContentGrader {
 /// with the per-color HSL controls on a second page.
 struct EffectsPanel: View {
     @EnvironmentObject var state: CollageState
-    enum Page: String, CaseIterable { case edit = "Edit", effects = "Effects", hsl = "HSL" }
+    enum Page: String, CaseIterable { case edit = "Edit", filter = "Filter", effects = "Effects", hsl = "HSL" }
     @State private var page: Page = .edit
     @State private var band: HSLBand = .master
 
@@ -394,6 +425,7 @@ struct EffectsPanel: View {
 
             switch page {
             case .edit: editControls
+            case .filter: FilterControls()
             case .effects: effectControls
             case .hsl: hslControls
             }
@@ -494,6 +526,78 @@ struct EffectsPanel: View {
     private func shift(_ key: WritableKeyPath<HSLShift, Double>) -> Binding<Double> {
         Binding(get: { state.hsl[band][keyPath: key] },
                 set: { state.hsl[band][keyPath: key] = $0 })
+    }
+}
+
+/// Filter page: a preview tile per preset look (the current page's first
+/// photo run through it), plus a Strength slider for the chosen one.
+struct FilterControls: View {
+    @EnvironmentObject var state: CollageState
+    @State private var previews: [ColorFilter: PlatformImage] = [:]
+
+    /// The picture the tiles preview: the current page's first real photo.
+    private var sample: PlatformImage? {
+        state.currentPage.images.first { !$0.isPlaceholder && !$0.isText }?.thumb
+    }
+
+    var body: some View {
+        VStack(spacing: 10) {
+            ScrollView(.horizontal, showsIndicators: false) {
+                HStack(spacing: 10) {
+                    ForEach(ColorFilter.allCases) { filter in
+                        tile(filter)
+                    }
+                }
+                .padding(.vertical, 2)
+            }
+            .panelChrome(state)
+
+            if state.colorFilter != .none {
+                LabeledSlider(label: "Strength", value: $state.filterStrength,
+                              range: 0...100, step: 1, format: "%.0f", resetValue: 100)
+            }
+        }
+        // Re-render the previews when the sample photo changes.
+        .task(id: sample.map(ObjectIdentifier.init)) {
+            guard let sample else { previews = [:]; return }
+            let rendered = await Task.detached(priority: .userInitiated) {
+                Dictionary(uniqueKeysWithValues: ColorFilter.allCases.map { f in
+                    (f, ContentGrader.apply(ContentGrade(filter: f), to: sample))
+                })
+            }.value
+            previews = rendered
+        }
+    }
+
+    private func tile(_ filter: ColorFilter) -> some View {
+        let selected = state.colorFilter == filter
+        let shape = RoundedRectangle(cornerRadius: ButtonStyleGuide.cornerRadius, style: .continuous)
+        return Button {
+            state.colorFilter = filter
+            if filter != .none, state.filterStrength == 0 { state.filterStrength = 100 }
+        } label: {
+            VStack(spacing: 5) {
+                Group {
+                    if let image = previews[filter] {
+                        #if canImport(UIKit)
+                        Image(uiImage: image).resizable().scaledToFill()
+                        #else
+                        Image(nsImage: image).resizable().scaledToFill()
+                        #endif
+                    } else {
+                        ColorManager.systemFill
+                    }
+                }
+                .frame(width: 64, height: 64)
+                .clipShape(shape)
+                .overlay(shape.strokeBorder(selected ? Color.accentColor : Color.primary.opacity(0.18),
+                                            lineWidth: selected ? 3 : 1))
+                Text(filter.title)
+                    .font(.system(size: 11, weight: selected ? .semibold : .medium))
+                    .foregroundColor(selected ? .accentColor : .primary)
+            }
+        }
+        .buttonStyle(.plain)
     }
 }
 

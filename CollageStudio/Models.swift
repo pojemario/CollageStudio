@@ -636,13 +636,62 @@ enum CollageEffect: String, CaseIterable, Identifiable {
 /// modifiers: HSL plus clarity and sharpness. Applied to the photos only —
 /// never to overlays or the frame.
 struct ContentGrade: Hashable {
+    var filter: ColorFilter = .none
+    /// 0...1, how much of the filter is mixed in.
+    var filterStrength: Double = 1
     var hsl = HSLAdjustments()
     /// −1...1
     var clarity: Double = 0
     /// 0...1
     var sharpness: Double = 0
 
-    var isIdentity: Bool { hsl.isIdentity && clarity == 0 && sharpness == 0 }
+    var hasFilter: Bool { filter != .none && filterStrength > 0 }
+    /// Whether the per-pixel color part (filter + HSL) does anything.
+    var hasColorChange: Bool { hasFilter || !hsl.isIdentity }
+    var isIdentity: Bool { !hasColorChange && clarity == 0 && sharpness == 0 }
+}
+
+// MARK: - Color filters
+
+/// Preset looks on the Filter page. Each is pure per-pixel color math (run
+/// through the same color cube as HSL, before it), so it applies to the
+/// photos and background only.
+enum ColorFilter: String, CaseIterable, Identifiable {
+    case none = "None"
+    /// Warm magazine film look, matched to reference photos: muted color,
+    /// lifted brown-black shadows, held-back creamy whites, amber midtones.
+    case brownie = "Brownie"
+
+    var id: String { rawValue }
+    var title: String { rawValue }
+
+    /// One sRGB color through the filter at full strength.
+    func apply(_ r: Double, _ g: Double, _ b: Double) -> (r: Double, g: Double, b: Double) {
+        switch self {
+        case .none:
+            return (r, g, b)
+        case .brownie:
+            func luma(_ r: Double, _ g: Double, _ b: Double) -> Double { 0.299 * r + 0.587 * g + 0.114 * b }
+            // Mute saturation toward luma.
+            var l = luma(r, g, b)
+            var c = [r, g, b].map { l + ($0 - l) * 0.58 }
+            // Gentle S-curve, then lifted blacks / held-back whites.
+            c = c.map { x in
+                let s = x * x * (3 - 2 * x)
+                return 0.05 + (0.89 - 0.05) * (x * 0.65 + s * 0.35)
+            }
+            // Split toning by tonal range.
+            l = luma(c[0], c[1], c[2])
+            let ws = pow(min(max(1 - l / 0.45, 0), 1), 1.5)
+            let wh = pow(min(max((l - 0.55) / 0.45, 0), 1), 1.5)
+            let wm = min(max(1 - ws - wh, 0), 1) * 4 * l * (1 - l)
+            let shadow = [0.030, -0.006, 0.004]     // magenta-brown
+            let mid = [0.042, 0.010, -0.032]        // amber / brown
+            let high = [0.002, 0.012, -0.010]       // cream
+            let out = (0..<3).map { min(max(c[$0] + ws * shadow[$0] + wm * mid[$0] + wh * high[$0], 0), 1) }
+            return (out[0], out[1], out[2])
+        }
+    }
 }
 
 // MARK: - HSL
