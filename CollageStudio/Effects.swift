@@ -337,8 +337,10 @@ extension ContentGrade {
     func color(_ r: Double, _ g: Double, _ b: Double) -> (r: Double, g: Double, b: Double) {
         var c = (r: r, g: g, b: b)
         if hasFilter {
+            // k above 1 extrapolates past the filter (stronger look).
             let f = filter.apply(r, g, b), k = filterStrength
-            c = (r + (f.r - r) * k, g + (f.g - g) * k, b + (f.b - b) * k)
+            func mix(_ a: Double, _ b: Double) -> Double { min(max(a + (b - a) * k, 0), 1) }
+            c = (mix(r, f.r), mix(g, f.g), mix(b, f.b))
         }
         return hsl.isIdentity ? c : HSLGrader.adjust(c.r, c.g, c.b, hsl)
     }
@@ -409,7 +411,7 @@ enum ContentGrader {
 /// with the per-color HSL controls on a second page.
 struct EffectsPanel: View {
     @EnvironmentObject var state: CollageState
-    enum Page: String, CaseIterable { case edit = "Edit", filter = "Filter", effects = "Effects", hsl = "HSL" }
+    enum Page: String, CaseIterable { case edit = "Basic", hsl = "HSL", effects = "Effects", filter = "Filter" }
     @State private var page: Page = .edit
     @State private var band: HSLBand = .master
 
@@ -553,8 +555,10 @@ struct FilterControls: View {
             .panelChrome(state)
 
             if state.colorFilter != .none {
+                // 100 is the look as matched to its references; beyond it the
+                // filter's change is pushed further.
                 LabeledSlider(label: "Strength", value: $state.filterStrength,
-                              range: 0...100, step: 1, format: "%.0f", resetValue: 100)
+                              range: 0...200, step: 1, format: "%.0f", resetValue: 100)
             }
         }
         // Re-render the previews when the sample photo changes.
@@ -573,8 +577,9 @@ struct FilterControls: View {
         let selected = state.colorFilter == filter
         let shape = RoundedRectangle(cornerRadius: ButtonStyleGuide.cornerRadius, style: .continuous)
         return Button {
+            // Every newly chosen filter starts at full strength.
+            if state.colorFilter != filter { state.filterStrength = 100 }
             state.colorFilter = filter
-            if filter != .none, state.filterStrength == 0 { state.filterStrength = 100 }
         } label: {
             VStack(spacing: 5) {
                 Group {

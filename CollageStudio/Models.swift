@@ -637,7 +637,8 @@ enum CollageEffect: String, CaseIterable, Identifiable {
 /// never to overlays or the frame.
 struct ContentGrade: Hashable {
     var filter: ColorFilter = .none
-    /// 0...1, how much of the filter is mixed in.
+    /// 0...2, how much of the filter is mixed in (1 = as designed, above 1
+    /// pushes it further).
     var filterStrength: Double = 1
     var hsl = HSLAdjustments()
     /// −1...1

@@ -548,7 +548,7 @@ class CollageState: ObservableObject {
     @Published var colorFilter: ColorFilter = .none {
         didSet { dropGradesIfIdentity() }
     }
-    /// Percent, 0...100.
+    /// Percent, 0...200 (100 = the filter as designed).
     @Published var filterStrength: Double = 100 {
         didSet { dropGradesIfIdentity() }
     }
