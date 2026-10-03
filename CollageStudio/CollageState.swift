@@ -559,11 +559,21 @@ class CollageState: ObservableObject {
     @Published var filterStrength: Double = 100 {
         didSet { dropGradesIfIdentity() }
     }
+    /// True while a filter tile is held: the pictures show without the
+    /// filter (a before / after peek); everything else stays applied.
+    @Published var filterBypass = false
 
     // MARK: - Per-picture grading (HSL, clarity, sharpness)
 
     /// What the pictures currently get graded with.
     var contentGrade: ContentGrade {
+        var grade = fullGrade
+        if filterBypass { grade.filter = .none }
+        return grade
+    }
+
+    /// The grade with the filter, even while it's being bypassed.
+    private var fullGrade: ContentGrade {
         ContentGrade(calibration: calibration,
                      filter: colorFilter,
                      filterStrength: filterStrength / 100,
@@ -578,16 +588,18 @@ class CollageState: ObservableObject {
         let image: PlatformImage
     }
 
-    /// Canvas proxies graded off the main thread, by image id. While a slider
-    /// moves, a box keeps showing its last grade until the next one lands.
-    @Published private(set) var gradedProxies: [UUID: Graded] = [:]
+    /// Canvas proxies graded off the main thread, by image id — the two
+    /// most recent grades each, so flipping between with / without the
+    /// filter (holding a filter tile) is instant. While a slider moves, a
+    /// box keeps showing its last grade until the next one lands.
+    @Published private(set) var gradedProxies: [UUID: [Graded]] = [:]
     private var gradeInFlight: Set<UUID> = []
     /// Full-resolution grades for the export in progress (made synchronously
     /// while it renders; dropped when it ends).
     private var gradeExportCache: [UUID: Graded] = [:]
 
     private func dropGradesIfIdentity() {
-        if contentGrade.isIdentity, !gradedProxies.isEmpty { gradedProxies = [:] }
+        if fullGrade.isIdentity, !gradedProxies.isEmpty { gradedProxies = [:] }
     }
 
     /// The picture a box should draw: its proxy (or the original while
@@ -602,23 +614,37 @@ class CollageState: ObservableObject {
             gradeExportCache[img.id] = Graded(source: source, grade: grade, image: graded)
             return graded
         }
-        if let g = gradedProxies[img.id], g.source === source { return g.image }
-        return source
+        let cached = (gradedProxies[img.id] ?? []).filter { $0.source === source }
+        if let exact = cached.first(where: { $0.grade == grade }) { return exact.image }
+        return cached.last?.image ?? source
     }
 
     /// Grades a box's proxy for the current settings unless that's already
     /// done or underway; a grade that finishes stale immediately catches up.
+    /// With a filter on, the same picture without it is prepared next, so a
+    /// before / after peek never waits.
     func gradeIfNeeded(_ img: CollageImage) {
-        let grade = contentGrade, source = img.proxy, id = img.id
-        guard !grade.isIdentity, !img.isPlaceholder, !gradeInFlight.contains(id) else { return }
-        if let g = gradedProxies[id], g.source === source, g.grade == grade { return }
+        var grades = [contentGrade]
+        if fullGrade.hasFilter {
+            var without = fullGrade
+            without.filter = .none
+            grades.append(filterBypass ? fullGrade : without)
+        }
+        let source = img.proxy, id = img.id
+        guard !img.isPlaceholder, !gradeInFlight.contains(id) else { return }
+        let cached = (gradedProxies[id] ?? []).filter { $0.source === source }
+        guard let grade = grades.first(where: { g in
+            !g.isIdentity && !cached.contains { $0.grade == g }
+        }) else { return }
         gradeInFlight.insert(id)
         Task.detached(priority: .userInitiated) {
             let graded = ContentGrader.apply(grade, to: source)
             await MainActor.run {
                 self.gradeInFlight.remove(id)
-                guard !self.contentGrade.isIdentity else { return }
-                self.gradedProxies[id] = Graded(source: source, grade: grade, image: graded)
+                guard !self.fullGrade.isIdentity else { return }
+                var list = (self.gradedProxies[id] ?? []).filter { $0.source === source && $0.grade != grade }
+                list.append(Graded(source: source, grade: grade, image: graded))
+                self.gradedProxies[id] = Array(list.suffix(2))
                 if let current = self.currentPage.images.first(where: { $0.id == id }) {
                     self.gradeIfNeeded(current)
                 }

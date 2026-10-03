@@ -152,6 +152,21 @@ struct CanvasContainerView: View {
                 }
             }
             .animation(.easeInOut(duration: 0.2), value: state.isLoading)
+            // Before / after peek (holding a filter tile).
+            .overlay(alignment: .top) {
+                if state.filterBypass {
+                    Text("Before")
+                        .font(.system(size: 13, weight: .semibold))
+                        .foregroundColor(.white)
+                        .padding(.horizontal, 12)
+                        .padding(.vertical, 6)
+                        .background(Capsule().fill(Color.black.opacity(0.55)))
+                        .padding(.top, 12)
+                        .allowsHitTesting(false)
+                        .transition(.opacity)
+                }
+            }
+            .animation(.easeInOut(duration: 0.15), value: state.filterBypass)
             .onChange(of: photoItems) { _, newItems in
                 loadPhotos(newItems)
             }

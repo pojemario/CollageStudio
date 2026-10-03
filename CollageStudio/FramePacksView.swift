@@ -42,6 +42,9 @@ struct FramesPanel: View {
 struct PackChip: View {
     let title: String
     let isActive: Bool
+    /// Shows a small dot in the corner: something under this chip has been
+    /// changed from its default (like the HSL color circles).
+    var marked = false
     let action: () -> Void
 
     var body: some View {
@@ -53,8 +56,17 @@ struct PackChip: View {
                 .padding(.vertical, 7)
                 .foregroundColor(isActive ? .white : .primary)
                 .appButtonBackground(prominent: isActive)
+                .overlay(alignment: .topTrailing) {
+                    if marked {
+                        Circle()
+                            .fill(isActive ? Color.white : Color.accentColor)
+                            .frame(width: 6, height: 6)
+                            .padding(4)
+                    }
+                }
         }
         .buttonStyle(.plain)
+        .accessibilityValue(marked ? "Changed" : "")
     }
 }
 

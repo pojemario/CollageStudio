@@ -756,7 +756,7 @@ enum ColorFilter: String, CaseIterable, Identifiable {
     /// muted olive greens, vivid reds, cyan-leaning blues, strong contrast
     /// over green-teal shadows and near-neutral highlights.
     case classicNegative = "Classic Neg"
-    /// Classic Neg with blue-teal instead of green-teal shadows.
+    /// Classic Neg with strong teal (instead of green-teal) shadows.
     case classicNegative2 = "Classic Neg 2"
 
     var id: String { rawValue }
@@ -772,7 +772,7 @@ enum ColorFilter: String, CaseIterable, Identifiable {
         case .classicNegative:
             return Self.classicNegative(r, g, b, shadow: [-0.018, 0.022, -0.002])   // dark green-teal
         case .classicNegative2:
-            return Self.classicNegative(r, g, b, shadow: [-0.030, 0.014, 0.032])    // blue-teal
+            return Self.classicNegative(r, g, b, shadow: [-0.048, 0.030, 0.042])    // strong teal
         case .melancholy:
             // Foliage: greens toward olive / yellow-green, and muted; the
             // whole image lightly muted.

@@ -434,7 +434,7 @@ struct EffectsPanel: View {
             ScrollView(.horizontal, showsIndicators: false) {
                 HStack(spacing: 8) {
                     ForEach(Page.allCases, id: \.self) { p in
-                        PackChip(title: p.rawValue, isActive: page == p) { page = p }
+                        PackChip(title: p.rawValue, isActive: page == p, marked: isChanged(p)) { page = p }
                     }
                 }
             }
@@ -447,6 +447,17 @@ struct EffectsPanel: View {
             case .hsl: hslControls
             case .cc: calibrationControls
             }
+        }
+    }
+
+    /// Whether anything on a page differs from its default.
+    private func isChanged(_ page: Page) -> Bool {
+        switch page {
+        case .edit: return state.hasEffects(in: CollageEffect.adjustments)
+        case .hsl: return !state.hsl.isIdentity
+        case .cc: return !state.calibration.isIdentity
+        case .effects: return state.hasEffects(in: CollageEffect.looks)
+        case .filter: return state.colorFilter != .none
         }
     }
 
@@ -597,6 +608,8 @@ struct EffectsPanel: View {
 struct FilterControls: View {
     @EnvironmentObject var state: CollageState
     @State private var previews: [ColorFilter: PlatformImage] = [:]
+    /// True while a tile is held (see `holdForBefore`).
+    @GestureState private var holding = false
 
     /// The picture the tiles preview: the current page's first real photo.
     private var sample: PlatformImage? {
@@ -622,6 +635,14 @@ struct FilterControls: View {
                               range: 0...200, step: 1, format: "%.0f", resetValue: 100)
             }
         }
+        // Holding any tile peeks at the pictures without the filter.
+        .onChange(of: holding) { _, held in
+            state.filterBypass = held
+            #if canImport(UIKit)
+            if held { UIImpactFeedbackGenerator(style: .light).impactOccurred() }
+            #endif
+        }
+        .onDisappear { state.filterBypass = false }
         // Re-render the previews when the sample photo changes.
         .task(id: sample.map(ObjectIdentifier.init)) {
             guard let sample else { previews = [:]; return }
@@ -637,33 +658,44 @@ struct FilterControls: View {
     private func tile(_ filter: ColorFilter) -> some View {
         let selected = state.colorFilter == filter
         let shape = RoundedRectangle(cornerRadius: ButtonStyleGuide.cornerRadius, style: .continuous)
-        return Button {
+        return VStack(spacing: 5) {
+            Group {
+                if let image = previews[filter] {
+                    #if canImport(UIKit)
+                    Image(uiImage: image).resizable().scaledToFill()
+                    #else
+                    Image(nsImage: image).resizable().scaledToFill()
+                    #endif
+                } else {
+                    ColorManager.systemFill
+                }
+            }
+            .frame(width: 64, height: 64)
+            .clipShape(shape)
+            .overlay(shape.strokeBorder(selected ? Color.accentColor : Color.primary.opacity(0.18),
+                                        lineWidth: selected ? 3 : 1))
+            Text(filter.title)
+                .font(.system(size: 11, weight: selected ? .semibold : .medium))
+                .foregroundColor(selected ? .accentColor : .primary)
+        }
+        .contentShape(Rectangle())
+        // Hold: before / after peek (without the filter) for as long as the
+        // finger stays down. A plain tap picks the filter; a hold never does.
+        .gesture(holdForBefore.exclusively(before: TapGesture().onEnded {
             // Every newly chosen filter starts at full strength.
             if state.colorFilter != filter { state.filterStrength = 100 }
             state.colorFilter = filter
-        } label: {
-            VStack(spacing: 5) {
-                Group {
-                    if let image = previews[filter] {
-                        #if canImport(UIKit)
-                        Image(uiImage: image).resizable().scaledToFill()
-                        #else
-                        Image(nsImage: image).resizable().scaledToFill()
-                        #endif
-                    } else {
-                        ColorManager.systemFill
-                    }
-                }
-                .frame(width: 64, height: 64)
-                .clipShape(shape)
-                .overlay(shape.strokeBorder(selected ? Color.accentColor : Color.primary.opacity(0.18),
-                                            lineWidth: selected ? 3 : 1))
-                Text(filter.title)
-                    .font(.system(size: 11, weight: selected ? .semibold : .medium))
-                    .foregroundColor(selected ? .accentColor : .primary)
+        }))
+        .accessibilityAddTraits(.isButton)
+        .accessibilityHint("Touch and hold to see the photos without the filter")
+    }
+
+    private var holdForBefore: some Gesture {
+        LongPressGesture(minimumDuration: 0.3)
+            .sequenced(before: DragGesture(minimumDistance: 0))
+            .updating($holding) { value, held, _ in
+                if case .second(true, _) = value { held = true }
             }
-        }
-        .buttonStyle(.plain)
     }
 }
 
