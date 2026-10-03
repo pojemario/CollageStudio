@@ -168,7 +168,7 @@ struct SidebarView: View {
         SidebarSection(title: "Canvas") {
             LabeledSlider(label: "Margin", value: $state.canvasMargin, range: -100...100, step: 1, format: "%.0f",
                           resetValue: 0)
-            LabeledSlider(label: "Rotation", value: $state.canvasRotation, range: -60...60, step: 1, format: "%.0f°",
+            LabeledSlider(label: "Rotation", value: $state.canvasRotation, range: -30...30, step: 0.5, format: "%.1f°",
                           resetValue: 0)
         }
     }
@@ -488,7 +488,8 @@ struct LabeledSlider: View {
                 .font(.system(size: 14, weight: .medium, design: .monospaced))
                 .foregroundColor(.primary.opacity(0.85))
                 .lineLimit(1)
-                .fixedSize()
+                // Longer values ("-12.5°") shrink a little to fit.
+                .minimumScaleFactor(0.7)
                 // Room for four characters ("-100", "-60°").
                 .frame(width: 38, alignment: .trailing)
                 // Double-tapping the value also resets to default

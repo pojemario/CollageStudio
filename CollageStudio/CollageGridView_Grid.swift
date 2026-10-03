@@ -97,10 +97,11 @@ struct CollageGridView_Grid: View {
                     .scaleEffect(marginScale)
                     // Tilt the whole collage within the canvas
                     .rotationEffect(.degrees(state.canvasRotation))
-                    // With a frame on, nothing may show outside its window —
-                    // a rotated or zoomed collage is clipped to it.
+                    // Nothing may show outside the canvas (or, with a frame
+                    // on, its window) — a rotated or zoomed collage is
+                    // clipped to it.
                     .frame(width: contentSize.width, height: contentSize.height)
-                    .clipped(active: resolvedFrame != nil)
+                    .clipped()
                     // Asymmetric margins shift the content block off-center
                     .offset(x: (insetL - insetR) / 2, y: (insetT - insetB) / 2)
                     .modifier(EffectToning(state: state, enabled: decorated))
@@ -476,12 +477,5 @@ private struct BoxResizeHandle: View {
                 }
                 .onEnded { _ in state.endResize() }
         )
-    }
-}
-
-private extension View {
-    @ViewBuilder
-    func clipped(active: Bool) -> some View {
-        if active { self.clipped() } else { self }
     }
 }
