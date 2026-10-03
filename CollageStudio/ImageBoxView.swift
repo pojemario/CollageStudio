@@ -377,7 +377,8 @@ struct ImageBoxView: View {
 
     // MARK: - Box actions via long press
 
-    /// Holding still on a box for 1 second opens the Replace / Delete menu
+    /// Holding still on a box for half a second (the iOS standard) opens the
+    /// Replace / Delete menu
     /// for this image (a single popover on the canvas container). The menu
     /// opens the moment the timer fires — the sequence transitions to .second
     /// right then, while the finger is still down. The sequenced drag (which
@@ -386,7 +387,7 @@ struct ImageBoxView: View {
     /// to the exact finger point once it delivers an event; until then the
     /// box's own frame anchors the popover.
     var replaceLongPressGesture: some Gesture {
-        LongPressGesture(minimumDuration: 1.0, maximumDistance: 8)
+        LongPressGesture(minimumDuration: 0.5, maximumDistance: 8)
             .sequenced(before: DragGesture(minimumDistance: 0,
                                            coordinateSpace: .named("collageCanvas")))
             .onChanged { value in
@@ -873,6 +874,23 @@ enum SubjectMasker {
 
     private static let ciContext = CIContext()
 
+    /// Outer outlines of a mask as polylines in normalized image coordinates
+    /// (0...1, y down), traced with Vision; specks are dropped.
+    static func outline(of mask: CGImage) -> [[CGPoint]] {
+        let request = VNDetectContoursRequest()
+        request.detectsDarkOnLight = false          // white subject on clear
+        request.maximumImageDimension = 768
+        do { try VNImageRequestHandler(cgImage: mask, options: [:]).perform([request]) } catch { return [] }
+        guard let observation = request.results?.first else { return [] }
+        return observation.topLevelContours.compactMap { contour in
+            let points = contour.normalizedPoints.map { CGPoint(x: CGFloat($0.x), y: 1 - CGFloat($0.y)) }
+            guard points.count > 8 else { return nil }
+            let xs = points.map(\.x), ys = points.map(\.y)
+            let area = (xs.max()! - xs.min()!) * (ys.max()! - ys.min()!)
+            return area > 0.0005 ? points : nil
+        }
+    }
+
     /// The mask grown outward by `radius` pixels (a solid silhouette for the
     /// Border effect).
     static func dilate(_ mask: CGImage, radius: Int) -> CGImage? {
@@ -1033,14 +1051,26 @@ struct ProtrusionLayer: View {
         case .none:
             EmptyView()
         case .border:
-            // The subject's silhouette grown by the Layout border thickness,
-            // filled with the border color, behind the subject.
+            // Follows the Layout border: its color, thickness and pattern.
             let lineWidth = CGFloat(state.borderThickness) * scale
             let pixelsPerPoint = CGFloat(mask.width) / max(placement.size.width, 1)
-            let radius = min(Int((lineWidth * pixelsPerPoint).rounded()), 80)
-            if radius > 0, let grown = state.dilatedSubjectMask(for: img, radius: radius) {
+            let style = state.borderStyle
+            if style == .solid {
+                // Solid: the silhouette grown by the thickness, filled.
+                let radius = min(Int((lineWidth * pixelsPerPoint).rounded()), 80)
+                if radius > 0, let grown = state.dilatedSubjectMask(for: img, radius: radius) {
+                    placed(placement: placement, box: box) {
+                        state.borderColor.mask(Image(decorative: grown, scale: 1).resizable())
+                    }
+                }
+            } else if lineWidth > 0 {
+                // Patterned: drawn along the outline traced half a line
+                // width outside the subject, so the line sits just outside.
+                let radius = max(1, min(Int((lineWidth / 2 * pixelsPerPoint).rounded()), 60))
+                let outline = state.subjectOutline(for: img, radius: radius)
                 placed(placement: placement, box: box) {
-                    state.borderColor.mask(Image(decorative: grown, scale: 1).resizable())
+                    SubjectOutlineBorder(outline: outline, style: style,
+                                         lineWidth: lineWidth, color: state.borderColor)
                 }
             }
         case .shadow:
@@ -1069,6 +1099,71 @@ struct ProtrusionLayer: View {
         let minY = edges.contains(.top) ? 0 : box.minY
         let maxY = edges.contains(.bottom) ? canvasSize.height : box.maxY
         return CGRect(x: minX, y: minY, width: max(maxX - minX, 0), height: max(maxY - minY, 0))
+    }
+}
+
+/// The Layout border's pattern drawn along a subject outline (normalized
+/// polylines, scaled to the view): dash styles as a stroke, stamp styles
+/// (triangles, slashes, crosses) placed along it like on the box border.
+struct SubjectOutlineBorder: View {
+    let outline: [[CGPoint]]
+    let style: BorderStyle
+    let lineWidth: CGFloat
+    let color: Color
+
+    var body: some View {
+        Canvas { context, size in
+            let polylines = outline.map { $0.map { CGPoint(x: $0.x * size.width, y: $0.y * size.height) } }
+            if style.usesStamps {
+                drawStamps(polylines, in: &context)
+            } else {
+                var path = Path()
+                for line in polylines where line.count > 1 {
+                    path.addLines(line)
+                    path.closeSubpath()
+                }
+                context.stroke(path, with: .color(color), style: style.strokeStyle(lineWidth: lineWidth))
+            }
+        }
+        .allowsHitTesting(false)
+    }
+
+    private func drawStamps(_ polylines: [[CGPoint]], in context: inout GraphicsContext) {
+        // Same rhythm and shapes as StampedBorderView.
+        let spacing: CGFloat
+        switch style {
+        case .triangles: spacing = max(lineWidth, 3)
+        case .crosses:   spacing = max(lineWidth * 1.15, 3)
+        default:         spacing = max(lineWidth * 1.5, 4)
+        }
+        let stamp = StampedBorderView.stampPath(for: style, size: lineWidth)
+        let strokeWidth = max(1, lineWidth * 0.25)
+        var budget = 1500
+        for line in polylines where line.count > 1 {
+            let closed = line + [line[0]]
+            var carried: CGFloat = 0           // distance since the last stamp
+            for i in 0..<(closed.count - 1) {
+                let a = closed[i], b = closed[i + 1]
+                let segment = hypot(b.x - a.x, b.y - a.y)
+                guard segment > 0 else { continue }
+                let angle = atan2(b.y - a.y, b.x - a.x)
+                var d = spacing - carried
+                while d <= segment, budget > 0 {
+                    let t = d / segment
+                    let pos = CGPoint(x: a.x + (b.x - a.x) * t, y: a.y + (b.y - a.y) * t)
+                    let placed = stamp.applying(CGAffineTransform(translationX: pos.x, y: pos.y).rotated(by: angle))
+                    if style == .triangles {
+                        context.fill(placed, with: .color(color))
+                    } else {
+                        context.stroke(placed, with: .color(color),
+                                       style: StrokeStyle(lineWidth: strokeWidth, lineCap: .round))
+                    }
+                    budget -= 1
+                    d += spacing
+                }
+                carried = segment - (d - spacing)
+            }
+        }
     }
 }
 
@@ -1162,7 +1257,7 @@ struct ProtrusionPanel: View {
             return "The subject sits fully inside the box. Zoom or move the photo so the box cuts it off — that part will break out."
         }
         if img.protrusionEffect == .border, state.borderThickness <= 0 {
-            return "Border follows the Layout border — set a border thickness there to see it."
+            return "Border follows the Layout border (color, thickness, pattern) — set a thickness there to see it."
         }
         return "Dimmed edges: the subject doesn't reach them right now."
     }

@@ -1002,6 +1002,20 @@ class CollageState: ObservableObject {
     /// Subject masks grown by a radius (mask pixels), for the Border effect.
     private var dilatedMasks: [UUID: (source: ObjectIdentifier, radius: Int, image: CGImage)] = [:]
 
+    /// Outline polylines of the subject grown by `radius` mask pixels (the
+    /// line patterned Border styles run along it).
+    private var subjectOutlines: [UUID: (source: ObjectIdentifier, radius: Int, outline: [[CGPoint]])] = [:]
+
+    func subjectOutline(for img: CollageImage, radius: Int) -> [[CGPoint]] {
+        if let o = subjectOutlines[img.id], o.source == ObjectIdentifier(img.image), o.radius == radius {
+            return o.outline
+        }
+        guard let grown = dilatedSubjectMask(for: img, radius: radius) else { return [] }
+        let outline = SubjectMasker.outline(of: grown)
+        subjectOutlines[img.id] = (ObjectIdentifier(img.image), radius, outline)
+        return outline
+    }
+
     func dilatedSubjectMask(for img: CollageImage, radius: Int) -> CGImage? {
         guard let mask = subjectMask(for: img)?.mask else { return nil }
         if let d = dilatedMasks[img.id], d.source == ObjectIdentifier(img.image), d.radius == radius {
