@@ -670,34 +670,43 @@ struct CameraCalibration: Hashable {
             && greenSaturation == 0 && blueHue == 0 && blueSaturation == 0
     }
 
-    /// Primary hue shift at ±100, in degrees.
-    static let maxHueShift = 12.0
+    /// How far a primary's Hue slider at ±100 pushes it, per primary —
+    /// fitted to Lightroom screenshots (same photo, one slider at ±100).
+    /// (at −100, at +100) for red, green, blue.
+    static let hueStrength = [(0.209, 0.200), (0.287, 0.298), (0.449, 0.408)]
+    /// How far Saturation at ±100 pushes a primary from / toward gray.
+    static let saturationStrength = 0.6
 
     /// Row-major 3×3 matrix (linear RGB in → linear RGB out).
+    ///
+    /// Works like Lightroom's calibration: each primary is a column. Its Hue
+    /// slider pushes it into one neighbouring channel and pulls it out of
+    /// the other — red: + adds green / removes blue (toward orange), −
+    /// the reverse (magenta); green: + adds blue / removes red (teal), −
+    /// yellow; blue: + adds red / removes green (purple), − cyan. Its
+    /// Saturation slider moves it away from (+) or toward (−) gray. Rows
+    /// are then scaled so white maps to white, which keeps neutrals neutral
+    /// and is what spreads each change across the colors around it (e.g.
+    /// Blue Saturation + also enriches warm tones, as in Lightroom).
     var matrix: [Double] {
-        // One primary: rotate its hue, push it toward / away from gray.
-        func primary(_ baseHue: Double, _ hue: Double, _ sat: Double) -> [Double] {
-            let h = (baseHue + hue / 100 * Self.maxHueShift + 360).truncatingRemainder(dividingBy: 360)
-            // Fully saturated color of that hue (sRGB-ish, used as linear).
-            let x = 1 - abs((h / 60).truncatingRemainder(dividingBy: 2) - 1)
-            var p: [Double]
-            switch Int(h / 60) % 6 {
-            case 0: p = [1, x, 0]
-            case 1: p = [x, 1, 0]
-            case 2: p = [0, 1, x]
-            case 3: p = [0, x, 1]
-            case 4: p = [x, 0, 1]
-            default: p = [1, 0, x]
-            }
-            let y = 0.2126 * p[0] + 0.7152 * p[1] + 0.0722 * p[2]
-            let k = max(1 + sat / 100 * 0.9, 0.1)
-            return p.map { y + ($0 - y) * k }
+        let hues = [redHue, greenHue, blueHue]
+        let sats = [redSaturation, greenSaturation, blueSaturation]
+        // For each primary: the channels its hue slider pushes / pulls at +.
+        let plusMinus = [(1, 2), (2, 0), (0, 1)]
+        var columns: [[Double]] = []
+        for i in 0..<3 {
+            var col = [0.0, 0.0, 0.0]
+            col[i] = 1
+            let a = hues[i] / 100 * (hues[i] < 0 ? Self.hueStrength[i].0 : Self.hueStrength[i].1)
+            col[plusMinus[i].0] += a
+            col[plusMinus[i].1] -= a
+            let k = sats[i] / 100 * Self.saturationStrength
+            for c in 0..<3 { col[c] += k * ((c == i ? 1 : 0) - 1.0 / 3) }
+            columns.append(col)
         }
-        let r = primary(0, redHue, redSaturation)
-        let g = primary(120, greenHue, greenSaturation)
-        let b = primary(240, blueHue, blueSaturation)
-        // Columns are the primaries; scale each row so white stays white.
-        var m = [r[0], g[0], b[0], r[1], g[1], b[1], r[2], g[2], b[2]]
+        var m = [columns[0][0], columns[1][0], columns[2][0],
+                 columns[0][1], columns[1][1], columns[2][1],
+                 columns[0][2], columns[1][2], columns[2][2]]
         for row in 0..<3 {
             let sum = m[row * 3] + m[row * 3 + 1] + m[row * 3 + 2]
             if abs(sum) > 1e-6 { for c in 0..<3 { m[row * 3 + c] /= sum } }
@@ -734,24 +743,20 @@ struct CameraCalibration: Hashable {
 /// photos and background only.
 enum ColorFilter: String, CaseIterable, Identifiable {
     case none = "None"
-    /// Warm magazine film look, matched to reference photos: warm golden
-    /// midtones, lifted brown-black shadows, held-back creamy whites, color
-    /// kept close to natural saturation.
+    /// Port of the pojemario.com/brownie web filter at its default settings
+    /// (intensity 60, warmth 55, lift 30, saturation 50, contrast /
+    /// highlights / brightness 50); its random grain is left to the Grain
+    /// effect. 100% here equals the page's default output.
     case brownie = "Brownie"
     /// Portra-style film look, matched to reference photos: green-teal
     /// shadows, olive-warm mids, muted yellow-green foliage, warm cream
     /// highlights held just under white, barely lifted blacks.
     case melancholy = "Melancholy"
-    /// Port of the pojemario.com/brownie web filter at its default settings
-    /// (intensity 60, warmth 55, lift 30, saturation 50, contrast /
-    /// highlights / brightness 50); its random grain is left to the Grain
-    /// effect. 100% here equals the page's default output.
-    case brownie2 = "Brownie 2"
     /// In the spirit of Fujifilm's Classic Negative simulation: hard
     /// contrast with deep blacks, muted color, and a hue response that
     /// changes with brightness — greens teal in shadow and olive in light,
-    /// reds brick low and orange high, blues toward cyan — over cyan-teal
-    /// shadows and warm yellow-cream highlights.
+    /// reds brick low and orange high, blues toward cyan — with rich reds
+    /// and oranges, over teal shadows and warm yellow-cream highlights.
     case classicNegative = "Classic Neg"
 
     var id: String { rawValue }
@@ -763,27 +768,7 @@ enum ColorFilter: String, CaseIterable, Identifiable {
         case .none:
             return (r, g, b)
         case .brownie:
-            func luma(_ r: Double, _ g: Double, _ b: Double) -> Double { 0.299 * r + 0.587 * g + 0.114 * b }
-            // Mute saturation toward luma.
-            var l = luma(r, g, b)
-            var c = [r, g, b].map { l + ($0 - l) * 0.78 }
-            // Gentle S-curve, then lifted blacks / held-back whites.
-            c = c.map { x in
-                let s = x * x * (3 - 2 * x)
-                return 0.05 + (0.89 - 0.05) * (x * 0.65 + s * 0.35)
-            }
-            // Split toning by tonal range.
-            l = luma(c[0], c[1], c[2])
-            let ws = pow(min(max(1 - l / 0.45, 0), 1), 1.5)
-            let wh = pow(min(max((l - 0.55) / 0.45, 0), 1), 1.5)
-            let wm = min(max(1 - ws - wh, 0), 1) * 4 * l * (1 - l)
-            let shadow = [0.040, 0.004, -0.014]     // warm brown
-            let mid = [0.068, 0.020, -0.052]        // amber / golden
-            let high = [0.020, 0.014, -0.030]       // warm cream
-            let out = (0..<3).map { min(max(c[$0] + ws * shadow[$0] + wm * mid[$0] + wh * high[$0], 0), 1) }
-            return (out[0], out[1], out[2])
-        case .brownie2:
-            return Self.brownie2(r, g, b)
+            return Self.brownie(r, g, b)
         case .classicNegative:
             return Self.classicNegative(r, g, b)
         case .melancholy:
@@ -813,7 +798,7 @@ enum ColorFilter: String, CaseIterable, Identifiable {
     }
 
     /// pojemario.com/brownie `applyFilter`, step for step, on 0...255 values.
-    private static func brownie2(_ r0: Double, _ g0: Double, _ b0: Double) -> (r: Double, g: Double, b: Double) {
+    private static func brownie(_ r0: Double, _ g0: Double, _ b0: Double) -> (r: Double, g: Double, b: Double) {
         let intensity = 0.60, warmth = 0.55, lift = 0.30 * 30
         let contrastBoost = 0.1        // the page's base contrast, user contrast at 50%
         func luma(_ r: Double, _ g: Double, _ b: Double) -> Double { 0.299 * r + 0.587 * g + 0.114 * b }
@@ -868,6 +853,7 @@ enum ColorFilter: String, CaseIterable, Identifiable {
         if h < 0 { h += 360 }
         s *= 0.80
         s *= 1 - 0.25 * huePull(h, 120, 60, 1)                  // greens a bit more muted
+        s = min(s * (1 + 0.45 * huePull(h, 20, 45, 1)), 1)      // reds / oranges richer
         var c = rgb(h, s, v)
         // Hard contrast: strong S-curve, deep blacks, slightly held whites.
         c = c.map { x in
@@ -875,9 +861,9 @@ enum ColorFilter: String, CaseIterable, Identifiable {
             return 0.012 + (0.975 - 0.012) * (x * 0.45 + sc * 0.55)
         }
         let l = luma(c)
-        let ws = pow(min(max(1 - l / 0.45, 0), 1), 1.4)
+        let ws = pow(min(max(1 - l / 0.5, 0), 1), 1.3)
         let wh = pow(min(max((l - 0.55) / 0.45, 0), 1), 1.2)
-        let shadow = [-0.022, 0.008, 0.020]     // cyan-teal
+        let shadow = [-0.040, 0.014, 0.030]     // teal
         let high = [0.022, 0.014, -0.026]       // warm yellow-cream
         let out = (0..<3).map { min(max(c[$0] + ws * shadow[$0] + wh * high[$0], 0), 1) }
         return (out[0], out[1], out[2])
