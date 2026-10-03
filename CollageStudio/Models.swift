@@ -661,6 +661,10 @@ enum ColorFilter: String, CaseIterable, Identifiable {
     /// Warm magazine film look, matched to reference photos: muted color,
     /// lifted brown-black shadows, held-back creamy whites, amber midtones.
     case brownie = "Brownie"
+    /// Portra-style film look, matched to reference photos: green-teal
+    /// shadows, olive-warm mids, muted yellow-green foliage, warm cream
+    /// highlights held just under white, barely lifted blacks.
+    case melancholy = "Melancholy"
 
     var id: String { rawValue }
     var title: String { rawValue }
@@ -690,6 +694,57 @@ enum ColorFilter: String, CaseIterable, Identifiable {
             let high = [0.002, 0.012, -0.010]       // cream
             let out = (0..<3).map { min(max(c[$0] + ws * shadow[$0] + wm * mid[$0] + wh * high[$0], 0), 1) }
             return (out[0], out[1], out[2])
+        case .melancholy:
+            // Foliage: greens toward olive / yellow-green, and muted; the
+            // whole image lightly muted.
+            var (h, s, v) = Self.hsv(r, g, b)
+            let w = min(max(1 - abs(h - 125) / 55, 0), 1)       // 70...180°
+            h += w * (100 - h) * 0.45
+            s *= (1 - 0.30 * w) * 0.86
+            var c = Self.rgb(h, s, v)
+            // Soft contrast, barely lifted blacks, whites just under 1.
+            c = c.map { x in
+                let sc = x * x * (3 - 2 * x)
+                return 0.02 + (0.965 - 0.02) * (x * 0.8 + sc * 0.2)
+            }
+            // Split toning by tonal range.
+            let l = 0.299 * c[0] + 0.587 * c[1] + 0.114 * c[2]
+            let ws = pow(min(max(1 - l / 0.45, 0), 1), 1.3)
+            let wh = pow(min(max((l - 0.6) / 0.4, 0), 1), 1.3)
+            let wm = min(max(1 - ws - wh, 0), 1) * 4 * l * (1 - l)
+            let shadow = [-0.010, 0.022, 0.000]     // green-teal
+            let mid = [0.012, 0.016, -0.022]        // olive warmth
+            let high = [0.010, -0.003, -0.010]      // warm cream
+            let out = (0..<3).map { min(max(c[$0] + ws * shadow[$0] + wm * mid[$0] + wh * high[$0], 0), 1) }
+            return (out[0], out[1], out[2])
+        }
+    }
+
+    /// Hue in degrees, saturation and value, all from sRGB 0...1.
+    private static func hsv(_ r: Double, _ g: Double, _ b: Double) -> (Double, Double, Double) {
+        let mx = max(r, g, b), mn = min(r, g, b), c = mx - mn
+        var h = 0.0
+        if c > 1e-6 {
+            if mx == r { h = ((g - b) / c).truncatingRemainder(dividingBy: 6) }
+            else if mx == g { h = (b - r) / c + 2 }
+            else { h = (r - g) / c + 4 }
+            h *= 60
+            if h < 0 { h += 360 }
+        }
+        return (h, mx > 0 ? c / mx : 0, mx)
+    }
+
+    private static func rgb(_ h: Double, _ s: Double, _ v: Double) -> [Double] {
+        let c = v * s
+        let x = c * (1 - abs((h / 60).truncatingRemainder(dividingBy: 2) - 1))
+        let m = v - c
+        switch Int(h / 60) % 6 {
+        case 0: return [c + m, x + m, m]
+        case 1: return [x + m, c + m, m]
+        case 2: return [m, c + m, x + m]
+        case 3: return [m, x + m, c + m]
+        case 4: return [x + m, m, c + m]
+        default: return [c + m, m, x + m]
         }
     }
 }
