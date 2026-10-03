@@ -752,11 +752,9 @@ enum ColorFilter: String, CaseIterable, Identifiable {
     /// shadows, olive-warm mids, muted yellow-green foliage, warm cream
     /// highlights held just under white, barely lifted blacks.
     case melancholy = "Melancholy"
-    /// In the spirit of Fujifilm's Classic Negative simulation: hard
-    /// contrast with deep blacks, muted color, and a hue response that
-    /// changes with brightness — greens teal in shadow and olive in light,
-    /// reds brick low and orange high, blues toward cyan — with rich reds
-    /// and oranges, over teal shadows and warm yellow-cream highlights.
+    /// Fujifilm Classic Negative-style look, matched to reference shots:
+    /// muted olive greens, vivid reds, cyan-leaning blues, strong contrast
+    /// over green-teal shadows and near-neutral highlights.
     case classicNegative = "Classic Neg"
 
     var id: String { rawValue }
@@ -831,41 +829,47 @@ enum ColorFilter: String, CaseIterable, Identifiable {
         return (out(or, r), out(og, g), out(ob, b))
     }
 
+    /// Matched to Classic Negative reference shots: muted olive / yellow-
+    /// green foliage (greener in deep shade), vivid red-orange, muted
+    /// cyan-leaning blues, a strong S-curve over a lifted green-teal black
+    /// floor, warm-olive midtones and near-neutral highlights.
     private static func classicNegative(_ r: Double, _ g: Double, _ b: Double) -> (r: Double, g: Double, b: Double) {
-        func luma(_ c: [Double]) -> Double { 0.299 * c[0] + 0.587 * c[1] + 0.114 * c[2] }
-        /// Smooth bump around `center` (degrees) shifting hue by `shift`.
-        func huePull(_ h: Double, _ center: Double, _ width: Double, _ shift: Double) -> Double {
+        /// Smooth weight around `center` (degrees), 0 beyond ±`width`.
+        func bump(_ h: Double, _ center: Double, _ width: Double) -> Double {
             var d = (h - center + 180).truncatingRemainder(dividingBy: 360)
             if d < 0 { d += 360 }
             d -= 180
-            var w = min(max(1 - abs(d) / width, 0), 1)
-            w = w * w * (3 - 2 * w)
-            return w * shift
+            let w = min(max(1 - abs(d) / width, 0), 1)
+            return w * w * (3 - 2 * w)
         }
         let l0 = 0.299 * r + 0.587 * g + 0.114 * b
         var (h, s, v) = hsv(r, g, b)
-        let dark = min(max(1 - l0 / 0.5, 0), 1), light = min(max((l0 - 0.5) / 0.5, 0), 1)
-        // Brightness-dependent hue response.
-        var dh = huePull(h, 120, 60, 18 * dark - 16 * light)    // greens: teal low, olive high
-        dh += huePull(h, 5, 35, -8 * dark + 10 * light)         // reds: brick low, orange high
-        dh += huePull(h, 215, 45, -12)                          // blues → cyan
-        h = (h + dh).truncatingRemainder(dividingBy: 360)
-        if h < 0 { h += 360 }
+        let dark = min(max(1 - l0 / 0.45, 0), 1), light = min(max((l0 - 0.5) / 0.5, 0), 1)
+        // Greens → muted olive / yellow-green, greener in deep shade.
+        let wg = bump(h, 110, 75)
+        h += wg * (95 + 30 * dark - 8 * light - h) * 0.7
+        s *= 1 - 0.50 * wg
+        // Reds / oranges stay vivid.
+        s = min(s * (1 + 0.35 * bump(h, 15, 35)), 1)
+        // Blues → cyan-leaning and muted.
+        let wb = bump(h, 225, 45)
+        h += wb * (212 - h) * 0.6
+        s *= 1 - 0.35 * wb
         s *= 0.80
-        s *= 1 - 0.25 * huePull(h, 120, 60, 1)                  // greens a bit more muted
-        s = min(s * (1 + 0.45 * huePull(h, 20, 45, 1)), 1)      // reds / oranges richer
+        h = h.truncatingRemainder(dividingBy: 360)
+        if h < 0 { h += 360 }
         var c = rgb(h, s, v)
-        // Hard contrast: strong S-curve, deep blacks, slightly held whites.
+        // Strong S-curve over a lifted floor, bright top held just under 1.
         c = c.map { x in
             let sc = x * x * (3 - 2 * x)
-            return 0.012 + (0.975 - 0.012) * (x * 0.45 + sc * 0.55)
+            return 0.045 + (0.975 - 0.045) * (x * 0.5 + sc * 0.5)
         }
-        let l = luma(c)
-        let ws = pow(min(max(1 - l / 0.5, 0), 1), 1.3)
-        let wh = pow(min(max((l - 0.55) / 0.45, 0), 1), 1.2)
-        let shadow = [-0.040, 0.014, 0.030]     // teal
-        let high = [0.022, 0.014, -0.026]       // warm yellow-cream
-        let out = (0..<3).map { min(max(c[$0] + ws * shadow[$0] + wh * high[$0], 0), 1) }
+        let l = 0.299 * c[0] + 0.587 * c[1] + 0.114 * c[2]
+        let ws = pow(min(max(1 - l / 0.4, 0), 1), 1.3)
+        let wm = min(max(1 - abs(l - 0.5) / 0.3, 0), 1)
+        let shadow = [-0.018, 0.022, -0.002]    // dark green-teal
+        let mid = [0.016, 0.008, -0.018]        // warm olive
+        let out = (0..<3).map { min(max(c[$0] + ws * shadow[$0] + wm * mid[$0], 0), 1) }
         return (out[0], out[1], out[2])
     }
 
