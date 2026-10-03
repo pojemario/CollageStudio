@@ -64,7 +64,7 @@ struct SidebarView: View {
     var imagesSection: some View {
         SidebarSection(title: "Images") {
             HStack(spacing: 8) {
-                ToolbarTile(sf: "doc.badge.plus", title: "Page") { state.addPage() }
+                AddPageTile { state.addPage() }
                     .disabled(state.pages.count >= CollageState.maxPages)
                     .opacity(state.pages.count >= CollageState.maxPages ? 0.5 : 1)
 
@@ -1047,6 +1047,31 @@ struct ToolbarTile: View {
     }
 }
 
+/// "Page" toolbar tile: a page with a large plus badge (the system
+/// doc.badge.plus badge is too small to read at toolbar size).
+struct AddPageTile: View {
+    let action: () -> Void
+
+    var body: some View {
+        Button(action: action) {
+            ToolbarTileLabel(prominent: true, title: "Page") {
+                Image(systemName: "doc")
+                    .overlay(alignment: .bottomTrailing) {
+                        Image(systemName: "plus.circle.fill")
+                            .font(.system(size: 13, weight: .bold))
+                            // White disc with an accent plus, punched out of
+                            // the page outline by an accent ring.
+                            .symbolRenderingMode(.palette)
+                            .foregroundStyle(Color.accentColor, Color.white)
+                            .background(Circle().fill(Color.accentColor).padding(-1.5))
+                            .offset(x: 6, y: 4)
+                    }
+            }
+        }
+        .buttonStyle(.plain)
+    }
+}
+
 struct ToolbarTileLabel<Icon: View>: View {
     let prominent: Bool
     let title: String
@@ -1141,6 +1166,7 @@ struct CustomSizeRow: View {
 /// Tapping a row makes its page current; the trash removes the page.
 struct PageGroupsView: View {
     @EnvironmentObject var state: CollageState
+    @Environment(\.colorScheme) private var colorScheme
     @State private var dropTargetPage: Int? = nil
     @State private var rowFrames: [Int: CGRect] = [:]
     // Custom page reordering (no system drag badge)
@@ -1210,6 +1236,20 @@ struct PageGroupsView: View {
         #endif
     }
 
+    /// Light mode: a soft gray well (accent-tinted for the current page).
+    /// Dark mode: a deep, near-black well so the rows stand out from the
+    /// dark glass, with the accent tint on top for the current page.
+    private func rowBackground(isCurrent: Bool, isDropTarget: Bool) -> some View {
+        let shape = RoundedRectangle(cornerRadius: 12)
+        let dark = colorScheme == .dark
+        let tint: Double = isDropTarget ? (dark ? 0.35 : 0.25) : isCurrent ? (dark ? 0.22 : 0.12) : 0
+        return shape
+            .fill(dark ? Color.black.opacity(0.55)
+                       : (tint > 0 ? Color.clear : Color(.systemFill).opacity(0.5)))
+            .overlay(shape.fill(Color.accentColor.opacity(tint)))
+            .overlay(shape.strokeBorder(Color.white.opacity(dark ? 0.08 : 0), lineWidth: 1))
+    }
+
     @ViewBuilder
     private func pageRow(pi: Int, page: CollagePage) -> some View {
         let isCurrent = pi == state.currentPageIndex
@@ -1272,12 +1312,7 @@ struct PageGroupsView: View {
         }
         .fixedSize(horizontal: false, vertical: true)
         .padding(8)
-        .background(
-            RoundedRectangle(cornerRadius: 12)
-                .fill(dropTargetPage == pi
-                      ? Color.accentColor.opacity(0.25)
-                      : isCurrent ? Color.accentColor.opacity(0.12) : Color(.systemFill).opacity(0.5))
-        )
+        .background(rowBackground(isCurrent: isCurrent, isDropTarget: dropTargetPage == pi))
         .contentShape(Rectangle())
         .onTapGesture {
             state.goToPage(pi)

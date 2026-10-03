@@ -204,7 +204,7 @@ struct BottomPanelView: View {
         VStack(spacing: 10) {
             // Fixed button bar — does not scroll with the page list
             HStack(spacing: 8) {
-                ToolbarTile(sf: "doc.badge.plus", title: "Page") { state.addPage() }
+                AddPageTile { state.addPage() }
                     .disabled(state.pages.count >= CollageState.maxPages)
                     .opacity(state.pages.count >= CollageState.maxPages ? 0.5 : 1)
 

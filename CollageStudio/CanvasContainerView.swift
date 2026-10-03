@@ -269,21 +269,13 @@ private struct EmptyCanvasContent: View {
             : CGSize(width: box.height * aspect, height: box.height)
         // Wide formats leave little height: shrink the prompt to fit inside.
         let promptScale = min(1, (rect.width - 32) / Self.promptSize.width,
-                              (rect.height - 48) / Self.promptSize.height)
+                              (rect.height - 32) / Self.promptSize.height)
 
         ZStack {
             RoundedRectangle(cornerRadius: ButtonStyleGuide.cornerRadius, style: .continuous)
                 .strokeBorder(Color.accentColor.opacity(0.5),
                               style: StrokeStyle(lineWidth: 1.5, dash: [7, 6]))
                 .frame(width: rect.width, height: rect.height)
-                .overlay(alignment: .bottom) {
-                    Text(state.ratio == .custom
-                         ? "\(Int(state.canvasSize.width))×\(Int(state.canvasSize.height))"
-                         : state.ratio.rawValue.replacingOccurrences(of: ":", with: "×"))
-                        .font(.system(size: 13, weight: .medium, design: .monospaced))
-                        .foregroundColor(.accentColor.opacity(0.8))
-                        .padding(.bottom, 12)
-                }
 
             prompt
                 .scaleEffect(max(promptScale, 0.3))
