@@ -428,6 +428,8 @@ struct EffectsPanel: View {
     }
     @State private var page: Page = .edit
     @State private var band: HSLBand = .master
+    /// Width of the CC slider stack, to find its numbers column.
+    @State private var ccWidth: CGFloat = 0
 
     var body: some View {
         VStack(spacing: 10) {
@@ -576,16 +578,27 @@ struct EffectsPanel: View {
             calSlider("Green Sat", \.greenSaturation, [gray, c(90, 195, 55)])
             calSlider("Blue Hue", \.blueHue, [c(98, 220, 141), c(99, 221, 196), c(32, 85, 211), c(91, 71, 204)])
             calSlider("Blue Sat", \.blueSaturation, [gray, c(90, 178, 209)])
-            HStack(spacing: 8) {
-                Spacer()
-                ActionButton(label: "Reset", sf: "arrow.counterclockwise", fillWidth: false) {
-                    state.calibration = CameraCalibration()
-                }
-                .disabled(state.calibration.isIdentity)
-                .opacity(state.calibration.isIdentity ? 0.5 : 1)
-                .panelChrome(state)
-            }
         }
+        // No Reset button: swipe down over the numbers column (the value
+        // readouts on the right) to zero every slider. Double-tapping one
+        // number still resets just that slider.
+        .background(GeometryReader { g in
+            Color.clear.onAppear { ccWidth = g.size.width }
+                .onChange(of: g.size.width) { _, w in ccWidth = w }
+        })
+        .simultaneousGesture(
+            DragGesture(minimumDistance: 24)
+                .onEnded { v in
+                    let inNumbers = v.startLocation.x > ccWidth - 52
+                    let downward = v.translation.height > 60
+                        && abs(v.translation.width) < v.translation.height * 0.6
+                    guard inNumbers, downward, !state.calibration.isIdentity else { return }
+                    withAnimation(.easeOut(duration: 0.2)) { state.calibration = CameraCalibration() }
+                    #if canImport(UIKit)
+                    UINotificationFeedbackGenerator().notificationOccurred(.success)
+                    #endif
+                }
+        )
     }
 
     private func calSlider(_ label: String, _ key: WritableKeyPath<CameraCalibration, Double>,
