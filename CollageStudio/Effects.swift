@@ -335,9 +335,18 @@ enum HSLGrader {
 extension ContentGrade {
     /// The per-pixel part: the filter (mixed in by its strength), then HSL.
     func color(_ r: Double, _ g: Double, _ b: Double) -> (r: Double, g: Double, b: Double) {
+        color(r, g, b, calibrationMatrix: calibration.isIdentity ? nil : calibration.matrix)
+    }
+
+    /// `calibrationMatrix` precomputed for a whole color cube.
+    func color(_ r: Double, _ g: Double, _ b: Double,
+               calibrationMatrix: [Double]?) -> (r: Double, g: Double, b: Double) {
         var c = (r: r, g: g, b: b)
+        // Camera calibration first, like Lightroom's profile stage.
+        if let m = calibrationMatrix { c = calibration.apply(r, g, b, matrix: m) }
         if hasFilter {
             // k above 1 extrapolates past the filter (stronger look).
+            let (r, g, b) = c
             let f = filter.apply(r, g, b), k = filterStrength
             func mix(_ a: Double, _ b: Double) -> Double { min(max(a + (b - a) * k, 0), 1) }
             c = (mix(r, f.r), mix(g, f.g), mix(b, f.b))
@@ -358,7 +367,10 @@ enum ContentGrader {
     static func apply(_ grade: ContentGrade, to image: PlatformImage) -> PlatformImage {
         guard !grade.isIdentity else { return image }
         var source = image
-        if grade.hasColorChange { source = HSLGrader.applyCube(to: source) { grade.color($0, $1, $2) } }
+        if grade.hasColorChange {
+            let m = grade.calibration.isIdentity ? nil : grade.calibration.matrix
+            source = HSLGrader.applyCube(to: source) { grade.color($0, $1, $2, calibrationMatrix: m) }
+        }
         guard grade.clarity != 0 || grade.sharpness > 0 else { return source }
 
         #if canImport(UIKit)
@@ -411,17 +423,20 @@ enum ContentGrader {
 /// with the per-color HSL controls on a second page.
 struct EffectsPanel: View {
     @EnvironmentObject var state: CollageState
-    enum Page: String, CaseIterable { case edit = "Basic", hsl = "HSL", effects = "Effects", filter = "Filter" }
+    enum Page: String, CaseIterable {
+        case edit = "Basic", hsl = "HSL", cc = "CC", effects = "Effects", filter = "Filter"
+    }
     @State private var page: Page = .edit
     @State private var band: HSLBand = .master
 
     var body: some View {
         VStack(spacing: 10) {
-            HStack(spacing: 8) {
-                ForEach(Page.allCases, id: \.self) { p in
-                    PackChip(title: p.rawValue, isActive: page == p) { page = p }
+            ScrollView(.horizontal, showsIndicators: false) {
+                HStack(spacing: 8) {
+                    ForEach(Page.allCases, id: \.self) { p in
+                        PackChip(title: p.rawValue, isActive: page == p) { page = p }
+                    }
                 }
-                Spacer()
             }
             .panelChrome(state)
 
@@ -430,6 +445,7 @@ struct EffectsPanel: View {
             case .filter: FilterControls()
             case .effects: effectControls
             case .hsl: hslControls
+            case .cc: calibrationControls
             }
         }
     }
@@ -532,6 +548,40 @@ struct EffectsPanel: View {
                           range: -100...100, step: 1, format: "%.0f", resetValue: 0)
 
         }
+    }
+
+    /// Camera calibration, laid out like Lightroom's panel: shadows tint,
+    /// then hue and saturation for each primary. Tracks show the direction.
+    private var calibrationControls: some View {
+        func color(_ h: Double, _ s: Double = 0.85) -> Color { Color(hue: h / 360, saturation: s, brightness: 0.95) }
+        let gray = Color(white: 0.6)
+        return VStack(spacing: 10) {
+            calSlider("Shadow Tint", \.shadowsTint, [color(120, 0.7), Color(white: 0.85), color(300, 0.7)])
+            calSlider("Red Hue", \.redHue, [color(330), color(0), color(30)])
+            calSlider("Red Sat", \.redSaturation, [gray, color(0)])
+            calSlider("Green Hue", \.greenHue, [color(60), color(120), color(170)])
+            calSlider("Green Sat", \.greenSaturation, [gray, color(120)])
+            calSlider("Blue Hue", \.blueHue, [color(190), color(230), color(275)])
+            calSlider("Blue Sat", \.blueSaturation, [gray, color(230)])
+            HStack(spacing: 8) {
+                Spacer()
+                ActionButton(label: "Reset", sf: "arrow.counterclockwise", fillWidth: false) {
+                    state.calibration = CameraCalibration()
+                }
+                .disabled(state.calibration.isIdentity)
+                .opacity(state.calibration.isIdentity ? 0.5 : 1)
+                .panelChrome(state)
+            }
+        }
+    }
+
+    private func calSlider(_ label: String, _ key: WritableKeyPath<CameraCalibration, Double>,
+                           _ track: [Color]) -> some View {
+        LabeledSlider(label: label,
+                      value: Binding(get: { state.calibration[keyPath: key] },
+                                     set: { state.calibration[keyPath: key] = $0 }),
+                      range: -100...100, step: 1, format: "%.0f", resetValue: 0,
+                      trackColors: track)
     }
 
     private func shift(_ key: WritableKeyPath<HSLShift, Double>) -> Binding<Double> {

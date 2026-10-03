@@ -324,6 +324,10 @@ struct ContentView: View {
                     .resizable()
                     .scaledToFit()
                     .frame(height: 52)
+                    // Monochrome on the empty start screen; color arrives
+                    // with the first photos.
+                    .grayscale(state.hasAnyImages ? 0 : 1)
+                    .animation(.easeInOut(duration: 0.4), value: state.hasAnyImages)
                     .shimmering(state.isBusy)
                     .padding(.leading, 10)
                     .offset(y: 2)

@@ -39,6 +39,8 @@ struct SidebarView: View {
                 .resizable()
                 .scaledToFit()
                 .frame(height: 80)
+                .grayscale(state.hasAnyImages ? 0 : 1)
+                .animation(.easeInOut(duration: 0.4), value: state.hasAnyImages)
                 .shimmering(state.isBusy)
             Spacer()
             // Export / share the collage as PNG
@@ -168,7 +170,7 @@ struct SidebarView: View {
         SidebarSection(title: "Canvas") {
             LabeledSlider(label: "Margin", value: $state.canvasMargin, range: -100...100, step: 1, format: "%.0f",
                           resetValue: 0)
-            LabeledSlider(label: "Rotation", value: $state.canvasRotation, range: -30...30, step: 0.5, format: "%.1f°",
+            LabeledSlider(label: "Rotation", value: $state.canvasRotation, range: -15...15, step: 0.1, format: "%.1f°",
                           resetValue: 0)
         }
     }

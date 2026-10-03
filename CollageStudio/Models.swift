@@ -636,6 +636,7 @@ enum CollageEffect: String, CaseIterable, Identifiable {
 /// modifiers: HSL plus clarity and sharpness. Applied to the photos only —
 /// never to overlays or the frame.
 struct ContentGrade: Hashable {
+    var calibration = CameraCalibration()
     var filter: ColorFilter = .none
     /// 0...2, how much of the filter is mixed in (1 = as designed, above 1
     /// pushes it further).
@@ -648,8 +649,82 @@ struct ContentGrade: Hashable {
 
     var hasFilter: Bool { filter != .none && filterStrength > 0 }
     /// Whether the per-pixel color part (filter + HSL) does anything.
-    var hasColorChange: Bool { hasFilter || !hsl.isIdentity }
+    var hasColorChange: Bool { !calibration.isIdentity || hasFilter || !hsl.isIdentity }
     var isIdentity: Bool { !hasColorChange && clarity == 0 && sharpness == 0 }
+}
+
+// MARK: - Camera calibration
+
+/// Lightroom-style camera calibration: moves the RGB primaries (hue and
+/// saturation of what pure red, green and blue map to) through a 3×3 matrix
+/// in linear light, normalized so neutrals stay neutral; plus a green ↔
+/// magenta tint for the shadows. All values −100...100.
+struct CameraCalibration: Hashable {
+    var shadowsTint: Double = 0
+    var redHue: Double = 0, redSaturation: Double = 0
+    var greenHue: Double = 0, greenSaturation: Double = 0
+    var blueHue: Double = 0, blueSaturation: Double = 0
+
+    var isIdentity: Bool {
+        shadowsTint == 0 && redHue == 0 && redSaturation == 0 && greenHue == 0
+            && greenSaturation == 0 && blueHue == 0 && blueSaturation == 0
+    }
+
+    /// Primary hue shift at ±100, in degrees.
+    static let maxHueShift = 12.0
+
+    /// Row-major 3×3 matrix (linear RGB in → linear RGB out).
+    var matrix: [Double] {
+        // One primary: rotate its hue, push it toward / away from gray.
+        func primary(_ baseHue: Double, _ hue: Double, _ sat: Double) -> [Double] {
+            let h = (baseHue + hue / 100 * Self.maxHueShift + 360).truncatingRemainder(dividingBy: 360)
+            // Fully saturated color of that hue (sRGB-ish, used as linear).
+            let x = 1 - abs((h / 60).truncatingRemainder(dividingBy: 2) - 1)
+            var p: [Double]
+            switch Int(h / 60) % 6 {
+            case 0: p = [1, x, 0]
+            case 1: p = [x, 1, 0]
+            case 2: p = [0, 1, x]
+            case 3: p = [0, x, 1]
+            case 4: p = [x, 0, 1]
+            default: p = [1, 0, x]
+            }
+            let y = 0.2126 * p[0] + 0.7152 * p[1] + 0.0722 * p[2]
+            let k = max(1 + sat / 100 * 0.9, 0.1)
+            return p.map { y + ($0 - y) * k }
+        }
+        let r = primary(0, redHue, redSaturation)
+        let g = primary(120, greenHue, greenSaturation)
+        let b = primary(240, blueHue, blueSaturation)
+        // Columns are the primaries; scale each row so white stays white.
+        var m = [r[0], g[0], b[0], r[1], g[1], b[1], r[2], g[2], b[2]]
+        for row in 0..<3 {
+            let sum = m[row * 3] + m[row * 3 + 1] + m[row * 3 + 2]
+            if abs(sum) > 1e-6 { for c in 0..<3 { m[row * 3 + c] /= sum } }
+        }
+        return m
+    }
+
+    /// One sRGB color (0...1) through the calibration. `matrix` is passed in
+    /// so a color cube computes it once.
+    func apply(_ r: Double, _ g: Double, _ b: Double, matrix m: [Double]) -> (r: Double, g: Double, b: Double) {
+        func lin(_ v: Double) -> Double { v <= 0.04045 ? v / 12.92 : pow((v + 0.055) / 1.055, 2.4) }
+        func enc(_ v: Double) -> Double {
+            let c = min(max(v, 0), 1)
+            return c <= 0.0031308 ? c * 12.92 : 1.055 * pow(c, 1 / 2.4) - 0.055
+        }
+        let lr = lin(r), lg = lin(g), lb = lin(b)
+        var o = [enc(m[0] * lr + m[1] * lg + m[2] * lb),
+                 enc(m[3] * lr + m[4] * lg + m[5] * lb),
+                 enc(m[6] * lr + m[7] * lg + m[8] * lb)]
+        if shadowsTint != 0 {
+            // Magenta (+) / green (−), fading out above the midtones.
+            let l = 0.299 * o[0] + 0.587 * o[1] + 0.114 * o[2]
+            let w = pow(min(max(1 - l / 0.5, 0), 1), 1.5) * shadowsTint / 100 * 0.07
+            o = [o[0] + w * 0.5, o[1] - w, o[2] + w * 0.5].map { min(max($0, 0), 1) }
+        }
+        return (o[0], o[1], o[2])
+    }
 }
 
 // MARK: - Color filters
@@ -667,6 +742,17 @@ enum ColorFilter: String, CaseIterable, Identifiable {
     /// shadows, olive-warm mids, muted yellow-green foliage, warm cream
     /// highlights held just under white, barely lifted blacks.
     case melancholy = "Melancholy"
+    /// Port of the pojemario.com/brownie web filter at its default settings
+    /// (intensity 60, warmth 55, lift 30, saturation 50, contrast /
+    /// highlights / brightness 50); its random grain is left to the Grain
+    /// effect. 100% here equals the page's default output.
+    case brownie2 = "Brownie 2"
+    /// In the spirit of Fujifilm's Classic Negative simulation: hard
+    /// contrast with deep blacks, muted color, and a hue response that
+    /// changes with brightness — greens teal in shadow and olive in light,
+    /// reds brick low and orange high, blues toward cyan — over cyan-teal
+    /// shadows and warm yellow-cream highlights.
+    case classicNegative = "Classic Neg"
 
     var id: String { rawValue }
     var title: String { rawValue }
@@ -696,6 +782,10 @@ enum ColorFilter: String, CaseIterable, Identifiable {
             let high = [0.020, 0.014, -0.030]       // warm cream
             let out = (0..<3).map { min(max(c[$0] + ws * shadow[$0] + wm * mid[$0] + wh * high[$0], 0), 1) }
             return (out[0], out[1], out[2])
+        case .brownie2:
+            return Self.brownie2(r, g, b)
+        case .classicNegative:
+            return Self.classicNegative(r, g, b)
         case .melancholy:
             // Foliage: greens toward olive / yellow-green, and muted; the
             // whole image lightly muted.
@@ -720,6 +810,77 @@ enum ColorFilter: String, CaseIterable, Identifiable {
             let out = (0..<3).map { min(max(c[$0] + ws * shadow[$0] + wm * mid[$0] + wh * high[$0], 0), 1) }
             return (out[0], out[1], out[2])
         }
+    }
+
+    /// pojemario.com/brownie `applyFilter`, step for step, on 0...255 values.
+    private static func brownie2(_ r0: Double, _ g0: Double, _ b0: Double) -> (r: Double, g: Double, b: Double) {
+        let intensity = 0.60, warmth = 0.55, lift = 0.30 * 30
+        let contrastBoost = 0.1        // the page's base contrast, user contrast at 50%
+        func luma(_ r: Double, _ g: Double, _ b: Double) -> Double { 0.299 * r + 0.587 * g + 0.114 * b }
+        func contCurve(_ v: Double) -> Double {
+            let n = v / 255
+            let curved = n < 0.5 ? 2 * n * n : 1 - pow(-2 * n + 2, 2) / 2
+            return 255 * (curved + contrastBoost * (curved - 0.5))
+        }
+        let or = r0 * 255, og = g0 * 255, ob = b0 * 255
+        var r = or, g = og, b = ob
+        // 1. Lift shadows — warm blacks
+        r += lift * (1 - r / 255)
+        g += lift * 0.82 * (1 - g / 255)
+        b += lift * 0.55 * (1 - b / 255)
+        // 2. Warm tint
+        r += warmth * 22; g += warmth * 8; b -= warmth * 18
+        // 3. Midtone brown push
+        let l0 = luma(r, g, b) / 255
+        let mid = 4 * l0 * (1 - l0)
+        r += mid * 18; g += mid * 6; b -= mid * 10
+        // 4. Saturation: ×1 at the default — no change.
+        // 5. Built-in gentle desaturation
+        let l2 = luma(r, g, b)
+        r += 0.18 * (l2 - r); g += 0.18 * (l2 - g); b += 0.18 * (l2 - b)
+        // 6. Contrast S-curve
+        r = contCurve(r); g = contCurve(g); b = contCurve(b)
+        // 7–8. Highlights / brightness: 0 at the default.
+        // Intensity: blend toward the original.
+        func out(_ o: Double, _ v: Double) -> Double { min(max(o + intensity * (v - o), 0), 255) / 255 }
+        return (out(or, r), out(og, g), out(ob, b))
+    }
+
+    private static func classicNegative(_ r: Double, _ g: Double, _ b: Double) -> (r: Double, g: Double, b: Double) {
+        func luma(_ c: [Double]) -> Double { 0.299 * c[0] + 0.587 * c[1] + 0.114 * c[2] }
+        /// Smooth bump around `center` (degrees) shifting hue by `shift`.
+        func huePull(_ h: Double, _ center: Double, _ width: Double, _ shift: Double) -> Double {
+            var d = (h - center + 180).truncatingRemainder(dividingBy: 360)
+            if d < 0 { d += 360 }
+            d -= 180
+            var w = min(max(1 - abs(d) / width, 0), 1)
+            w = w * w * (3 - 2 * w)
+            return w * shift
+        }
+        let l0 = 0.299 * r + 0.587 * g + 0.114 * b
+        var (h, s, v) = hsv(r, g, b)
+        let dark = min(max(1 - l0 / 0.5, 0), 1), light = min(max((l0 - 0.5) / 0.5, 0), 1)
+        // Brightness-dependent hue response.
+        var dh = huePull(h, 120, 60, 18 * dark - 16 * light)    // greens: teal low, olive high
+        dh += huePull(h, 5, 35, -8 * dark + 10 * light)         // reds: brick low, orange high
+        dh += huePull(h, 215, 45, -12)                          // blues → cyan
+        h = (h + dh).truncatingRemainder(dividingBy: 360)
+        if h < 0 { h += 360 }
+        s *= 0.80
+        s *= 1 - 0.25 * huePull(h, 120, 60, 1)                  // greens a bit more muted
+        var c = rgb(h, s, v)
+        // Hard contrast: strong S-curve, deep blacks, slightly held whites.
+        c = c.map { x in
+            let sc = x * x * (3 - 2 * x)
+            return 0.012 + (0.975 - 0.012) * (x * 0.45 + sc * 0.55)
+        }
+        let l = luma(c)
+        let ws = pow(min(max(1 - l / 0.45, 0), 1), 1.4)
+        let wh = pow(min(max((l - 0.55) / 0.45, 0), 1), 1.2)
+        let shadow = [-0.022, 0.008, 0.020]     // cyan-teal
+        let high = [0.022, 0.014, -0.026]       // warm yellow-cream
+        let out = (0..<3).map { min(max(c[$0] + ws * shadow[$0] + wh * high[$0], 0), 1) }
+        return (out[0], out[1], out[2])
     }
 
     /// Hue in degrees, saturation and value, all from sRGB 0...1.
