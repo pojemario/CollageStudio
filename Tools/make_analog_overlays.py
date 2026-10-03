@@ -15,6 +15,8 @@ the debris actually reads at thumbnail size.
 Also writes Assets.xcassets/Effects/EffectGrain (film grain for the Effects tab).
 
 Usage:  venv/bin/python Tools/make_analog_overlays.py [--preview out.png]
+        venv/bin/python Tools/make_analog_overlays.py --leaks Blaze,Coral [--preview out.png]
+          (just those leaks; leaves the other assets untouched)
         (same venv as make_analog_frames.py: pillow numpy scipy)
 """
 import json
@@ -193,6 +195,11 @@ U, V = LX / LW, LY / LH             # 0..1 across / down
 WARM = [(0, (255, 30, 8)), (.35, (255, 70, 14)), (.65, (255, 145, 32)), (.88, (255, 212, 112)),
         (1, (255, 246, 218))]
 MAGENTA = [(0, (220, 20, 130)), (.45, (244, 48, 120)), (.75, (255, 112, 98)), (1, (255, 228, 194))]
+# Blaze (from a reference scan): red-orange fringe → orange → yellow → cream → white-hot
+BLAZE = [(0, (232, 64, 22)), (.25, (240, 120, 40)), (.5, (244, 196, 110)), (.7, (246, 238, 150)),
+         (.88, (252, 250, 214)), (1, (255, 255, 238))]
+# Coral (from a reference scan): an even coral-red veil, pale pink where it flares
+CORAL = [(0, (196, 44, 30)), (.55, (226, 92, 62)), (.8, (240, 150, 132)), (1, (250, 226, 226))]
 GOLD = [(0, (240, 96, 10)), (.45, (254, 152, 30)), (.8, (255, 214, 120)), (1, (255, 250, 228))]
 
 
@@ -260,8 +267,36 @@ def leak_streaks(rng):      # diagonal streaks of stray light
     return leak_image(rng, f * wobble(rng, 100, .35, 1.1), GOLD)
 
 
+def leak_blaze(rng):        # white-hot from the left edge, ending in a ragged red-orange fringe
+    # Frayed boundary ~38% across: fine vertical fibres plus a slow wander.
+    fray = gaussian_filter(rng.standard_normal(LH).astype(np.float32), 2.5)
+    fray = fray / (fray.std() + 1e-6)
+    wander = gaussian_filter(rng.standard_normal(LH).astype(np.float32), 60)
+    wander = wander / (wander.std() + 1e-6)
+    edge = (.38 + .012 * fray + .03 * wander)[:, None]
+    # Colour runs from the fringe (0) to blown-out white at the far edge (1).
+    f = np.clip((edge - U) / (edge * .75), 0, 1) ** .8
+    f = np.clip(f * wobble(rng, 70, .9, 1.08), 0, 1)
+    inside = .5 + .5 * np.tanh((edge - U) / .012)           # sharp, not a soft fade
+    a = inside * (.82 + .18 * f) * (1 + rng.standard_normal((LH, LW)).astype(np.float32) * .03)
+    a = np.clip(a + (rng.random((LH, LW)).astype(np.float32) - .5) / 255, 0, 1)
+    out = np.dstack([ramp(f, BLAZE), a[..., None] * 255]).clip(0, 255).round().astype(np.uint8)
+    return Image.fromarray(out, "RGBA")
+
+
+def leak_coral(rng):        # coral-red veil over the right quarter, flaring pale pink
+    edge = (.765 + .012 * lnoise(rng, 70))
+    band = .5 + .5 * np.tanh((U - edge) / .036)
+    f = band * .74 * wobble(rng, 90, .9, 1.04)
+    flare = np.exp(-(((U - .92) / .13) ** 2 + ((V - .30) / .045) ** 2))      # upper haze
+    spot = np.exp(-(((U - .90) / .05) ** 2 + ((V - .93) / .03) ** 2)) * .8   # small hot spot
+    f = np.maximum(f, band * np.maximum(flare, spot))
+    return leak_image(rng, f, CORAL, strength=1.0)
+
+
 LEAKS = [("Edge", 201, leak_edge), ("Corner", 203, leak_corner), ("Band", 207, leak_band),
-         ("Burn", 211, leak_burn), ("Magenta", 223, leak_magenta), ("Streaks", 227, leak_streaks)]
+         ("Burn", 211, leak_burn), ("Magenta", 223, leak_magenta), ("Streaks", 227, leak_streaks),
+         ("Blaze", 229, leak_blaze), ("Coral", 233, leak_coral)]
 
 
 # ------------------------------------------------------------ thumbnails
@@ -324,7 +359,35 @@ def grain_image():
 
 # ------------------------------------------------------------ main
 
+def add_leaks(names, preview_path=None):
+    """Writes just the named leaks (and their thumbnails) without touching
+    the other overlay assets."""
+    photo = sample_photo()
+    tiles = []
+    for name, seed, build in LEAKS:
+        if name not in names:
+            continue
+        image = build(np.random.default_rng(seed))
+        for n in (f"Leak916_{name}", f"Leak916_{name}_Thumb"):
+            shutil.rmtree(os.path.join(ROOT, "Leak916", f"{n}.imageset"), ignore_errors=True)
+        write_imageset("Leak916", f"Leak916_{name}", image)
+        thumb = leak_thumbnail(image, photo)
+        write_imageset("Leak916", f"Leak916_{name}_Thumb", thumb)
+        tiles.append(thumb)
+        print(f"Leak916_{name}")
+    if preview_path and tiles:
+        sheet = Image.new("RGB", (len(tiles) * (TW + 10) + 10, TH + 20), (128, 128, 128))
+        for i, t in enumerate(tiles):
+            sheet.paste(t, (10 + i * (TW + 10), 10))
+        sheet.save(preview_path)
+
+
 def main():
+    if "--leaks" in sys.argv:               # e.g. --leaks Blaze,Coral [--preview out.png]
+        names = sys.argv[sys.argv.index("--leaks") + 1].split(",")
+        preview = sys.argv[sys.argv.index("--preview") + 1] if "--preview" in sys.argv else None
+        add_leaks(names, preview)
+        return
     preview_path = sys.argv[2] if len(sys.argv) > 2 and sys.argv[1] == "--preview" else None
     shutil.rmtree(ROOT, ignore_errors=True)
     write_folder(ROOT)
