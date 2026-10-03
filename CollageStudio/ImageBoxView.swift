@@ -871,6 +871,20 @@ enum SubjectMasker {
         return SubjectMask(source: ObjectIdentifier(image), mask: mask, bounds: bounds)
     }
 
+    private static let ciContext = CIContext()
+
+    /// The mask grown outward by `radius` pixels (a solid silhouette for the
+    /// Border effect).
+    static func dilate(_ mask: CGImage, radius: Int) -> CGImage? {
+        guard radius > 0 else { return mask }
+        let input = CIImage(cgImage: mask)
+        let extent = input.extent
+        let grown = input.clampedToExtent()
+            .applyingFilter("CIMorphologyMaximum", parameters: [kCIInputRadiusKey: radius])
+            .cropped(to: extent)
+        return ciContext.createCGImage(grown, from: extent)
+    }
+
     /// The picture drawn upright (orientation applied) at most `longEdge`
     /// long, so the mask lines up with how the photo is displayed.
     private static func uprightCGImage(_ image: PlatformImage, longEdge: CGFloat) -> CGImage? {
@@ -946,6 +960,8 @@ struct ProtrusionLayer: View {
     @EnvironmentObject var state: CollageState
     let canvasSize: CGSize
     let gap: CGFloat
+    /// Display scale of the canvas (border thickness and shadow follow it).
+    var scale: CGFloat = 1
 
     var body: some View {
         let rects = state.layout.rects(canvasSize: canvasSize, gap: gap)
@@ -974,26 +990,76 @@ struct ProtrusionLayer: View {
                                                   zoom: img.zoom, rotation: img.rotation,
                                                   pan: CollageState.panPixels(img.panOffset, in: box.size)) {
             let allowed = allowedRegion(box: box, edges: edges)
-            Group {
-                #if canImport(UIKit)
-                Image(uiImage: state.gradedDisplayImage(for: img)).resizable()
-                #else
-                Image(nsImage: state.gradedDisplayImage(for: img)).resizable()
-                #endif
+            ZStack {
+                // Effects sit under the subject and only show outside its
+                // box, so the photo inside the box stays untouched.
+                effect(img, mask: mask, placement: placement, box: box)
+                    .mask { outsideBox(allowed: allowed, box: box) }
+                placed(placement: placement, box: box) {
+                    Group {
+                        #if canImport(UIKit)
+                        Image(uiImage: state.gradedDisplayImage(for: img)).resizable()
+                        #else
+                        Image(nsImage: state.gradedDisplayImage(for: img)).resizable()
+                        #endif
+                    }
+                    .mask(Image(decorative: mask, scale: 1).resizable())
+                }
+                .mask(alignment: .topLeading) {
+                    Rectangle()
+                        .frame(width: allowed.width, height: allowed.height)
+                        .offset(x: allowed.minX, y: allowed.minY)
+                }
             }
+        }
+    }
+
+    /// Content laid out the way the photo sits in its box (size, rotation,
+    /// pan), positioned at the box, on a canvas-sized frame.
+    private func placed<Content: View>(placement: ImagePlacement, box: CGRect,
+                                       @ViewBuilder _ content: () -> Content) -> some View {
+        content()
             .frame(width: placement.size.width, height: placement.size.height)
-            .mask(Image(decorative: mask, scale: 1).resizable())
             .rotationEffect(.radians(Double(placement.rotation)))
             .offset(x: placement.offset.width, y: placement.offset.height)
             .frame(width: box.width, height: box.height)
             .position(x: box.midX, y: box.midY)
             .frame(width: canvasSize.width, height: canvasSize.height)
-            .mask(alignment: .topLeading) {
-                Rectangle()
-                    .frame(width: allowed.width, height: allowed.height)
-                    .offset(x: allowed.minX, y: allowed.minY)
+    }
+
+    @ViewBuilder
+    private func effect(_ img: CollageImage, mask: CGImage, placement: ImagePlacement, box: CGRect) -> some View {
+        switch img.protrusionEffect {
+        case .none:
+            EmptyView()
+        case .border:
+            // The subject's silhouette grown by the Layout border thickness,
+            // filled with the border color, behind the subject.
+            let lineWidth = CGFloat(state.borderThickness) * scale
+            let pixelsPerPoint = CGFloat(mask.width) / max(placement.size.width, 1)
+            let radius = min(Int((lineWidth * pixelsPerPoint).rounded()), 80)
+            if radius > 0, let grown = state.dilatedSubjectMask(for: img, radius: radius) {
+                placed(placement: placement, box: box) {
+                    state.borderColor.mask(Image(decorative: grown, scale: 1).resizable())
+                }
             }
+        case .shadow:
+            placed(placement: placement, box: box) {
+                Color.black.opacity(0.45).mask(Image(decorative: mask, scale: 1).resizable())
+            }
+            .blur(radius: 7 * scale)
+            .offset(y: 4 * scale)
         }
+    }
+
+    /// The allowed region minus the box itself.
+    private func outsideBox(allowed: CGRect, box: CGRect) -> some View {
+        Path { p in
+            p.addRect(allowed)
+            p.addRect(box)
+        }
+        .fill(style: FillStyle(eoFill: true))
+        .frame(width: canvasSize.width, height: canvasSize.height)
     }
 
     /// The box, opened up to the canvas edge on every allowed side.
@@ -1022,15 +1088,17 @@ struct ProtrusionPanel: View {
                 Label("Protrude", systemImage: "person.crop.square")
                     .font(.headline)
                 Spacer()
-                Button { state.endProtrusionEditing() } label: {
-                    Label("Done", systemImage: "checkmark")
-                        .font(.system(size: 14, weight: .semibold))
-                        .foregroundColor(.white)
-                        .padding(.horizontal, 12)
-                        .padding(.vertical, 9)
-                        .appButtonBackground(prominent: true)
+                if let img {
+                    Toggle("Protrude", isOn: Binding(
+                        get: { img.protrusion != nil },
+                        set: { on in
+                            let crossing = state.protrudableEdges(for: img.id)
+                            state.setProtrusion(on ? (crossing.isEmpty ? .all : crossing) : nil, for: img.id)
+                        }))
+                        .labelsHidden()
+                        .tint(.accentColor)
+                        .disabled(state.subjectMask(for: img)?.mask == nil)
                 }
-                .buttonStyle(.plain)
             }
             if let img { content(img) }
         }
@@ -1054,39 +1122,48 @@ struct ProtrusionPanel: View {
             Text("No clear subject found in this photo.")
                 .font(.subheadline)
                 .foregroundColor(.secondary)
-        } else {
+        } else if let edges = img.protrusion {
             let crossing = state.protrudableEdges(for: img.id)
-            Toggle("Subject breaks out of its box", isOn: Binding(
-                get: { img.protrusion != nil },
-                set: { on in
-                    state.setProtrusion(on ? (crossing.isEmpty ? .all : crossing) : nil, for: img.id)
-                }))
-                .font(.subheadline)
-                .tint(.accentColor)
-
-            if let edges = img.protrusion {
-                HStack(spacing: 8) {
-                    PackChip(title: "All", isActive: edges == .all) {
-                        state.setProtrusion(.all, for: img.id)
-                    }
-                    ForEach(ProtrusionEdges.ordered, id: \.1) { edge, title in
-                        PackChip(title: title, isActive: edges.contains(edge)) {
-                            var next = edges
-                            if next.contains(edge) { next.remove(edge) } else { next.insert(edge) }
-                            // Unticking the last edge turns protrusion off.
-                            state.setProtrusion(next.isEmpty ? nil : next, for: img.id)
-                        }
-                        // Dimmed: the subject doesn't reach that edge now.
-                        .opacity(crossing.contains(edge) ? 1 : 0.45)
-                    }
+            HStack(spacing: 8) {
+                PackChip(title: "All", isActive: edges == .all) {
+                    state.setProtrusion(.all, for: img.id)
                 }
-                Text(crossing.isEmpty
-                     ? "The subject sits fully inside the box. Zoom or move the photo so the box cuts it off — that part will break out."
-                     : "Dimmed edges: the subject doesn't reach them right now.")
-                    .font(.caption)
-                    .foregroundColor(.secondary)
-                    .fixedSize(horizontal: false, vertical: true)
+                ForEach(ProtrusionEdges.ordered, id: \.1) { edge, title in
+                    PackChip(title: title, isActive: edges.contains(edge)) {
+                        var next = edges
+                        if next.contains(edge) { next.remove(edge) } else { next.insert(edge) }
+                        // Unticking the last edge turns protrusion off.
+                        state.setProtrusion(next.isEmpty ? nil : next, for: img.id)
+                    }
+                    // Dimmed: the subject doesn't reach that edge now.
+                    .opacity(crossing.contains(edge) ? 1 : 0.45)
+                }
             }
+            HStack(spacing: 8) {
+                Text("Effect")
+                    .font(.subheadline)
+                Picker("Effect", selection: Binding(
+                    get: { img.protrusionEffect },
+                    set: { state.setProtrusionEffect($0, for: img.id) })) {
+                    ForEach(ProtrusionEffect.allCases) { Text($0.rawValue).tag($0) }
+                }
+                .pickerStyle(.segmented)
+                .labelsHidden()
+            }
+            Text(hint(img, crossing: crossing))
+                .font(.caption)
+                .foregroundColor(.secondary)
+                .fixedSize(horizontal: false, vertical: true)
         }
+    }
+
+    private func hint(_ img: CollageImage, crossing: ProtrusionEdges) -> String {
+        if crossing.isEmpty {
+            return "The subject sits fully inside the box. Zoom or move the photo so the box cuts it off — that part will break out."
+        }
+        if img.protrusionEffect == .border, state.borderThickness <= 0 {
+            return "Border follows the Layout border — set a border thickness there to see it."
+        }
+        return "Dimmed edges: the subject doesn't reach them right now."
     }
 }

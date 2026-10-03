@@ -90,7 +90,7 @@ struct CollageGridView_Grid: View {
                         // Subjects breaking out of their boxes — above every
                         // box and border, still under the effects, overlays
                         // and frame drawn after this block.
-                        ProtrusionLayer(canvasSize: contentSize, gap: gap)
+                        ProtrusionLayer(canvasSize: contentSize, gap: gap, scale: scale)
 
                         // Interactive resize handles float above the boxes with a
                         // finger-friendly hit area, independent of the gap size.

@@ -286,6 +286,8 @@ struct CollageImage: Identifiable, Equatable {
     /// Protrusion: the edges the photo's subject may break out of its box
     /// across (over the border and neighbouring boxes). Nil = off.
     var protrusion: ProtrusionEdges? = nil
+    /// How the protruding part is set off from what it overlaps.
+    var protrusionEffect: ProtrusionEffect = .none
     /// Photos (not text boxes or empty slots) can protrude.
     var canProtrude: Bool { !isPlaceholder && !isText }
     /// Bumped after every committed pinch. The box view uses it as its
@@ -369,6 +371,17 @@ struct ProtrusionEdges: OptionSet, Hashable {
 
     static let ordered: [(ProtrusionEdges, String)] = [(.top, "Top"), (.bottom, "Bottom"),
                                                         (.left, "Left"), (.right, "Right")]
+}
+
+/// Treatment of the protruding part (outside its box only).
+enum ProtrusionEffect: String, CaseIterable, Identifiable {
+    case none = "None"
+    /// An outline in the Layout border's color and thickness, so the box
+    /// border seems to wrap around the part that breaks out.
+    case border = "Border"
+    /// A soft drop shadow under the part that breaks out.
+    case shadow = "Shadow"
+    var id: String { rawValue }
 }
 
 /// Where a photo sits inside its box: aspect-fill cover for the (possibly

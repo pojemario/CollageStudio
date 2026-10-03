@@ -942,7 +942,20 @@ class CollageState: ObservableObject {
             protrusionTargetId = id
             isPanelOpen = true
         }
-        if let img = images.first(where: { $0.id == id }) { requestSubjectMask(for: img) }
+        if let img = images.first(where: { $0.id == id }) {
+            requestSubjectMask(for: img)
+            turnOnProtrusionIfNew(id)
+        }
+    }
+
+    /// Opening Protrude turns it on (once the subject is known) for a photo
+    /// that doesn't protrude yet: across the edges the subject crosses, or
+    /// all of them if it crosses none.
+    private func turnOnProtrusionIfNew(_ id: UUID) {
+        guard protrusionTargetId == id, let img = images.first(where: { $0.id == id }),
+              img.protrusion == nil, subjectMask(for: img)?.mask != nil else { return }
+        let crossing = protrudableEdges(for: id)
+        setProtrusion(crossing.isEmpty ? .all : crossing, for: id)
     }
 
     func endProtrusionEditing() {
@@ -969,6 +982,7 @@ class CollageState: ObservableObject {
             await MainActor.run {
                 self.maskInFlight.remove(id)
                 self.subjectMasks[id] = mask
+                self.turnOnProtrusionIfNew(id)
             }
         }
     }
@@ -977,6 +991,25 @@ class CollageState: ObservableObject {
         guard let pi = pageIndex(containing: id),
               let idx = pages[pi].images.firstIndex(where: { $0.id == id }) else { return }
         pages[pi].images[idx].protrusion = edges
+    }
+
+    func setProtrusionEffect(_ effect: ProtrusionEffect, for id: UUID) {
+        guard let pi = pageIndex(containing: id),
+              let idx = pages[pi].images.firstIndex(where: { $0.id == id }) else { return }
+        pages[pi].images[idx].protrusionEffect = effect
+    }
+
+    /// Subject masks grown by a radius (mask pixels), for the Border effect.
+    private var dilatedMasks: [UUID: (source: ObjectIdentifier, radius: Int, image: CGImage)] = [:]
+
+    func dilatedSubjectMask(for img: CollageImage, radius: Int) -> CGImage? {
+        guard let mask = subjectMask(for: img)?.mask else { return nil }
+        if let d = dilatedMasks[img.id], d.source == ObjectIdentifier(img.image), d.radius == radius {
+            return d.image
+        }
+        guard let grown = SubjectMasker.dilate(mask, radius: radius) else { return nil }
+        dilatedMasks[img.id] = (ObjectIdentifier(img.image), radius, grown)
+        return grown
     }
 
     /// The box edges the photo's subject currently crosses — where a
