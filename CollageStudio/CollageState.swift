@@ -613,6 +613,17 @@ class CollageState: ObservableObject {
     @Published var dropTargetId: UUID? = nil
     /// Empty column currently hovered during a swap drag.
     @Published var dropTargetEmptyCol: Int? = nil
+    /// Gap (splitter) currently hovered during a drag: dropping there inserts
+    /// the image between its neighbours instead of swapping.
+    @Published var dropInsertTarget: InsertTarget? = nil
+
+    struct InsertTarget: Equatable {
+        /// Column index and position in it (before the dragged image is
+        /// taken out), plus the hover zone in "collageCanvas" space.
+        let column: Int
+        let index: Int
+        let frame: CGRect
+    }
     @Published var dragOffset: CGSize = .zero
     var imageFrames: [UUID: CGRect] = [:]
     /// Frames of empty placeholder boxes on the current page, by column index.
@@ -943,11 +954,17 @@ class CollageState: ObservableObject {
         pages[pi].images[idx].panOffset = .zero
         pages[pi].images[idx].zoom = 1.0
         pages[pi].images[idx].lastBoxSize = .zero
-        // Rebuild so the layout picks up the new image's aspect ratio,
-        // without resetting the user's box/column sizing.
-        pages[pi].layout.rebuild(images: pages[pi].images,
-                                 order: pages[pi].order,
-                                 numCols: pages[pi].style.numCols)
+        // Swap the new picture into its box in place, keeping the user's
+        // arrangement and sizing (rebuild only if it isn't laid out yet).
+        if let pos = pages[pi].layout.position(of: id) {
+            let s = pages[pi].images[idx].naturalSize
+            pages[pi].layout.columns[pos.col][pos.row] =
+                ColumnItem(imageId: id, aspectRatio: s.height / max(s.width, 1))
+        } else {
+            pages[pi].layout.rebuild(images: pages[pi].images,
+                                     order: pages[pi].order,
+                                     numCols: pages[pi].style.numCols)
+        }
     }
 
     func removeImage(id: UUID) {
@@ -1651,6 +1668,17 @@ class CollageState: ObservableObject {
             return
         }
         order.swapAt(i1, i2)
+        // Swap the two boxes in the built layout rather than re-flowing it,
+        // so an arrangement made by inserting images stays put.
+        var l = layout
+        if let a = l.position(of: id1), let b = l.position(of: id2) {
+            let itemA = l.columns[a.col][a.row]
+            l.columns[a.col][a.row] = l.columns[b.col][b.row]
+            l.columns[b.col][b.row] = itemA
+            layout = l
+        } else {
+            rebuildLayout(resetGrows: false)
+        }
         // Keep zoom and rotation across the swap — zoom is stored relative to
         // the box's aspect-fill cover, so it re-fits the new box automatically
         // (never leaves gaps). Only the pan resets: it's normalized to the old
@@ -1658,7 +1686,7 @@ class CollageState: ObservableObject {
         resetPan(id: id1)
         resetPan(id: id2)
         clearSwapDrag()
-        rebuildLayout(resetGrows: false)
+        objectWillChange.send()
     }
 
     /// Clears just the pan composition, preserving zoom and rotation.
@@ -1694,12 +1722,17 @@ class CollageState: ObservableObject {
     func updateSwapDrag(location: CGPoint, translation: CGSize, excluding sourceId: UUID) {
         draggingId = sourceId
         dragOffset = translation
-        dropTargetId = swapTargetId(at: location, excluding: sourceId)
-        dropTargetEmptyCol = dropTargetId == nil ? emptySlotTarget(at: location) : nil
+        // A splitter wins over the images it borders.
+        let insert = insertTarget(at: location, excluding: sourceId)
+        if dropInsertTarget != insert { dropInsertTarget = insert }
+        dropTargetId = insert == nil ? swapTargetId(at: location, excluding: sourceId) : nil
+        dropTargetEmptyCol = insert == nil && dropTargetId == nil ? emptySlotTarget(at: location) : nil
     }
 
     func finishSwapDrag(sourceId: UUID, location: CGPoint) {
-        if let targetId = swapTargetId(at: location, excluding: sourceId) {
+        if let insert = insertTarget(at: location, excluding: sourceId) {
+            insertImage(id: sourceId, at: insert)
+        } else if let targetId = swapTargetId(at: location, excluding: sourceId) {
             swapImages(id1: sourceId, id2: targetId)
         } else if let col = emptySlotTarget(at: location) {
             moveImageToEmptyColumn(id: sourceId, columnIndex: col)
@@ -1715,6 +1748,7 @@ class CollageState: ObservableObject {
         draggingId = nil
         dropTargetId = nil
         dropTargetEmptyCol = nil
+        dropInsertTarget = nil
         dragOffset = .zero
     }
 
@@ -1762,6 +1796,63 @@ class CollageState: ObservableObject {
 
     func imageFrame(for id: UUID) -> CGRect? {
         imageFrames[id]
+    }
+
+    /// The splitter under `location`: a gap between two boxes in a column,
+    /// or the top / bottom end of a column. Each zone is at least
+    /// `insertZoneHeight` tall, so it's easy to hit even with no spacing.
+    /// Gaps right next to the dragged image are skipped (dropping there
+    /// would change nothing).
+    func insertTarget(at location: CGPoint, excluding sourceId: UUID) -> InsertTarget? {
+        let insertZoneHeight: CGFloat = 28
+        let source = layout.position(of: sourceId)
+        for (ci, column) in layout.columns.enumerated() {
+            let frames = column.compactMap { imageFrames[$0.imageId] }
+            guard frames.count == column.count, !frames.isEmpty else { continue }
+            for index in 0...column.count {
+                if let source, source.col == ci, index == source.row || index == source.row + 1 { continue }
+                // The edges of the boxes above and below this position.
+                let above = index > 0 ? frames[index - 1] : nil
+                let below = index < frames.count ? frames[index] : nil
+                let top = above?.maxY ?? below!.minY
+                let bottom = below?.minY ?? above!.maxY
+                let minX = min(above?.minX ?? .infinity, below?.minX ?? .infinity)
+                let maxX = max(above?.maxX ?? -.infinity, below?.maxX ?? -.infinity)
+                let midY = (top + bottom) / 2
+                let height = max(bottom - top, insertZoneHeight)
+                let zone = CGRect(x: minX, y: midY - height / 2, width: maxX - minX, height: height)
+                if zone.contains(location) {
+                    return InsertTarget(column: ci, index: index, frame: zone)
+                }
+            }
+        }
+        return nil
+    }
+
+    /// Moves an image to a new spot in the built layout — any column, any
+    /// position — so columns can hold different numbers of images (e.g. 3
+    /// and 1). The column it leaves and the one it joins get equal heights
+    /// per box. Lasts until the layout is re-flowed (column count changes,
+    /// images added or removed, shuffle).
+    func insertImage(id: UUID, at target: InsertTarget) {
+        var l = layout
+        guard let src = l.position(of: id), l.columns.indices.contains(target.column) else {
+            clearSwapDrag()
+            return
+        }
+        let item = l.columns[src.col].remove(at: src.row)
+        var index = target.index
+        if src.col == target.column && src.row < index { index -= 1 }
+        l.columns[target.column].insert(item, at: min(index, l.columns[target.column].count))
+        for ci in Set([src.col, target.column]) where ci < l.boxGrows.count {
+            let n = l.columns[ci].count
+            l.boxGrows[ci] = Array(repeating: n > 0 ? 1.0 / CGFloat(n) : 0, count: n)
+        }
+        layout = l
+        // Same policy as swapImages: zoom/rotation survive the move.
+        resetPan(id: id)
+        clearSwapDrag()
+        objectWillChange.send()
     }
 
     func swapTargetId(at location: CGPoint, excluding sourceId: UUID) -> UUID? {

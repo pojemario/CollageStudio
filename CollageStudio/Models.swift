@@ -840,6 +840,14 @@ struct CollageLayout {
         boxGrows = newBoxGrows
     }
 
+    /// Column and row of an image in the built layout.
+    func position(of id: UUID) -> (col: Int, row: Int)? {
+        for (ci, column) in columns.enumerated() {
+            if let row = column.firstIndex(where: { $0.imageId == id }) { return (ci, row) }
+        }
+        return nil
+    }
+
     mutating func resetGrows() {
         colGrows = []
         boxGrows = []
