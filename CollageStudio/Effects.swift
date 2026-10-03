@@ -509,6 +509,15 @@ struct EffectsPanel: View {
                         .contentShape(Rectangle())
                     }
                     .buttonStyle(.plain)
+                    // Double-tap a circle to reset that color's sliders (the
+                    // first tap of it selects the circle as usual).
+                    .simultaneousGesture(TapGesture(count: 2).onEnded {
+                        band = b
+                        state.hsl[b] = HSLShift()
+                        #if canImport(UIKit)
+                        UIImpactFeedbackGenerator(style: .light).impactOccurred()
+                        #endif
+                    })
                     .accessibilityLabel(b.title)
                 }
             }

@@ -659,8 +659,9 @@ struct ContentGrade: Hashable {
 /// photos and background only.
 enum ColorFilter: String, CaseIterable, Identifiable {
     case none = "None"
-    /// Warm magazine film look, matched to reference photos: muted color,
-    /// lifted brown-black shadows, held-back creamy whites, amber midtones.
+    /// Warm magazine film look, matched to reference photos: warm golden
+    /// midtones, lifted brown-black shadows, held-back creamy whites, color
+    /// kept close to natural saturation.
     case brownie = "Brownie"
     /// Portra-style film look, matched to reference photos: green-teal
     /// shadows, olive-warm mids, muted yellow-green foliage, warm cream
@@ -679,7 +680,7 @@ enum ColorFilter: String, CaseIterable, Identifiable {
             func luma(_ r: Double, _ g: Double, _ b: Double) -> Double { 0.299 * r + 0.587 * g + 0.114 * b }
             // Mute saturation toward luma.
             var l = luma(r, g, b)
-            var c = [r, g, b].map { l + ($0 - l) * 0.58 }
+            var c = [r, g, b].map { l + ($0 - l) * 0.78 }
             // Gentle S-curve, then lifted blacks / held-back whites.
             c = c.map { x in
                 let s = x * x * (3 - 2 * x)
@@ -690,9 +691,9 @@ enum ColorFilter: String, CaseIterable, Identifiable {
             let ws = pow(min(max(1 - l / 0.45, 0), 1), 1.5)
             let wh = pow(min(max((l - 0.55) / 0.45, 0), 1), 1.5)
             let wm = min(max(1 - ws - wh, 0), 1) * 4 * l * (1 - l)
-            let shadow = [0.030, -0.006, 0.004]     // magenta-brown
-            let mid = [0.042, 0.010, -0.032]        // amber / brown
-            let high = [0.002, 0.012, -0.010]       // cream
+            let shadow = [0.040, 0.004, -0.014]     // warm brown
+            let mid = [0.068, 0.020, -0.052]        // amber / golden
+            let high = [0.020, 0.014, -0.030]       // warm cream
             let out = (0..<3).map { min(max(c[$0] + ws * shadow[$0] + wm * mid[$0] + wh * high[$0], 0), 1) }
             return (out[0], out[1], out[2])
         case .melancholy:

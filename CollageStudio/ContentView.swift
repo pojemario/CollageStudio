@@ -239,8 +239,8 @@ struct ContentView: View {
 
     var iPhoneLayout: some View {
         VStack(spacing: 0) {
-            // Toolbar: the logo on the left and a glass cluster of controls
-            // on the right, floating straight on the backdrop.
+            // Toolbar: the logo on the left and the controls on the right,
+            // floating straight on the backdrop (no panel behind them).
             HStack {
                 // Placeholder reserving horizontal space for the logo, which
                 // is drawn as an overlay so it can spill below the toolbar.
@@ -310,9 +310,6 @@ struct ContentView: View {
                 }
                 .padding(.horizontal, 5)
                 .frame(height: 44)
-                .background(.ultraThinMaterial, in: Capsule(style: .continuous))
-                .overlay(Capsule(style: .continuous).strokeBorder(ColorManager.glassStroke, lineWidth: 0.8))
-                .shadow(color: .black.opacity(0.10), radius: 12, y: 4)
             }
             // Fixed height so the bar doesn't collapse before any images are
             // added (the icons only appear once images exist) — keeps the logo
