@@ -14,7 +14,7 @@ struct FloatingTabBar: View {
     var merged = false
     @Namespace private var bubble
 
-    static let tabs = ["Images", "Layout", "Canvas", "Frames", "Overlay", "Effects"]
+    static let tabs = ["Images", "Layout", "Canvas", "Frames", "Overlay", "Edit"]
     static let icons = ["photo.on.rectangle.angled", "square.grid.2x2", "rectangle.inset.filled",
                         "photo.artframe", "sparkles", "wand.and.stars"]
     /// Vertical room the pill takes at the bottom of the screen (pill +

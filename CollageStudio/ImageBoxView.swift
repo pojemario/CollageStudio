@@ -25,6 +25,9 @@ struct ImageBoxView: View {
     }
 
     @State private var livePanOffset: CGSize = .zero
+    /// Set once a touch on this box has moved (pan or swap drag), so the tap
+    /// that SwiftUI still reports when the finger lifts isn't taken as a tap.
+    @State private var touchMoved = false
     // Live pinch/rotate deltas. @GestureState is GUARANTEED to reset to its
     // initial value when the gesture ends or is cancelled, so the manipulation
     // can never leave the input layer stuck.
@@ -138,7 +141,12 @@ struct ImageBoxView: View {
                     GeometryReader { bg in
                         let frame = bg.frame(in: .named("collageCanvas"))
                         Color.clear
-                            .onChange(of: frame, initial: true) { _, newFrame in
+                            .onChange(of: TrackedFrame(frame: frame, epoch: state.geometryEpoch),
+                                      initial: true) { _, tracked in
+                                let newFrame = tracked.frame
+                                // Offscreen copies (export, effect snapshot)
+                                // must not overwrite on-screen geometry.
+                                guard !state.isRenderingOffscreen else { return }
                                 updateTrackedGeometry(frame: newFrame, boxSize: newFrame.size)
                                 guard let img = imgData else { return }
                                 if img.lastBoxSize != newFrame.size {
@@ -186,7 +194,14 @@ struct ImageBoxView: View {
                             #endif
                         }
                         .exclusively(before: TapGesture().onEnded {
-                            if imgData?.isText == true { state.beginEditText(id: imageId) }
+                            guard imgData?.isText == true else { return }
+                            // SwiftUI reports a tap even after a drag, as long
+                            // as the finger lifts inside the box. Wait a beat
+                            // for the drag's end to land, and only open the
+                            // editor if the finger never moved.
+                            DispatchQueue.main.asyncAfter(deadline: .now() + 0.05) {
+                                if !touchMoved { state.beginEditText(id: imageId) }
+                            }
                         })
                 )
                 // Drive the global "an image is being pinched" flag from the
@@ -209,17 +224,17 @@ struct ImageBoxView: View {
                         }
                     }
                 }
-                // Re-grade the picture whenever the HSL or the picture changes.
-                .task(id: HSLGradeKey(proxy: imgData.map { ObjectIdentifier($0.proxy) }, hsl: state.hsl)) {
-                    if let img = imgData { state.gradeHSLIfNeeded(img) }
+                // Re-grade the picture whenever the grade or the picture changes.
+                .task(id: GradeKey(proxy: imgData.map { ObjectIdentifier($0.proxy) }, grade: state.contentGrade)) {
+                    if let img = imgData { state.gradeIfNeeded(img) }
                 }
                 .id(imgData?.gestureEpoch ?? 0)
         }
     }
 
-    private struct HSLGradeKey: Equatable {
+    private struct GradeKey: Equatable {
         let proxy: ObjectIdentifier?
-        let hsl: HSLAdjustments
+        let grade: ContentGrade
     }
 
     func updateTrackedGeometry(frame: CGRect, boxSize: CGSize) {
@@ -264,7 +279,7 @@ struct ImageBoxView: View {
             // Canvas uses the downscaled proxy; export swaps in the original.
             // Both share the same aspect ratio and target frame, so geometry
             // is identical either way.
-            let displayImage = state.hslDisplayImage(for: img)
+            let displayImage = state.gradedDisplayImage(for: img)
             // Guard against any non-finite geometry that would collapse the
             // image to a white box.
             let safeW = (rw.isFinite && rw > 0) ? rw : boxSize.width
@@ -280,7 +295,7 @@ struct ImageBoxView: View {
         } else if let img = imgData {
             // Degenerate box/image size — fall back to a plain fill so the
             // frame never goes blank.
-            let displayImage = state.hslDisplayImage(for: img)
+            let displayImage = state.gradedDisplayImage(for: img)
             #if canImport(UIKit)
             Image(uiImage: displayImage).resizable().scaledToFill().allowsHitTesting(false)
             #else
@@ -315,6 +330,7 @@ struct ImageBoxView: View {
         // Slightly higher minimumDistance to avoid accidental swap trigger
         DragGesture(minimumDistance: 4, coordinateSpace: .named("collageCanvas"))
             .onChanged { value in
+                touchMoved = true
                 // Ignore the stray single-finger drag a two-finger pinch/rotate
                 // produces from its moving centroid.
                 guard !pinching,
@@ -338,10 +354,11 @@ struct ImageBoxView: View {
 
                 // Panning owns the drag everywhere — swap only engages once
                 // the finger is actually over ANOTHER image's box (the one it
-                // would be swapped with) or over an empty placeholder box.
-                // Gaps and edges still pan.
+                // would be swapped with), an empty placeholder box, or a
+                // splitter to insert at. Elsewhere it pans.
                 if state.swapTargetId(at: value.location, excluding: imageId) != nil
-                    || state.emptySlotTarget(at: value.location) != nil {
+                    || state.emptySlotTarget(at: value.location) != nil
+                    || state.insertTarget(at: value.location, excluding: imageId) != nil {
                     livePanOffset = .zero
                     state.beginSwapDrag(id: imageId)
                     state.updateSwapDrag(location: value.location,
@@ -358,6 +375,8 @@ struct ImageBoxView: View {
                 livePanOffset = value.translation
             }
             .onEnded { value in
+                // Outlive the tap check above, then arm for the next touch.
+                DispatchQueue.main.asyncAfter(deadline: .now() + 0.2) { touchMoved = false }
                 // A two-finger pinch/rotate can spawn a stray single-finger
                 // drag from the moving centroid — don't commit it as a pan.
                 if pinching || state.imageZoomingId != nil {
@@ -450,6 +469,13 @@ struct ImageBoxView: View {
             }
     }
 
+}
+
+/// A box's canvas frame plus the re-report epoch (see
+/// CollageState.geometryEpoch): a change in either makes the box report.
+struct TrackedFrame: Equatable {
+    let frame: CGRect
+    let epoch: Int
 }
 
 // MARK: - Box action menu (long-press popover)
@@ -642,6 +668,7 @@ struct EmptyBoxView: View {
     /// Column index on the canvas — enables drop targeting. Nil when the
     /// view is used purely decoratively.
     var columnIndex: Int? = nil
+    @State private var reportedFrame: CGRect?
 
     var body: some View {
         GeometryReader { geo in
@@ -677,18 +704,23 @@ struct EmptyBoxView: View {
                         }
                     }
                 )
-                .onAppear {
-                    if let columnIndex {
-                        state.emptySlotFrames[columnIndex] = geo.frame(in: .named("collageCanvas"))
-                    }
-                }
-                .onChange(of: geo.frame(in: .named("collageCanvas"))) { _, frame in
-                    if let columnIndex {
-                        state.emptySlotFrames[columnIndex] = frame
-                    }
+                // Same reporting as the image boxes: `initial: true` gives the
+                // settled frame (onAppear can fire before the named space
+                // resolves), and offscreen copies never report.
+                .onChange(of: TrackedFrame(frame: geo.frame(in: .named("collageCanvas")),
+                                           epoch: state.geometryEpoch),
+                          initial: true) { _, tracked in
+                    let frame = tracked.frame
+                    guard let columnIndex, !state.isRenderingOffscreen else { return }
+                    state.emptySlotFrames[columnIndex] = frame
+                    reportedFrame = frame
                 }
                 .onDisappear {
-                    if let columnIndex {
+                    // Only drop the entry if it's still ours — a slot of the
+                    // incoming page (same column index) may already have
+                    // replaced it during a page transition.
+                    if let columnIndex, let reportedFrame,
+                       state.emptySlotFrames[columnIndex] == reportedFrame {
                         state.emptySlotFrames.removeValue(forKey: columnIndex)
                     }
                 }

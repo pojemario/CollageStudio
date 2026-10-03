@@ -36,6 +36,24 @@ struct TextEditPanel: View {
         .onChange(of: state.textStyle(for: imageId) == nil, initial: true) { _, gone in
             if gone { state.endTextEditing() }
         }
+        // Opening a text box goes straight to typing: focus the field and
+        // select all, so new text simply replaces the old.
+        .task(id: imageId) {
+            // Let the panel finish rising first.
+            try? await Task.sleep(nanoseconds: 350_000_000)
+            guard !Task.isCancelled else { return }
+            typing = true
+            try? await Task.sleep(nanoseconds: 150_000_000)
+            selectAllInFocusedField()
+        }
+    }
+
+    private func selectAllInFocusedField() {
+        #if canImport(UIKit)
+        UIApplication.shared.sendAction(#selector(UIResponder.selectAll(_:)), to: nil, from: nil, for: nil)
+        #else
+        NSApp.sendAction(#selector(NSText.selectAll(_:)), to: nil, from: nil)
+        #endif
     }
 
     // MARK: - Text

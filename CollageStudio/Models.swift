@@ -179,10 +179,16 @@ extension CollageImage {
 
     /// Renders a text box bitmap. Same routine for the initial add and every
     /// edit, so what you see is exactly what exports.
+    /// `boxLongEdge` is the on-screen long edge of the box the bitmap fills;
+    /// the text keeps a 2 pt padding from the box edge at that size.
     static func renderTextImage(style: TextBoxStyle,
-                                size: CGSize = CGSize(width: 1200, height: 1200)) -> PlatformImage {
+                                size: CGSize = CGSize(width: 1200, height: 1200),
+                                boxLongEdge: CGFloat? = nil) -> PlatformImage {
         let side = max(size.width, size.height)
-        let inset = side * 0.06
+        // Minimal padding: 2 pt of the box (≈ 2/300 of the bitmap before the
+        // box size is known).
+        let padding: CGFloat = 2
+        let inset = side * padding / max(boxLongEdge ?? 300, 1)
         let maxRect = CGRect(x: inset, y: inset, width: size.width - inset * 2, height: size.height - inset * 2)
         // The font size is defined on a 1200 px long edge.
         let scaledFontSize = style.fontSize * (side / 1200)
@@ -587,6 +593,8 @@ enum CollageEffect: String, CaseIterable, Identifiable {
     case temperature = "Temperature" // + warmer, − cooler
     case brightness = "Brightness"
     case contrast = "Contrast"
+    case clarity = "Clarity"        // + local (micro) contrast, − softer
+    case sharpness = "Sharpness"
     case fade = "Fade"              // + lifted blacks, softer contrast; − more contrast
     case halation = "Halation"      // red-orange bleed around highlights
     case glow = "Glow"              // soft bloom
@@ -596,14 +604,32 @@ enum CollageEffect: String, CaseIterable, Identifiable {
     var id: String { rawValue }
     var title: String { rawValue }
 
-    /// Brightness, contrast and fade run both ways (negative fade = punchier
+    /// Basic corrections, on the Edit page.
+    static let adjustments: [CollageEffect] = [.temperature, .brightness, .contrast, .clarity, .sharpness]
+    /// Looks, on the Effects page (and what Shuffle can touch).
+    static let looks: [CollageEffect] = allCases.filter { !adjustments.contains($0) }
+
+    /// Most corrections and fade run both ways (negative fade = punchier
     /// contrast).
     var range: ClosedRange<Double> {
         switch self {
-        case .temperature, .brightness, .contrast, .fade: return -100...100
+        case .temperature, .brightness, .contrast, .clarity, .fade: return -100...100
         default: return 0...100
         }
     }
+}
+
+/// Everything that's computed per picture (Core Image), not with view
+/// modifiers: HSL plus clarity and sharpness. Applied to the photos only —
+/// never to overlays or the frame.
+struct ContentGrade: Hashable {
+    var hsl = HSLAdjustments()
+    /// −1...1
+    var clarity: Double = 0
+    /// 0...1
+    var sharpness: Double = 0
+
+    var isIdentity: Bool { hsl.isIdentity && clarity == 0 && sharpness == 0 }
 }
 
 // MARK: - HSL

@@ -30,10 +30,34 @@ class CollageState: ObservableObject {
             pageSlideEdge = currentPageIndex > oldValue ? .trailing : .leading
             // Highlight maps belong to the previous page's picture
             if currentPageIndex != oldValue { effectMaps.clear() }
-            // Tracked box frames belong to the previous page's boxes
-            imageFrames.removeAll()
-            emptySlotFrames.removeAll()
+            // Tracked box frames belong to the previous page's boxes — but
+            // only drop them when a different page is actually shown. didSet
+            // also runs when the index is re-assigned or the current page just
+            // moves to another index (page reorder, deleting another page,
+            // single-page export); its boxes then keep their identity and
+            // frames, never re-report them, and an empty table would leave
+            // drag-to-swap dead until some unrelated relayout.
+            if currentPage.id != framesPageId {
+                framesPageId = currentPage.id
+                imageFrames.removeAll()
+                emptySlotFrames.removeAll()
+                // Frames reported mid-slide would stay off until a relayout.
+                refreshTrackedGeometry(after: 0.45)
+            }
             clearSwapDrag()
+        }
+    }
+    /// The page whose boxes `imageFrames` / `emptySlotFrames` describe.
+    private var framesPageId: UUID?
+
+    /// Bumped to make every box re-report its frame (boxes key their
+    /// reporting on it). Used once animations settle, so a frame captured
+    /// mid-animation can't leave drag-to-swap aiming at the wrong place.
+    @Published private(set) var geometryEpoch = 0
+
+    func refreshTrackedGeometry(after delay: TimeInterval) {
+        DispatchQueue.main.asyncAfter(deadline: .now() + delay) { [weak self] in
+            self?.geometryEpoch &+= 1
         }
     }
 
@@ -467,7 +491,9 @@ class CollageState: ObservableObject {
 
     /// Intensity per effect, 0...100; absent or 0 means off. Like the frame
     /// and overlays, effects apply to every page.
-    @Published var effects: [CollageEffect: Double] = [:]
+    @Published var effects: [CollageEffect: Double] = [:] {
+        didSet { dropGradesIfIdentity() }
+    }
 
     /// Strength of an effect, 0...1 (fade: −1...1).
     func effectAmount(_ effect: CollageEffect) -> Double {
@@ -475,18 +501,25 @@ class CollageState: ObservableObject {
         return min(max((effects[effect] ?? 0) / 100, r.lowerBound / 100), r.upperBound / 100)
     }
 
-    var hasEffects: Bool { effects.values.contains { $0 != 0 } }
+    /// Whether any effect of the given group (Edit or Effects page) is on.
+    func hasEffects(in group: [CollageEffect]) -> Bool {
+        group.contains { (effects[$0] ?? 0) != 0 }
+    }
 
-    func resetEffects() { effects = [:] }
+    func resetEffects(in group: [CollageEffect]) {
+        for effect in group { effects[effect] = nil }
+    }
 
     /// Which effects a shuffle touches (all by default).
-    @Published var effectShuffleOptions: Set<CollageEffect> = Set(CollageEffect.allCases)
+    @Published var effectShuffleOptions: Set<CollageEffect> = Set(CollageEffect.looks)
 
     /// Random tasteful amounts for the chosen effects; the rest are untouched.
     func shuffleEffects() {
         for effect in effectShuffleOptions {
             switch effect {
             case .temperature: effects[effect] = Double(Int.random(in: -25...25))
+            case .clarity:    effects[effect] = Double(Int.random(in: 0...30))
+            case .sharpness:  effects[effect] = Double(Int.random(in: 0...30))
             case .brightness: effects[effect] = Double(Int.random(in: -15...15))
             case .contrast:   effects[effect] = Double(Int.random(in: -20...30))
             case .fade:       effects[effect] = Double(Int.random(in: -40...60))
@@ -502,57 +535,69 @@ class CollageState: ObservableObject {
 
     /// Per-color hue / saturation / luminance, applied to every page.
     @Published var hsl = HSLAdjustments() {
-        didSet {
-            if hsl.isIdentity, !hslProxies.isEmpty { hslProxies = [:] }
-        }
+        didSet { dropGradesIfIdentity() }
     }
 
     func resetHSL() { hsl = HSLAdjustments() }
 
-    struct HSLGraded {
+    // MARK: - Per-picture grading (HSL, clarity, sharpness)
+
+    /// What the pictures currently get graded with.
+    var contentGrade: ContentGrade {
+        ContentGrade(hsl: hsl,
+                     clarity: effectAmount(.clarity),
+                     sharpness: effectAmount(.sharpness))
+    }
+
+    struct Graded {
         let source: PlatformImage
-        let hsl: HSLAdjustments
+        let grade: ContentGrade
         let image: PlatformImage
     }
 
     /// Canvas proxies graded off the main thread, by image id. While a slider
     /// moves, a box keeps showing its last grade until the next one lands.
-    @Published private(set) var hslProxies: [UUID: HSLGraded] = [:]
-    private var hslInFlight: Set<UUID> = []
+    @Published private(set) var gradedProxies: [UUID: Graded] = [:]
+    private var gradeInFlight: Set<UUID> = []
     /// Full-resolution grades for the export in progress (made synchronously
     /// while it renders; dropped when it ends).
-    private var hslExportCache: [UUID: HSLGraded] = [:]
+    private var gradeExportCache: [UUID: Graded] = [:]
+
+    private func dropGradesIfIdentity() {
+        if contentGrade.isIdentity, !gradedProxies.isEmpty { gradedProxies = [:] }
+    }
 
     /// The picture a box should draw: its proxy (or the original while
-    /// exporting) with the current HSL applied.
-    func hslDisplayImage(for img: CollageImage) -> PlatformImage {
+    /// exporting) with the current grade applied.
+    func gradedDisplayImage(for img: CollageImage) -> PlatformImage {
         let source = renderFullResolution ? img.image : img.proxy
-        guard !hsl.isIdentity, !img.isPlaceholder else { return source }
+        let grade = contentGrade
+        guard !grade.isIdentity, !img.isPlaceholder else { return source }
         if renderFullResolution {
-            if let g = hslExportCache[img.id], g.source === source, g.hsl == hsl { return g.image }
-            let graded = HSLGrader.apply(hsl, to: source)
-            hslExportCache[img.id] = HSLGraded(source: source, hsl: hsl, image: graded)
+            if let g = gradeExportCache[img.id], g.source === source, g.grade == grade { return g.image }
+            let graded = ContentGrader.apply(grade, to: source)
+            gradeExportCache[img.id] = Graded(source: source, grade: grade, image: graded)
             return graded
         }
-        if let g = hslProxies[img.id], g.source === source { return g.image }
+        if let g = gradedProxies[img.id], g.source === source { return g.image }
         return source
     }
 
-    /// Grades a box's proxy for the current HSL unless that's already done
-    /// or underway; a grade that finishes stale immediately catches up.
-    func gradeHSLIfNeeded(_ img: CollageImage) {
-        let hsl = self.hsl, source = img.proxy, id = img.id
-        guard !hsl.isIdentity, !img.isPlaceholder, !hslInFlight.contains(id) else { return }
-        if let g = hslProxies[id], g.source === source, g.hsl == hsl { return }
-        hslInFlight.insert(id)
+    /// Grades a box's proxy for the current settings unless that's already
+    /// done or underway; a grade that finishes stale immediately catches up.
+    func gradeIfNeeded(_ img: CollageImage) {
+        let grade = contentGrade, source = img.proxy, id = img.id
+        guard !grade.isIdentity, !img.isPlaceholder, !gradeInFlight.contains(id) else { return }
+        if let g = gradedProxies[id], g.source === source, g.grade == grade { return }
+        gradeInFlight.insert(id)
         Task.detached(priority: .userInitiated) {
-            let graded = HSLGrader.apply(hsl, to: source)
+            let graded = ContentGrader.apply(grade, to: source)
             await MainActor.run {
-                self.hslInFlight.remove(id)
-                guard !self.hsl.isIdentity else { return }
-                self.hslProxies[id] = HSLGraded(source: source, hsl: hsl, image: graded)
+                self.gradeInFlight.remove(id)
+                guard !self.contentGrade.isIdentity else { return }
+                self.gradedProxies[id] = Graded(source: source, grade: grade, image: graded)
                 if let current = self.currentPage.images.first(where: { $0.id == id }) {
-                    self.gradeHSLIfNeeded(current)
+                    self.gradeIfNeeded(current)
                 }
             }
         }
@@ -567,6 +612,9 @@ class CollageState: ObservableObject {
     /// True while that snapshot renders: the canvas then draws the bare
     /// collage — no effects, overlays or frame.
     private(set) var isRenderingEffectSource = false
+    /// True while any offscreen render runs (effect snapshot or export):
+    /// boxes drawn there must not report their geometry as the on-screen one.
+    var isRenderingOffscreen: Bool { isRenderingEffectSource || renderFullResolution }
     private var effectMapRefresh: AnyCancellable?
 
     /// Re-derives the maps shortly after anything settles; cheap no-op while
@@ -842,8 +890,10 @@ class CollageState: ObservableObject {
     func applyTextStyle(_ style: TextBoxStyle, to id: UUID) {
         guard let pi = pageIndex(containing: id),
               let idx = pages[pi].images.firstIndex(where: { $0.id == id }) else { return }
-        let size = CollageImage.textRenderSize(forBox: pages[pi].images[idx].lastBoxSize)
-        pages[pi].images[idx].setImage(CollageImage.renderTextImage(style: style, size: size))
+        let box = pages[pi].images[idx].lastBoxSize
+        let size = CollageImage.textRenderSize(forBox: box)
+        pages[pi].images[idx].setImage(CollageImage.renderTextImage(
+            style: style, size: size, boxLongEdge: box.width > 1 ? max(box.width, box.height) : nil))
         pages[pi].images[idx].textStyle = style
     }
 
@@ -1462,7 +1512,7 @@ class CollageState: ObservableObject {
     }
 
     func setBoxSize(id: UUID, boxSize: CGSize) {
-        guard !isRenderingEffectSource else { return }
+        guard !isRenderingOffscreen else { return }
         guard let idx = images.firstIndex(where: { $0.id == id }) else { return }
         images[idx].lastBoxSize = boxSize
         // A text block always takes the shape of its box: re-render when the
@@ -1471,7 +1521,8 @@ class CollageState: ObservableObject {
             let target = CollageImage.textRenderSize(forBox: boxSize)
             let current = images[idx].naturalSize
             if abs(target.width - current.width) > 2 || abs(target.height - current.height) > 2 {
-                images[idx].setImage(CollageImage.renderTextImage(style: style, size: target))
+                images[idx].setImage(CollageImage.renderTextImage(
+                    style: style, size: target, boxLongEdge: max(boxSize.width, boxSize.height)))
                 images[idx].textStyle = style
             }
         }
@@ -1697,9 +1748,9 @@ class CollageState: ObservableObject {
     }
 
     func updateImageFrame(id: UUID, frame: CGRect) {
-        // The offscreen effect snapshot lays out at canvas scale — its
-        // geometry must not replace the on-screen one.
-        guard !isRenderingEffectSource else { return }
+        // Offscreen renders (effect snapshot, export) lay out at canvas
+        // scale — their geometry must not replace the on-screen one.
+        guard !isRenderingOffscreen else { return }
         imageFrames[id] = frame
     }
 
@@ -1741,6 +1792,8 @@ class CollageState: ObservableObject {
         }
         // Safety net: whatever path ran, never leave a drag stuck.
         if draggingId != nil { clearSwapDrag() }
+        // Re-read every box once the rearrange animation has settled.
+        refreshTrackedGeometry(after: 0.45)
     }
 
     func clearSwapDrag() {
@@ -1972,7 +2025,7 @@ class CollageState: ObservableObject {
 
         currentPageIndex = originalIndex
         renderFullResolution = false
-        hslExportCache = [:]
+        gradeExportCache = [:]
         isExporting = false
         isBusy = false
         isLoading = false

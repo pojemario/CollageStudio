@@ -192,7 +192,7 @@ struct SidebarView: View {
     // MARK: - Effects (brightness, contrast, fade, glow, …)
 
     var effectsSection: some View {
-        SidebarSection(title: "Effects") {
+        SidebarSection(title: "Edit") {
             EffectsPanel()
         }
     }

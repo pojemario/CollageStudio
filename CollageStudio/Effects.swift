@@ -288,50 +288,132 @@ enum HSLGrader {
     }
 }
 
+// MARK: - Per-picture grading
+
+/// Runs a ContentGrade over a picture: the HSL color cube, then clarity
+/// (wide unsharp mask for local contrast, or a blur blend to soften), then
+/// sharpness (fine unsharp mask). Radii scale with the picture's size, so
+/// the canvas proxy and the full-resolution export look the same.
+enum ContentGrader {
+    private static let context = CIContext()
+
+    static func apply(_ grade: ContentGrade, to image: PlatformImage) -> PlatformImage {
+        guard !grade.isIdentity else { return image }
+        var source = image
+        if !grade.hsl.isIdentity { source = HSLGrader.apply(grade.hsl, to: source) }
+        guard grade.clarity != 0 || grade.sharpness > 0 else { return source }
+
+        #if canImport(UIKit)
+        guard let cg = source.cgImage else { return source }
+        #else
+        guard let cg = source.cgImage(forProposedRect: nil, context: nil, hints: nil) else { return source }
+        #endif
+        let input = CIImage(cgImage: cg)
+        let extent = input.extent
+        let longEdge = max(extent.width, extent.height)
+        var out = input
+
+        if grade.clarity > 0 {
+            let f = CIFilter.unsharpMask()
+            f.inputImage = out.clampedToExtent()
+            f.radius = Float(longEdge * 0.025)
+            f.intensity = Float(grade.clarity * 0.7)
+            out = (f.outputImage ?? out).cropped(to: extent)
+        } else if grade.clarity < 0 {
+            let blurred = out.clampedToExtent()
+                .applyingGaussianBlur(sigma: Double(longEdge * 0.008))
+                .cropped(to: extent)
+            let f = CIFilter.dissolveTransition()
+            f.inputImage = out
+            f.targetImage = blurred
+            f.time = Float(-grade.clarity * 0.6)
+            out = (f.outputImage ?? out).cropped(to: extent)
+        }
+
+        if grade.sharpness > 0 {
+            let f = CIFilter.unsharpMask()
+            f.inputImage = out.clampedToExtent()
+            f.radius = Float(max(longEdge * 0.0018, 0.8))
+            f.intensity = Float(grade.sharpness * 1.4)
+            out = (f.outputImage ?? out).cropped(to: extent)
+        }
+
+        guard let rendered = context.createCGImage(out, from: extent) else { return source }
+        #if canImport(UIKit)
+        return UIImage(cgImage: rendered, scale: source.scale, orientation: source.imageOrientation)
+        #else
+        return NSImage(cgImage: rendered, size: source.size)
+        #endif
+    }
+}
+
 // MARK: - Effects tab / sidebar section
 
 /// One intensity slider per effect (double-tap a label or value to zero it),
 /// with the per-color HSL controls on a second page.
 struct EffectsPanel: View {
     @EnvironmentObject var state: CollageState
-    @State private var showingHSL = false
+    enum Page: String, CaseIterable { case edit = "Edit", effects = "Effects", hsl = "HSL" }
+    @State private var page: Page = .edit
     @State private var band: HSLBand = .red
 
     var body: some View {
         VStack(spacing: 10) {
             HStack(spacing: 8) {
-                PackChip(title: "Effects", isActive: !showingHSL) { showingHSL = false }
-                PackChip(title: "HSL", isActive: showingHSL) { showingHSL = true }
+                ForEach(Page.allCases, id: \.self) { p in
+                    PackChip(title: p.rawValue, isActive: page == p) { page = p }
+                }
                 Spacer()
             }
             .panelChrome(state)
 
-            if showingHSL {
-                hslControls
-            } else {
-                effectControls
+            switch page {
+            case .edit: editControls
+            case .effects: effectControls
+            case .hsl: hslControls
             }
         }
     }
 
+    private func sliders(_ group: [CollageEffect]) -> some View {
+        ForEach(group) { effect in
+            LabeledSlider(label: effect.title,
+                          value: Binding(
+                            get: { state.effects[effect] ?? 0 },
+                            set: { state.effects[effect] = $0 }),
+                          range: effect.range, step: 1, format: "%.0f", resetValue: 0)
+        }
+    }
+
+    private func resetButton(_ group: [CollageEffect]) -> some View {
+        ActionButton(label: "Reset", sf: "arrow.counterclockwise", fillWidth: false) {
+            state.resetEffects(in: group)
+        }
+        .disabled(!state.hasEffects(in: group))
+        .opacity(state.hasEffects(in: group) ? 1 : 0.5)
+        .panelChrome(state)
+    }
+
+    /// Basic corrections: temperature, brightness, contrast, clarity,
+    /// sharpness.
+    private var editControls: some View {
+        VStack(spacing: 10) {
+            sliders(CollageEffect.adjustments)
+            HStack(spacing: 8) {
+                Spacer()
+                resetButton(CollageEffect.adjustments)
+            }
+        }
+    }
+
+    /// Looks: fade, halation, glow, vignette, grain.
     private var effectControls: some View {
         VStack(spacing: 10) {
-            ForEach(CollageEffect.allCases) { effect in
-                LabeledSlider(label: effect.title,
-                              value: Binding(
-                                get: { state.effects[effect] ?? 0 },
-                                set: { state.effects[effect] = $0 }),
-                              range: effect.range, step: 1, format: "%.0f", resetValue: 0)
-            }
+            sliders(CollageEffect.looks)
             HStack(spacing: 8) {
                 EffectShuffleButton().panelChrome(state, keep: "Shuffle")
                 Spacer()
-                ActionButton(label: "Reset", sf: "arrow.counterclockwise", fillWidth: false) {
-                    state.resetEffects()
-                }
-                .disabled(!state.hasEffects)
-                .opacity(state.hasEffects ? 1 : 0.5)
-                .panelChrome(state)
+                resetButton(CollageEffect.looks)
             }
         }
     }
@@ -418,7 +500,7 @@ struct EffectShuffleButton: View {
                         .padding(.horizontal, 12)
                         .padding(.top, 10)
                         .padding(.bottom, 4)
-                    ForEach(CollageEffect.allCases) { effect in
+                    ForEach(CollageEffect.looks) { effect in
                         Toggle(effect.title, isOn: Binding(
                             get: { state.effectShuffleOptions.contains(effect) },
                             set: { on in
