@@ -202,34 +202,36 @@ struct ContentView: View {
     #if os(macOS)
     var macLayout: some View {
         HStack(spacing: 0) {
-            SidebarView()
-                .frame(width: 280)
-                .background(ColorManager.windowBackground)
-            Divider()
             VStack(spacing: 0) {
                 PageTabBar()
                 CanvasContainerView()
                     .frame(maxWidth: .infinity, maxHeight: .infinity)
             }
+            Divider()
+            SidebarView()
+                .frame(width: 280)
+                .background(ColorManager.windowBackground)
         }
         .frame(minWidth: 900, minHeight: 600)
         .sheet(isPresented: $state.showExportSheet) { ExportSheetView().environmentObject(state) }
     }
     #endif
 
+    /// Two columns (phone held sideways, iPad): the collage on the left,
+    /// the controls on the right.
     var iPadLayout: some View {
         HStack(spacing: 0) {
-            SidebarView()
-                .frame(width: 280)
-                .background(
-                    { ColorManager.groupedBackground }()
-                )
-            Divider()
             VStack(spacing: 0) {
                 PageTabBar()
                 CanvasContainerView()
                     .frame(maxWidth: .infinity, maxHeight: .infinity)
             }
+            Divider()
+            SidebarView()
+                .frame(width: 280)
+                .background(
+                    { ColorManager.groupedBackground }()
+                )
         }
         .sheet(isPresented: $state.showExportSheet) { ExportSheetView().environmentObject(state) }
     }
