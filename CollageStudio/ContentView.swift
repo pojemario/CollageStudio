@@ -403,6 +403,11 @@ struct ContentView: View {
                                 }
                             )
                             .padding(.horizontal, 10)
+                            // The thin strips beside the card belong to the
+                            // panel too: a swipe that strays there must not
+                            // reach the photo underneath (whose pan closes
+                            // the panel).
+                            .background(Color.black.opacity(0.001).padding(.top, 8))
                             .padding(.bottom, FloatingTabBar.zoneHeight - FloatingTabBar.bottomMargin
                                      + (state.isPanelOpen && state.panelDrag == 0 ? FloatingTabBar.openLift : 0))
                             .animation(.easeInOut(duration: 0.25), value: state.isPanelOpen)

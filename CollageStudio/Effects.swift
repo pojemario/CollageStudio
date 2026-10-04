@@ -465,6 +465,7 @@ struct EffectsPanel: View {
                 HStack(spacing: 8) {
                     ForEach(Page.allCases, id: \.self) { p in
                         PackChip(title: p.rawValue, isActive: page == p, marked: isChanged(p)) { page = p }
+                            .doubleTapToReset { resetPage(p) }
                     }
                 }
             }
@@ -477,6 +478,19 @@ struct EffectsPanel: View {
             case .hsl: hslControls
             case .cc: calibrationControls
             }
+        }
+    }
+
+    /// Everything on a page back to its default (double-tap its chip).
+    private func resetPage(_ page: Page) {
+        switch page {
+        case .edit: state.resetEffects(in: CollageEffect.adjustments)
+        case .hsl: state.resetHSL()
+        case .cc: state.calibration = CameraCalibration()
+        case .effects: state.resetEffects(in: CollageEffect.looks)
+        case .filter:
+            state.colorFilter = .none
+            state.filterStrength = 100
         }
     }
 
@@ -511,6 +525,7 @@ struct EffectsPanel: View {
                 ForEach(BasicSection.allCases, id: \.self) { section in
                     PackChip(title: section.rawValue, isActive: basicSection == section,
                              marked: state.hasEffects(in: section.effects)) { basicSection = section }
+                        .doubleTapToReset { state.resetEffects(in: section.effects) }
                 }
                 Spacer()
             }
@@ -770,50 +785,83 @@ struct FilterControls: View {
 
 }
 
-// MARK: - Swipe-to-reset on the numbers column
+// MARK: - Swipe-to-reset
 
-/// The Edit pages have no Reset buttons: swiping down over the column of
-/// values on the right of a slider stack resets those sliders (with a
-/// haptic). Double-tapping one value still resets just that slider. A small
-/// hint under the stack says so.
-private struct NumbersSwipeReset: ViewModifier {
-    @EnvironmentObject var state: CollageState
+/// No Reset buttons: swipe up or down on a slider stack's labels (left) or
+/// numbers (right) — the parts that aren't sliders — at any speed. Once far
+/// enough it's armed: the numbers turn accent-colored with a haptic tick,
+/// and releasing resets those sliders (returning toward the start cancels;
+/// a quick flick counts by where it was heading).
+/// Double-tapping one value or label still resets just that slider, and
+/// double-tapping a page / section chip resets it too.
+struct NumbersSwipeReset: ViewModifier {
     let canReset: Bool
     let reset: () -> Void
     @State private var width: CGFloat = 0
+    @State private var armed = false
+
+    /// Vertical travel (either way) that arms the reset.
+    private let threshold: CGFloat = 40
+
+    /// A swipe from the labels or numbers, mostly vertical, far enough —
+    /// up or down, at any speed.
+    private func isResetSwipe(start: CGPoint, travel: CGSize) -> Bool {
+        let inZone = start.x < 96 || start.x > width - 68
+        let dy = abs(travel.height)
+        return canReset && inZone && dy >= threshold && abs(travel.width) < dy * 1.2
+    }
 
     func body(content: Content) -> some View {
-        VStack(spacing: 6) {
-            content
-                .background(GeometryReader { g in
-                    Color.clear.onAppear { width = g.size.width }
-                        .onChange(of: g.size.width) { _, w in width = w }
-                })
-                .simultaneousGesture(
-                    DragGesture(minimumDistance: 24)
-                        .onEnded { v in
-                            let inNumbers = v.startLocation.x > width - 52
-                            let downward = v.translation.height > 60
-                                && abs(v.translation.width) < v.translation.height * 0.6
-                            guard inNumbers, downward, canReset else { return }
+        content
+            .background(GeometryReader { g in
+                Color.clear.onAppear { width = g.size.width }
+                    .onChange(of: g.size.width) { _, w in width = w }
+            })
+            // Armed: the values turn accent-colored (no message).
+            .environment(\.resetArmed, armed)
+            .animation(.easeOut(duration: 0.12), value: armed)
+            .simultaneousGesture(
+                DragGesture(minimumDistance: 12)
+                    .onChanged { v in
+                        // Starts on the labels or the numbers, heads up
+                        // or down.
+                        let nowArmed = isResetSwipe(start: v.startLocation, travel: v.translation)
+                        if nowArmed != armed {
+                            armed = nowArmed
+                            #if canImport(UIKit)
+                            if nowArmed { UIImpactFeedbackGenerator(style: .light).impactOccurred() }
+                            #endif
+                        }
+                    }
+                    .onEnded { v in
+                        // A quick flick counts by where it was heading,
+                        // even if the finger itself moved only a little.
+                        if armed || isResetSwipe(start: v.startLocation, travel: v.predictedEndTranslation) {
                             withAnimation(.easeOut(duration: 0.2)) { reset() }
                             #if canImport(UIKit)
                             UINotificationFeedbackGenerator().notificationOccurred(.success)
                             #endif
                         }
-                )
-            Text("Swipe down across the numbers to reset")
-                .font(.caption2)
-                .foregroundColor(.secondary)
-                .frame(maxWidth: .infinity, alignment: .trailing)
-                .panelChrome(state)
-        }
+                        armed = false
+                    }
+            )
     }
 }
 
 extension View {
-    fileprivate func swipeNumbersToReset(canReset: Bool, reset: @escaping () -> Void) -> some View {
+    /// Swipe-to-reset for a slider stack (see NumbersSwipeReset).
+    func swipeNumbersToReset(canReset: Bool, reset: @escaping () -> Void) -> some View {
         modifier(NumbersSwipeReset(canReset: canReset, reset: reset))
+    }
+
+    /// Double-tap a chip to reset what it stands for (with a haptic).
+    fileprivate func doubleTapToReset(_ reset: @escaping () -> Void) -> some View {
+        simultaneousGesture(TapGesture(count: 2).onEnded {
+            withAnimation(.easeOut(duration: 0.2)) { reset() }
+            #if canImport(UIKit)
+            UINotificationFeedbackGenerator().notificationOccurred(.success)
+            #endif
+        })
     }
 }
 

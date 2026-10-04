@@ -134,32 +134,35 @@ struct SidebarView: View {
 
     var layoutSection: some View {
         SidebarSection(title: "Layout") {
-            LabeledSlider(label: "Columns", value: Binding(
-                get: { Double(min(state.numCols, state.maxSelectableCols)) },
-                set: { v in state.numCols = Int(v); state.rebuildLayout(resetGrows: true) }
-            ), range: 1...Double(state.maxSelectableCols), step: 1, format: "%.0f", resetValue: 2,
-               reservesSwatchSlot: true)
-                .disabled(state.maxSelectableCols <= 1)
-                .opacity(state.maxSelectableCols <= 1 ? 0.4 : 1)
+            VStack(spacing: 10) {
+                LabeledSlider(label: "Columns", value: Binding(
+                    get: { Double(min(state.numCols, state.maxSelectableCols)) },
+                    set: { v in state.numCols = Int(v); state.rebuildLayout(resetGrows: true) }
+                ), range: 1...Double(state.maxSelectableCols), step: 1, format: "%.0f", resetValue: 2,
+                   reservesSwatchSlot: true)
+                    .disabled(state.maxSelectableCols <= 1)
+                    .opacity(state.maxSelectableCols <= 1 ? 0.4 : 1)
             
-            /*
-            struct LabeledSlider: View {
-                let label: String
-                @Binding var value: Double
-                let range: ClosedRange<Double>
-                let step: Double
-                let format: String
-             */
+                /*
+                struct LabeledSlider: View {
+                    let label: String
+                    @Binding var value: Double
+                    let range: ClosedRange<Double>
+                    let step: Double
+                    let format: String
+                 */
 
-            LabeledSlider(label: "Spacing", value: $state.gap, range: 0...40, step: 1, format: "%.0f",
-                          resetValue: 10, swatchColor: $state.backgroundColor)
+                LabeledSlider(label: "Spacing", value: $state.gap, range: 0...40, step: 1, format: "%.0f",
+                              resetValue: 10, swatchColor: $state.backgroundColor)
 
-            LabeledSlider(label: "Rounding", value: $state.cornerRadius, range: 0...100, step: 1, format: "%.0f",
-                          resetValue: 20, reservesSwatchSlot: true)
+                LabeledSlider(label: "Rounding", value: $state.cornerRadius, range: 0...100, step: 1, format: "%.0f",
+                              resetValue: 20, reservesSwatchSlot: true)
 
-            BorderStyleRow()
+                BorderStyleRow()
 
-            BorderPlacementRow()
+                BorderPlacementRow()
+            }
+            .swipeNumbersToReset(canReset: state.hasStyleChanges) { state.resetStyle() }
 
             HStack(spacing: 8) {
                 ShuffleButton()
@@ -167,7 +170,6 @@ struct SidebarView: View {
                     .disabled(!state.canApplyToAll || state.pages.count <= 1)
                     .opacity(state.pages.count <= 1 ? 0 : (state.canApplyToAll ? 1 : 0.5))
                     .allowsHitTesting(state.pages.count > 1)
-                ActionButton(label: "Reset", sf: "arrow.counterclockwise", fillWidth: false) { state.resetStyle() }
             }
         }
     }
@@ -299,38 +301,50 @@ struct RatioButton: View {
 
 /// Embossed metallic slider knob: brushed-metal ball lit from the top left,
 /// with a bright rim highlight and a drop shadow that lifts it off the track.
+/// Slider knob: a clear glass ball. The track shows through it (blurred,
+/// like light bent by the glass), the rim is brighter than the middle (glass
+/// edges reflect more), light gathers in a soft glow near the bottom, and a
+/// sharp highlight sits top-left.
 struct EmbossedKnobThumb: View {
     var size: CGFloat
 
     var body: some View {
-        Circle()
-            .fill(RadialGradient(colors: [Color(white: 1.0), Color(white: 0.90), Color(white: 0.68)],
-                                 center: UnitPoint(x: 0.35, y: 0.28),
-                                 startRadius: 1,
-                                 endRadius: size * 0.95))
-            // Glossy cap: a bright crescent of light across the upper half
-            .overlay(
-                Ellipse()
-                    .fill(LinearGradient(colors: [Color.white.opacity(0.95), Color.white.opacity(0)],
-                                         startPoint: .top, endPoint: .bottom))
-                    .frame(width: size * 0.7, height: size * 0.42)
-                    .offset(y: -size * 0.22)
-            )
-            // Small specular hot spot
-            .overlay(
-                Circle()
-                    .fill(Color.white)
-                    .frame(width: size * 0.16, height: size * 0.16)
-                    .blur(radius: 0.6)
-                    .offset(x: -size * 0.16, y: -size * 0.2)
-            )
-            .overlay(
-                Circle().strokeBorder(
-                    LinearGradient(colors: [Color.white.opacity(0.95), Color(white: 0.5)],
-                                   startPoint: .topLeading, endPoint: .bottomTrailing),
-                    lineWidth: 1)
-            )
-            .frame(width: size, height: size)
+        ZStack {
+            // The glass body: see-through, softly blurring what's behind.
+            Circle().fill(.ultraThinMaterial)
+            // Fresnel rim: clear in the middle, brighter toward the edge.
+            Circle().fill(RadialGradient(colors: [Color.white.opacity(0.05), Color.white.opacity(0.10),
+                                                  Color.white.opacity(0.55)],
+                                         center: .center, startRadius: 0, endRadius: size / 2))
+            // Light gathered at the bottom, as in a real lens.
+            Ellipse()
+                .fill(RadialGradient(colors: [Color.white.opacity(0.75), Color.white.opacity(0)],
+                                     center: .center, startRadius: 0, endRadius: size * 0.32))
+                .frame(width: size * 0.62, height: size * 0.34)
+                .offset(y: size * 0.24)
+                .blendMode(.screen)
+            // Soft reflection across the upper half.
+            Ellipse()
+                .fill(LinearGradient(colors: [Color.white.opacity(0.85), Color.white.opacity(0)],
+                                     startPoint: .top, endPoint: .bottom))
+                .frame(width: size * 0.62, height: size * 0.36)
+                .offset(y: -size * 0.2)
+            // Sharp specular hot spot.
+            Ellipse()
+                .fill(Color.white)
+                .frame(width: size * 0.2, height: size * 0.13)
+                .rotationEffect(.degrees(-30))
+                .blur(radius: 0.4)
+                .offset(x: -size * 0.17, y: -size * 0.22)
+            // Thin rim: lit at the top, in shade at the bottom.
+            Circle().strokeBorder(
+                LinearGradient(colors: [Color.white.opacity(0.95), Color.white.opacity(0.25),
+                                        Color.black.opacity(0.25)],
+                               startPoint: .top, endPoint: .bottom),
+                lineWidth: 1)
+        }
+        .frame(width: size, height: size)
+        .clipShape(Circle())
     }
 }
 
@@ -449,8 +463,22 @@ struct ModernSlider: View {
     }
 }
 
+/// True while a pull-down-to-reset over this slider group is armed: the
+/// values are drawn in the accent color (see NumbersSwipeReset).
+private struct ResetArmedKey: EnvironmentKey {
+    static let defaultValue = false
+}
+
+extension EnvironmentValues {
+    var resetArmed: Bool {
+        get { self[ResetArmedKey.self] }
+        set { self[ResetArmedKey.self] = newValue }
+    }
+}
+
 struct LabeledSlider: View {
     @EnvironmentObject var state: CollageState
+    @Environment(\.resetArmed) private var resetArmed
     let label: String
     @Binding var value: Double
     let range: ClosedRange<Double>
@@ -495,13 +523,15 @@ struct LabeledSlider: View {
                          },
                          resetValue: resetValue, trackColors: trackColors)
             Text(String(format: format, value))
-                .font(.system(size: 14, weight: .medium, design: .monospaced))
-                .foregroundColor(.primary.opacity(0.85))
+                .font(.system(size: 14, weight: resetArmed ? .bold : .medium, design: .monospaced))
+                .foregroundColor(resetArmed ? .accentColor : .primary.opacity(0.85))
                 .lineLimit(1)
                 // Longer values ("-12.5°") shrink a little to fit.
                 .minimumScaleFactor(0.7)
-                // Room for four characters ("-100", "-60°").
-                .frame(width: 38, alignment: .trailing)
+                // Room for four characters ("-100", "-60°"), hugging the
+                // slider and kept clear of the panel edge.
+                .frame(width: 38, alignment: .leading)
+                .padding(.trailing, 8)
                 // Double-tapping the value also resets to default
                 .contentShape(Rectangle())
                 .onTapGesture(count: 2) { resetToDefault() }
@@ -638,6 +668,7 @@ struct BorderStylePicker: View {
 /// value number docks to the right edge like the other slider rows.
 struct BorderStyleRow: View {
     @EnvironmentObject var state: CollageState
+    @Environment(\.resetArmed) private var resetArmed
     var range: ClosedRange<Double> = 0...40
 
     var body: some View {
@@ -663,12 +694,13 @@ struct BorderStyleRow: View {
                          },
                          resetValue: 0)
             Text(String(format: "%.0f", state.borderThickness))
-                .font(.system(size: 14, weight: .medium, design: .monospaced))
-                .foregroundColor(.primary.opacity(0.85))
+                .font(.system(size: 14, weight: resetArmed ? .bold : .medium, design: .monospaced))
+                .foregroundColor(resetArmed ? .accentColor : .primary.opacity(0.85))
                 .lineLimit(1)
                 .fixedSize()
-                // Room for four characters ("-100", "-60°").
-                .frame(width: 38, alignment: .trailing)
+                // Room for four characters ("-100", "-60°"), like the slider rows.
+                .frame(width: 38, alignment: .leading)
+                .padding(.trailing, 8)
                 // Double-tapping the value resets border thickness to zero.
                 .contentShape(Rectangle())
                 .onTapGesture(count: 2) {
@@ -720,8 +752,8 @@ struct BorderPlacementRow: View {
             .labelsHidden()
             .disabled(disabled)
             .opacity(disabled ? 0.4 : 1)
-            // Match the sliders' value column
-            Color.clear.frame(width: 38, height: 24)
+            // Match the sliders' value column (and its edge clearance)
+            Color.clear.frame(width: 38 + 8, height: 24)
         }
         .panelChrome(state)
     }

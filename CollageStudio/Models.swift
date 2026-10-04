@@ -288,6 +288,8 @@ struct CollageImage: Identifiable, Equatable {
     var protrusion: ProtrusionEdges? = nil
     /// How the protruding part is set off from what it overlaps.
     var protrusionEffect: ProtrusionEffect = .none
+    /// Which of the subjects Vision found protrude (indices); nil = all.
+    var protrusionObjects: Set<Int>? = nil
     /// Photos (not text boxes or empty slots) can protrude.
     var canProtrude: Bool { !isPlaceholder && !isText }
     /// Bumped after every committed pinch. The box view uses it as its

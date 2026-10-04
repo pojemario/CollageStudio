@@ -271,23 +271,27 @@ struct BottomPanelView: View {
 
     var layoutTab: some View {
         VStack(spacing: 10) {
-            LabeledSlider(label: "Columns", value: Binding(
-                get: { Double(min(state.numCols, state.maxSelectableCols)) },
-                set: { v in state.numCols = Int(v); state.rebuildLayout(resetGrows: true) }
-            ), range: 1...Double(state.maxSelectableCols), step: 1, format: "%.0f", resetValue: 2,
-               reservesSwatchSlot: true)
-                .disabled(state.maxSelectableCols <= 1)
-                .opacity(state.maxSelectableCols <= 1 ? 0.4 : 1)
+            VStack(spacing: 10) {
+                LabeledSlider(label: "Columns", value: Binding(
+                    get: { Double(min(state.numCols, state.maxSelectableCols)) },
+                    set: { v in state.numCols = Int(v); state.rebuildLayout(resetGrows: true) }
+                ), range: 1...Double(state.maxSelectableCols), step: 1, format: "%.0f", resetValue: 2,
+                   reservesSwatchSlot: true)
+                    .disabled(state.maxSelectableCols <= 1)
+                    .opacity(state.maxSelectableCols <= 1 ? 0.4 : 1)
 
-            LabeledSlider(label: "Spacing", value: $state.gap, range: 0...70, step: 1, format: "%.0f",
-                          resetValue: 10, swatchColor: $state.backgroundColor)
+                LabeledSlider(label: "Spacing", value: $state.gap, range: 0...70, step: 1, format: "%.0f",
+                              resetValue: 10, swatchColor: $state.backgroundColor)
 
-            LabeledSlider(label: "Rounding", value: $state.cornerRadius, range: 0...100, step: 1, format: "%.0f",
-                          resetValue: 20, reservesSwatchSlot: true)
+                LabeledSlider(label: "Rounding", value: $state.cornerRadius, range: 0...100, step: 1, format: "%.0f",
+                              resetValue: 20, reservesSwatchSlot: true)
 
-            BorderStyleRow()
+                BorderStyleRow()
 
-            BorderPlacementRow()
+                BorderPlacementRow()
+            }
+            // No Reset button: swipe up or down on the labels or numbers.
+            .swipeNumbersToReset(canReset: state.hasStyleChanges) { state.resetStyle() }
 
             HStack(spacing: 8) {
                 // Shuffle stays visible in shuffle-focus mode; the others fade.
@@ -298,8 +302,6 @@ struct BottomPanelView: View {
                     .disabled(!state.canApplyToAll || state.pages.count <= 1)
                     .opacity(state.pages.count <= 1 ? 0 : (state.canApplyToAll ? 1 : 0.5))
                     .allowsHitTesting(state.pages.count > 1)
-                    .panelChrome(state)
-                ActionButton(label: "Reset", sf: "arrow.counterclockwise", fillWidth: false) { state.resetStyle() }
                     .panelChrome(state)
             }
         }
@@ -313,6 +315,10 @@ struct BottomPanelView: View {
                           resetValue: 0)
             LabeledSlider(label: "Rotation", value: $state.canvasRotation, range: -15...15, step: 0.1, format: "%.1f°",
                           resetValue: 0)
+        }
+        .swipeNumbersToReset(canReset: state.canvasMargin != 0 || state.canvasRotation != 0) {
+            state.canvasMargin = 0
+            state.canvasRotation = 0
         }
     }
 

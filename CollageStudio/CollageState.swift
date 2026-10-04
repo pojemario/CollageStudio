@@ -940,9 +940,10 @@ class CollageState: ObservableObject {
     /// Subject masks by image id (made on demand, kept for the session).
     @Published private(set) var subjectMasks: [UUID: SubjectMask] = [:]
     private var maskInFlight: Set<UUID> = []
-    /// The photo being panned by finger right now: its protrusion hides
-    /// until the pan is committed (the copy follows committed values only).
-    @Published var panningImageId: UUID? = nil
+    /// The in-flight pan / pinch of a protruding photo, so its protrusion
+    /// follows the finger live. Deliberately not @Published: only the
+    /// protrusion layer observes it, so a gesture doesn't redraw the app.
+    let liveGesture = LiveGesture()
 
     func beginProtrusion(id: UUID) {
         closeRatio()
@@ -1008,43 +1009,101 @@ class CollageState: ObservableObject {
         pages[pi].images[idx].protrusionEffect = effect
     }
 
+    /// Choose which subjects protrude (nil = all of them).
+    func setProtrusionObjects(_ objects: Set<Int>?, for id: UUID) {
+        guard let pi = pageIndex(containing: id),
+              let idx = pages[pi].images.firstIndex(where: { $0.id == id }) else { return }
+        pages[pi].images[idx].protrusionObjects = objects
+    }
+
+    /// Tapping a subject in the photo (Protrude panel open): include it or
+    /// leave it out. At least one subject always stays in.
+    func toggleProtrusionObject(_ index: Int, for id: UUID) {
+        guard let img = images.first(where: { $0.id == id }),
+              let count = subjectMask(for: img)?.instances.count, count > 1 else { return }
+        var chosen = img.protrusionObjects ?? Set(0..<count)
+        if chosen.contains(index) { chosen.remove(index) } else { chosen.insert(index) }
+        guard !chosen.isEmpty else { return }
+        setProtrusionObjects(chosen.count == count ? nil : chosen, for: id)
+        #if canImport(UIKit)
+        UISelectionFeedbackGenerator().selectionChanged()
+        #endif
+    }
+
+    /// The subjects that protrude, as one mask with its bounds (all of them,
+    /// or the chosen ones merged).
+    private var mergedShapes: [UUID: (source: ObjectIdentifier, objects: Set<Int>, mask: CGImage, bounds: CGRect)] = [:]
+
+    func protrusionShape(for img: CollageImage) -> (mask: CGImage, bounds: CGRect)? {
+        guard let subject = subjectMask(for: img), let all = subject.mask else { return nil }
+        guard let objects = img.protrusionObjects, subject.instances.count > 1 else {
+            return (all, subject.bounds)
+        }
+        let picked = objects.sorted().filter { $0 < subject.instances.count }.map { subject.instances[$0] }
+        guard !picked.isEmpty else { return (all, subject.bounds) }
+        if let m = mergedShapes[img.id], m.source == ObjectIdentifier(img.image), m.objects == objects {
+            return (m.mask, m.bounds)
+        }
+        guard let mask = picked.count == 1 ? picked[0].mask : SubjectMasker.union(picked.map(\.mask)) else {
+            return (all, subject.bounds)
+        }
+        let bounds = picked.dropFirst().reduce(picked[0].bounds) { $0.union($1.bounds) }
+        mergedShapes[img.id] = (ObjectIdentifier(img.image), objects, mask, bounds)
+        return (mask, bounds)
+    }
+
+    /// Outline polylines of each subject (for the preview), by image id.
+    private var instanceOutlines: [UUID: (source: ObjectIdentifier, outlines: [[[CGPoint]]])] = [:]
+
+    func subjectInstanceOutlines(for img: CollageImage) -> [[[CGPoint]]] {
+        guard let subject = subjectMask(for: img) else { return [] }
+        if let o = instanceOutlines[img.id], o.source == ObjectIdentifier(img.image) { return o.outlines }
+        let outlines = subject.instances.map { SubjectMasker.outline(of: $0.mask) }
+        instanceOutlines[img.id] = (ObjectIdentifier(img.image), outlines)
+        return outlines
+    }
+
     /// Subject masks grown by a radius (mask pixels), for the Border effect.
-    private var dilatedMasks: [UUID: (source: ObjectIdentifier, radius: Int, image: CGImage)] = [:]
+    private var dilatedMasks: [UUID: (source: ObjectIdentifier, objects: Set<Int>?, radius: Int, image: CGImage)] = [:]
 
     /// Outline polylines of the subject grown by `radius` mask pixels (the
     /// line patterned Border styles run along it).
-    private var subjectOutlines: [UUID: (source: ObjectIdentifier, radius: Int, outline: [[CGPoint]])] = [:]
+    private var subjectOutlines: [UUID: (source: ObjectIdentifier, objects: Set<Int>?, radius: Int, outline: [[CGPoint]])] = [:]
 
-    func subjectOutline(for img: CollageImage, radius: Int) -> [[CGPoint]] {
-        if let o = subjectOutlines[img.id], o.source == ObjectIdentifier(img.image), o.radius == radius {
+    func subjectOutline(for img: CollageImage, radius: Int, allowStale: Bool = false) -> [[CGPoint]] {
+        if let o = subjectOutlines[img.id], o.source == ObjectIdentifier(img.image),
+           o.objects == img.protrusionObjects, o.radius == radius || allowStale {
             return o.outline
         }
         guard let grown = dilatedSubjectMask(for: img, radius: radius) else { return [] }
         let outline = SubjectMasker.outline(of: grown)
-        subjectOutlines[img.id] = (ObjectIdentifier(img.image), radius, outline)
+        subjectOutlines[img.id] = (ObjectIdentifier(img.image), img.protrusionObjects, radius, outline)
         return outline
     }
 
-    func dilatedSubjectMask(for img: CollageImage, radius: Int) -> CGImage? {
-        guard let mask = subjectMask(for: img)?.mask else { return nil }
-        if let d = dilatedMasks[img.id], d.source == ObjectIdentifier(img.image), d.radius == radius {
+    /// `allowStale`: during a live pinch, reuse the last grown mask whatever
+    /// its radius (growing one per frame is too slow); it's redone on release.
+    func dilatedSubjectMask(for img: CollageImage, radius: Int, allowStale: Bool = false) -> CGImage? {
+        guard let mask = protrusionShape(for: img)?.mask else { return nil }
+        if let d = dilatedMasks[img.id], d.source == ObjectIdentifier(img.image),
+           d.objects == img.protrusionObjects, d.radius == radius || allowStale {
             return d.image
         }
         guard let grown = SubjectMasker.dilate(mask, radius: radius) else { return nil }
-        dilatedMasks[img.id] = (ObjectIdentifier(img.image), radius, grown)
+        dilatedMasks[img.id] = (ObjectIdentifier(img.image), img.protrusionObjects, radius, grown)
         return grown
     }
 
     /// The box edges the photo's subject currently crosses — where a
     /// protrusion would actually show, given its zoom, pan and rotation.
     func protrudableEdges(for id: UUID) -> ProtrusionEdges {
-        guard let img = images.first(where: { $0.id == id }), let mask = subjectMask(for: img),
-              mask.mask != nil, let box = imageFrames[id]?.size,
+        guard let img = images.first(where: { $0.id == id }), let shape = protrusionShape(for: img),
+              let box = imageFrames[id]?.size,
               let placement = ImagePlacement.compute(natural: img.naturalSize, boxSize: box, zoom: img.zoom,
                                                      rotation: img.rotation,
                                                      pan: Self.panPixels(img.panOffset, in: box))
         else { return [] }
-        let b = mask.bounds
+        let b = shape.bounds
         let corners = [placement.boxPoint(b.minX, b.minY), placement.boxPoint(b.maxX, b.minY),
                        placement.boxPoint(b.minX, b.maxY), placement.boxPoint(b.maxX, b.maxY)]
         let tolerance: CGFloat = 1
@@ -1508,9 +1567,14 @@ class CollageState: ObservableObject {
     }
 
     /// Resets the visual style to a plain default look.
+    /// Whether the Layout settings differ from their defaults.
+    var hasStyleChanges: Bool {
+        gap != 10 || cornerRadius != 20 || borderThickness != 0 || borderStyle != .solid
+            || backgroundColor != .white || borderColor != .white
+    }
+
     func resetStyle() {
         gap = 10
-        canvasMargin = 0
         backgroundColor = .white
         cornerRadius = 20
         borderStyle = .solid
