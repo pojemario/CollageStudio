@@ -14,9 +14,9 @@ struct FloatingTabBar: View {
     var merged = false
     @Namespace private var bubble
 
-    static let tabs = ["Images", "Layout", "Canvas", "Frames", "Overlay", "Edit"]
+    static let tabs = ["Images", "Layout", "Canvas", "Frames", "Overlay", "Edit", "Filter"]
     static let icons = ["photo.on.rectangle.angled", "square.grid.2x2", "rectangle.inset.filled",
-                        "photo.artframe", "sparkles", "wand.and.stars"]
+                        "photo.artframe", "sparkles", "wand.and.stars", "camera.filters"]
     /// Vertical room the pill takes at the bottom of the screen (pill +
     /// its margins) — what the panel card and the canvas leave free.
     static let zoneHeight: CGFloat = 80
@@ -169,7 +169,8 @@ struct BottomPanelView: View {
                     case 2: borderTab
                     case 3: framesTab
                     case 4: overlayTab
-                    default: effectsTab
+                    case 5: effectsTab
+                    default: FilterControls()
                     }
                 }
             }

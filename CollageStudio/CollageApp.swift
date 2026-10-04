@@ -95,12 +95,24 @@ struct CollageApp: App {
     }
 }
 
-/// Version shown next to the logo, e.g. "v1.0 (142 · ab12cd3)". The build
+/// Version shown next to the logo, e.g. "v1.0" over "142 · ab12cd3". The build
 /// number is the git commit count and GitCommit the short hash ("+" when
 /// built with uncommitted changes) — both stamped into Info.plist at build
 /// time by the "Stamp Build Version" phase — so any installed build can be
 /// traced to its commit and features.
 enum AppVersion {
+    /// "v1.0".
+    static var version: String {
+        "v" + (Bundle.main.infoDictionary?["CFBundleShortVersionString"] as? String ?? "?")
+    }
+
+    /// "142 · ab12cd3".
+    static var build: String {
+        let info = Bundle.main.infoDictionary ?? [:]
+        let number = info["CFBundleVersion"] as? String ?? "?"
+        return (info["GitCommit"] as? String).map { "\(number) · \($0)" } ?? number
+    }
+
     static var label: String {
         let info = Bundle.main.infoDictionary ?? [:]
         let version = info["CFBundleShortVersionString"] as? String ?? "?"
@@ -109,5 +121,17 @@ enum AppVersion {
             return "v\(version) (\(build) · \(commit))"
         }
         return "v\(version) (\(build))"
+    }
+}
+
+/// The version next to the logo: two small, faint lines.
+struct VersionLabel: View {
+    var body: some View {
+        VStack(alignment: .leading, spacing: 1) {
+            Text(AppVersion.version)
+            Text(AppVersion.build)
+        }
+        .font(.system(size: 8, weight: .regular, design: .monospaced))
+        .foregroundColor(.secondary.opacity(0.6))
     }
 }

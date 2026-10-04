@@ -32,6 +32,7 @@ struct SidebarView: View {
                 framesSection
                 overlaySection
                 effectsSection
+                filterSection
             }
         }
     }
@@ -47,9 +48,7 @@ struct SidebarView: View {
                 .grayscale(state.hasAnyImages ? 0 : 1)
                 .animation(.easeInOut(duration: 0.4), value: state.hasAnyImages)
                 .shimmering(state.isBusy)
-            Text(AppVersion.label)
-                .font(.system(size: 9, weight: .medium, design: .monospaced))
-                .foregroundColor(.secondary)
+            VersionLabel()
             Spacer()
             // Export / share the collage as PNG
             Button {
@@ -202,6 +201,12 @@ struct SidebarView: View {
     }
 
     // MARK: - Effects (brightness, contrast, fade, glow, …)
+
+    var filterSection: some View {
+        SidebarSection(title: "Filter") {
+            FilterControls()
+        }
+    }
 
     var effectsSection: some View {
         SidebarSection(title: "Edit") {

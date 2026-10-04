@@ -331,9 +331,7 @@ struct ContentView: View {
                         .animation(.easeInOut(duration: 0.4), value: state.hasAnyImages)
                         .shimmering(state.isBusy)
                     // Build version, to tell installed builds apart.
-                    Text(AppVersion.label)
-                        .font(.system(size: 9, weight: .medium, design: .monospaced))
-                        .foregroundColor(.secondary)
+                    VersionLabel()
                         .padding(.bottom, 6)
                 }
                 .padding(.leading, 10)

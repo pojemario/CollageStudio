@@ -453,10 +453,10 @@ enum ContentGrader {
 struct EffectsPanel: View {
     @EnvironmentObject var state: CollageState
     /// The Edit tab's pages (in this order): Light, Color, HSL, camera
-    /// calibration, Detail, Effects, Filter.
+    /// calibration, Detail, Effects. (Filters have their own tab.)
     enum Page: String, CaseIterable {
         case light = "Light", color = "Color", hsl = "HSL", cc = "CC"
-        case detail = "Detail", effects = "Effects", filter = "Filter"
+        case detail = "Detail", effects = "Effects"
 
         /// The Basic corrections on this page, if it's one of those.
         var basicEffects: [CollageEffect]? {
@@ -485,7 +485,6 @@ struct EffectsPanel: View {
 
             switch page {
             case .light, .color, .detail: basicControls(page.basicEffects ?? [])
-            case .filter: FilterControls()
             case .effects: effectControls
             case .hsl: hslControls
             case .cc: calibrationControls
@@ -500,9 +499,6 @@ struct EffectsPanel: View {
         case .hsl: state.resetHSL()
         case .cc: state.calibration = CameraCalibration()
         case .effects: state.resetEffects(in: CollageEffect.looks)
-        case .filter:
-            state.colorFilter = .none
-            state.filterStrength = 100
         }
     }
 
@@ -513,7 +509,6 @@ struct EffectsPanel: View {
         case .hsl: return !state.hsl.isIdentity
         case .cc: return !state.calibration.isIdentity
         case .effects: return state.hasEffects(in: CollageEffect.looks)
-        case .filter: return state.colorFilter != .none
         }
     }
 
