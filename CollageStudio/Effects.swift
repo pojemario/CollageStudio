@@ -458,8 +458,6 @@ struct EffectsPanel: View {
     @State private var page: Page = .edit
     @State private var band: HSLBand = .master
     @State private var basicSection: BasicSection = .light
-    /// Width of the CC slider stack, to find its numbers column.
-    @State private var ccWidth: CGFloat = 0
 
     var body: some View {
         VStack(spacing: 10) {
@@ -504,15 +502,6 @@ struct EffectsPanel: View {
         }
     }
 
-    private func resetButton(_ group: [CollageEffect]) -> some View {
-        ActionButton(label: "Reset", sf: "arrow.counterclockwise", fillWidth: false) {
-            state.resetEffects(in: group)
-        }
-        .disabled(!state.hasEffects(in: group))
-        .opacity(state.hasEffects(in: group) ? 1 : 0.5)
-        .panelChrome(state)
-    }
-
     /// Basic corrections in three sections, like Lightroom: Light (exposure
     /// and tone), Color (white balance, vibrance), Detail (texture, clarity,
     /// dehaze, sharpness). A dot marks a section with changes.
@@ -527,10 +516,9 @@ struct EffectsPanel: View {
             }
             .panelChrome(state)
             sliders(basicSection.effects)
-            HStack(spacing: 8) {
-                Spacer()
-                resetButton(CollageEffect.adjustments)
-            }
+                .swipeNumbersToReset(canReset: state.hasEffects(in: basicSection.effects)) {
+                    state.resetEffects(in: basicSection.effects)
+                }
         }
     }
 
@@ -549,10 +537,12 @@ struct EffectsPanel: View {
     private var effectControls: some View {
         VStack(spacing: 10) {
             sliders(CollageEffect.looks)
+                .swipeNumbersToReset(canReset: state.hasEffects(in: CollageEffect.looks)) {
+                    state.resetEffects(in: CollageEffect.looks)
+                }
             HStack(spacing: 8) {
                 EffectShuffleButton().panelChrome(state, keep: "Shuffle")
                 Spacer()
-                resetButton(CollageEffect.looks)
             }
         }
     }
@@ -602,14 +592,17 @@ struct EffectsPanel: View {
             }
             .panelChrome(state)
 
-            LabeledSlider(label: "Hue", value: shift(\.hue),
-                          range: -100...100, step: 1, format: "%.0f", resetValue: 0,
-                          trackColors: band.hueSweep)
-            LabeledSlider(label: "Saturation", value: shift(\.saturation),
-                          range: -100...100, step: 1, format: "%.0f", resetValue: 0)
-            LabeledSlider(label: "Luminance", value: shift(\.luminance),
-                          range: -100...100, step: 1, format: "%.0f", resetValue: 0)
-
+            VStack(spacing: 10) {
+                LabeledSlider(label: "Hue", value: shift(\.hue),
+                              range: -100...100, step: 1, format: "%.0f", resetValue: 0,
+                              trackColors: band.hueSweep)
+                LabeledSlider(label: "Saturation", value: shift(\.saturation),
+                              range: -100...100, step: 1, format: "%.0f", resetValue: 0)
+                LabeledSlider(label: "Luminance", value: shift(\.luminance),
+                              range: -100...100, step: 1, format: "%.0f", resetValue: 0)
+            }
+            // Resets the selected color (or Master).
+            .swipeNumbersToReset(canReset: !state.hsl[band].isZero) { state.hsl[band] = HSLShift() }
         }
     }
 
@@ -629,26 +622,9 @@ struct EffectsPanel: View {
             calSlider("Blue Hue", \.blueHue, [c(98, 220, 141), c(99, 221, 196), c(32, 85, 211), c(91, 71, 204)])
             calSlider("Blue Sat", \.blueSaturation, [gray, c(90, 178, 209)])
         }
-        // No Reset button: swipe down over the numbers column (the value
-        // readouts on the right) to zero every slider. Double-tapping one
-        // number still resets just that slider.
-        .background(GeometryReader { g in
-            Color.clear.onAppear { ccWidth = g.size.width }
-                .onChange(of: g.size.width) { _, w in ccWidth = w }
-        })
-        .simultaneousGesture(
-            DragGesture(minimumDistance: 24)
-                .onEnded { v in
-                    let inNumbers = v.startLocation.x > ccWidth - 52
-                    let downward = v.translation.height > 60
-                        && abs(v.translation.width) < v.translation.height * 0.6
-                    guard inNumbers, downward, !state.calibration.isIdentity else { return }
-                    withAnimation(.easeOut(duration: 0.2)) { state.calibration = CameraCalibration() }
-                    #if canImport(UIKit)
-                    UINotificationFeedbackGenerator().notificationOccurred(.success)
-                    #endif
-                }
-        )
+        .swipeNumbersToReset(canReset: !state.calibration.isIdentity) {
+            state.calibration = CameraCalibration()
+        }
     }
 
     private func calSlider(_ label: String, _ key: WritableKeyPath<CameraCalibration, Double>,
@@ -792,6 +768,53 @@ struct FilterControls: View {
         .accessibilityHint("Touch and hold to see the photos without the filter")
     }
 
+}
+
+// MARK: - Swipe-to-reset on the numbers column
+
+/// The Edit pages have no Reset buttons: swiping down over the column of
+/// values on the right of a slider stack resets those sliders (with a
+/// haptic). Double-tapping one value still resets just that slider. A small
+/// hint under the stack says so.
+private struct NumbersSwipeReset: ViewModifier {
+    @EnvironmentObject var state: CollageState
+    let canReset: Bool
+    let reset: () -> Void
+    @State private var width: CGFloat = 0
+
+    func body(content: Content) -> some View {
+        VStack(spacing: 6) {
+            content
+                .background(GeometryReader { g in
+                    Color.clear.onAppear { width = g.size.width }
+                        .onChange(of: g.size.width) { _, w in width = w }
+                })
+                .simultaneousGesture(
+                    DragGesture(minimumDistance: 24)
+                        .onEnded { v in
+                            let inNumbers = v.startLocation.x > width - 52
+                            let downward = v.translation.height > 60
+                                && abs(v.translation.width) < v.translation.height * 0.6
+                            guard inNumbers, downward, canReset else { return }
+                            withAnimation(.easeOut(duration: 0.2)) { reset() }
+                            #if canImport(UIKit)
+                            UINotificationFeedbackGenerator().notificationOccurred(.success)
+                            #endif
+                        }
+                )
+            Text("Swipe down across the numbers to reset")
+                .font(.caption2)
+                .foregroundColor(.secondary)
+                .frame(maxWidth: .infinity, alignment: .trailing)
+                .panelChrome(state)
+        }
+    }
+}
+
+extension View {
+    fileprivate func swipeNumbersToReset(canReset: Bool, reset: @escaping () -> Void) -> some View {
+        modifier(NumbersSwipeReset(canReset: canReset, reset: reset))
+    }
 }
 
 /// Shuffle for the Effects tab, styled like the Layout one: the left segment
