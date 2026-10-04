@@ -186,10 +186,16 @@ struct ContentView: View {
             #if os(macOS)
             macLayout
             #else
-            if hSizeClass == .compact {
-                iPhoneLayout
-            } else {
-                iPadLayout
+            // Upright phone: collage above, panel below. Anything wider than
+            // tall (a phone held sideways, any iPad) gets two columns —
+            // collage left, controls right. Decided by the actual shape, not
+            // the size class, which reports some phones' landscape as compact.
+            GeometryReader { geo in
+                if hSizeClass == .compact && geo.size.width <= geo.size.height {
+                    iPhoneLayout
+                } else {
+                    iPadLayout
+                }
             }
             #endif
         }
