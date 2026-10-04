@@ -8,7 +8,7 @@ import CoreImage.CIFilterBuiltins
 
 // MARK: - Tone (per-pixel color adjustments)
 
-/// The effects that are pure color math — brightness, contrast and the
+/// The effects that are pure color math — contrast and the
 /// contrast side of fade (negative fade adds contrast and saturation
 /// instead) — applied to the collage and to its background color alike.
 /// Never to overlays or the frame: those are drawn outside it.
@@ -18,12 +18,11 @@ struct EffectToning: ViewModifier {
 
     func body(content: Content) -> some View {
         let fade = enabled ? state.effectAmount(.fade) : 0
-        let brightness = enabled ? state.effectAmount(.brightness) : 0
         let contrast = enabled ? state.effectAmount(.contrast) : 0
         content
             .saturation(1 - 0.4 * fade)
             .contrast((1 - 0.45 * fade) * (1 + 0.5 * contrast))
-            .brightness(0.06 * fade + 0.2 * brightness)
+            .brightness(0.06 * fade)
     }
 }
 
@@ -342,8 +341,10 @@ extension ContentGrade {
     func color(_ r: Double, _ g: Double, _ b: Double,
                calibrationMatrix: [Double]?) -> (r: Double, g: Double, b: Double) {
         var c = (r: r, g: g, b: b)
-        // Camera calibration first, like Lightroom's profile stage.
+        // Camera calibration first, like Lightroom's profile stage, then the
+        // Basic tone controls.
         if let m = calibrationMatrix { c = calibration.apply(r, g, b, matrix: m) }
+        if !tone.isColorIdentity { c = tone.apply(c.r, c.g, c.b) }
         if hasFilter {
             // k above 1 extrapolates past the filter (stronger look).
             let (r, g, b) = c
@@ -371,7 +372,7 @@ enum ContentGrader {
             let m = grade.calibration.isIdentity ? nil : grade.calibration.matrix
             source = HSLGrader.applyCube(to: source) { grade.color($0, $1, $2, calibrationMatrix: m) }
         }
-        guard grade.clarity != 0 || grade.sharpness > 0 else { return source }
+        guard grade.hasDetailChange else { return source }
 
         #if canImport(UIKit)
         guard let cg = source.cgImage else { return source }
@@ -397,6 +398,34 @@ enum ContentGrader {
             f.inputImage = out
             f.targetImage = blurred
             f.time = Float(-grade.clarity * 0.6)
+            out = (f.outputImage ?? out).cropped(to: extent)
+        }
+
+        // Dehaze: wide, gentle local contrast (its per-pixel part is in the
+        // color cube).
+        if grade.tone.dehaze > 0 {
+            let f = CIFilter.unsharpMask()
+            f.inputImage = out.clampedToExtent()
+            f.radius = Float(longEdge * 0.06)
+            f.intensity = Float(grade.tone.dehaze * 0.5)
+            out = (f.outputImage ?? out).cropped(to: extent)
+        }
+
+        // Texture: fine-detail contrast, or smoothing when negative.
+        if grade.tone.texture > 0 {
+            let f = CIFilter.unsharpMask()
+            f.inputImage = out.clampedToExtent()
+            f.radius = Float(max(longEdge * 0.004, 1))
+            f.intensity = Float(grade.tone.texture * 1.0)
+            out = (f.outputImage ?? out).cropped(to: extent)
+        } else if grade.tone.texture < 0 {
+            let blurred = out.clampedToExtent()
+                .applyingGaussianBlur(sigma: Double(max(longEdge * 0.003, 0.8)))
+                .cropped(to: extent)
+            let f = CIFilter.dissolveTransition()
+            f.inputImage = out
+            f.targetImage = blurred
+            f.time = Float(-grade.tone.texture * 0.6)
             out = (f.outputImage ?? out).cropped(to: extent)
         }
 
@@ -428,6 +457,7 @@ struct EffectsPanel: View {
     }
     @State private var page: Page = .edit
     @State private var band: HSLBand = .master
+    @State private var basicSection: BasicSection = .light
     /// Width of the CC slider stack, to find its numbers column.
     @State private var ccWidth: CGFloat = 0
 
@@ -483,14 +513,34 @@ struct EffectsPanel: View {
         .panelChrome(state)
     }
 
-    /// Basic corrections: temperature, brightness, contrast, clarity,
-    /// sharpness.
+    /// Basic corrections in three sections, like Lightroom: Light (exposure
+    /// and tone), Color (white balance, vibrance), Detail (texture, clarity,
+    /// dehaze, sharpness). A dot marks a section with changes.
     private var editControls: some View {
         VStack(spacing: 10) {
-            sliders(CollageEffect.adjustments)
+            HStack(spacing: 8) {
+                ForEach(BasicSection.allCases, id: \.self) { section in
+                    PackChip(title: section.rawValue, isActive: basicSection == section,
+                             marked: state.hasEffects(in: section.effects)) { basicSection = section }
+                }
+                Spacer()
+            }
+            .panelChrome(state)
+            sliders(basicSection.effects)
             HStack(spacing: 8) {
                 Spacer()
                 resetButton(CollageEffect.adjustments)
+            }
+        }
+    }
+
+    enum BasicSection: String, CaseIterable {
+        case light = "Light", color = "Color", detail = "Detail"
+        var effects: [CollageEffect] {
+            switch self {
+            case .light: return CollageEffect.light
+            case .color: return CollageEffect.color
+            case .detail: return CollageEffect.detail
             }
         }
     }
@@ -621,6 +671,16 @@ struct EffectsPanel: View {
 struct FilterControls: View {
     @EnvironmentObject var state: CollageState
     @State private var previews: [ColorFilter: PlatformImage] = [:]
+    /// The group whose tiles show; starts on the active filter's group.
+    @State private var groupName: String?
+
+    private var groups: [FilterGroup] { ColorFilter.groups }
+    private var shownGroup: FilterGroup? {
+        let name = groupName ?? groups.first { $0.filters.contains(state.colorFilter) }?.name
+        return groups.first { $0.name == name } ?? groups.first
+    }
+    /// None first in every group, so the filter can always be switched off.
+    private var shownFilters: [ColorFilter] { [.none] + (shownGroup?.filters ?? []) }
 
 
     /// The picture the tiles preview: the current page's first real photo.
@@ -630,9 +690,24 @@ struct FilterControls: View {
 
     var body: some View {
         VStack(spacing: 10) {
+            // Group chips, like the frame packs; a dot marks the group of
+            // the active filter.
+            if groups.count > 1 {
+                ScrollView(.horizontal, showsIndicators: false) {
+                    HStack(spacing: 8) {
+                        ForEach(groups) { g in
+                            PackChip(title: g.name, isActive: g.name == shownGroup?.name,
+                                     marked: g.filters.contains(state.colorFilter)) {
+                                groupName = g.name
+                            }
+                        }
+                    }
+                }
+                .panelChrome(state)
+            }
             ScrollView(.horizontal, showsIndicators: false) {
                 HStack(spacing: 10) {
-                    ForEach(ColorFilter.allCases) { filter in
+                    ForEach(shownFilters) { filter in
                         tile(filter)
                     }
                 }
@@ -648,16 +723,27 @@ struct FilterControls: View {
             }
         }
         .onDisappear { state.filterBypass = false }
-        // Re-render the previews when the sample photo changes.
-        .task(id: sample.map(ObjectIdentifier.init)) {
+        // Render the shown group's previews (again when the sample photo
+        // changes); groups already seen keep theirs.
+        .task(id: PreviewKey(sample: sample.map(ObjectIdentifier.init), group: shownGroup?.name)) {
             guard let sample else { previews = [:]; return }
+            let missing = shownFilters.filter { previews[$0] == nil || previewSource != ObjectIdentifier(sample) }
+            if previewSource != ObjectIdentifier(sample) { previews = [:]; previewSource = ObjectIdentifier(sample) }
+            guard !missing.isEmpty else { return }
             let rendered = await Task.detached(priority: .userInitiated) {
-                Dictionary(uniqueKeysWithValues: ColorFilter.allCases.map { f in
+                Dictionary(uniqueKeysWithValues: missing.map { f in
                     (f, ContentGrader.apply(ContentGrade(filter: f), to: sample))
                 })
             }.value
-            previews = rendered
+            previews.merge(rendered) { _, new in new }
         }
+    }
+
+    @State private var previewSource: ObjectIdentifier?
+
+    private struct PreviewKey: Equatable {
+        let sample: ObjectIdentifier?
+        let group: String?
     }
 
     private func tile(_ filter: ColorFilter) -> some View {

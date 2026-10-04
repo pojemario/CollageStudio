@@ -670,9 +670,16 @@ struct OverlayLayer: Identifiable, Equatable {
 enum CollageEffect: String, CaseIterable, Identifiable {
     case temperature = "Temperature" // + warmer, − cooler
     case tint = "Tint"              // + magenta, − green
-    case brightness = "Brightness"
+    case vibrance = "Vibrance"      // saturation, gentlest on rich colors and skin
+    case exposure = "Exposure"      // ±2 stops, in linear light
     case contrast = "Contrast"
+    case highlights = "Highlights"
+    case shadows = "Shadows"
+    case whites = "Whites"
+    case blacks = "Blacks"
+    case texture = "Texture"        // fine-detail contrast (− smooths)
     case clarity = "Clarity"        // + local (micro) contrast, − softer
+    case dehaze = "Dehaze"          // + cuts haze, − adds it
     case sharpness = "Sharpness"
     case fade = "Fade"              // + lifted blacks, softer contrast; − more contrast
     case halation = "Halation"      // red-orange bleed around highlights
@@ -683,8 +690,11 @@ enum CollageEffect: String, CaseIterable, Identifiable {
     var id: String { rawValue }
     var title: String { rawValue }
 
-    /// Basic corrections, on the Edit page.
-    static let adjustments: [CollageEffect] = [.temperature, .tint, .brightness, .contrast, .clarity, .sharpness]
+    /// Basic corrections, on the Edit page, in its three sections.
+    static let light: [CollageEffect] = [.exposure, .contrast, .highlights, .shadows, .whites, .blacks]
+    static let color: [CollageEffect] = [.temperature, .tint, .vibrance]
+    static let detail: [CollageEffect] = [.texture, .clarity, .dehaze, .sharpness]
+    static let adjustments: [CollageEffect] = light + color + detail
     /// Looks, on the Effects page (and what Shuffle can touch).
     static let looks: [CollageEffect] = allCases.filter { !adjustments.contains($0) }
 
@@ -704,8 +714,8 @@ enum CollageEffect: String, CaseIterable, Identifiable {
     /// contrast).
     var range: ClosedRange<Double> {
         switch self {
-        case .temperature, .tint, .brightness, .contrast, .clarity, .fade: return -100...100
-        default: return 0...100
+        case .sharpness, .halation, .glow, .vignette, .grain: return 0...100
+        default: return -100...100
         }
     }
 }
@@ -715,6 +725,7 @@ enum CollageEffect: String, CaseIterable, Identifiable {
 /// never to overlays or the frame.
 struct ContentGrade: Hashable {
     var calibration = CameraCalibration()
+    var tone = BasicTone()
     var filter: ColorFilter = .none
     /// 0...2, how much of the filter is mixed in (1 = as designed, above 1
     /// pushes it further).
@@ -727,8 +738,198 @@ struct ContentGrade: Hashable {
 
     var hasFilter: Bool { filter != .none && filterStrength > 0 }
     /// Whether the per-pixel color part (filter + HSL) does anything.
-    var hasColorChange: Bool { !calibration.isIdentity || hasFilter || !hsl.isIdentity }
-    var isIdentity: Bool { !hasColorChange && clarity == 0 && sharpness == 0 }
+    var hasColorChange: Bool { !calibration.isIdentity || !tone.isColorIdentity || hasFilter || !hsl.isIdentity }
+    /// Whether the spatial (neighbourhood) part does anything.
+    var hasDetailChange: Bool { clarity != 0 || sharpness > 0 || tone.texture != 0 || tone.dehaze > 0 }
+    var isIdentity: Bool { !hasColorChange && !hasDetailChange }
+}
+
+/// Lightroom-style Basic tone and presence controls, all −1...1. The
+/// per-pixel part runs in the color cube (after camera calibration, before
+/// the filter — Lightroom's order); Texture and Dehaze's local contrast run
+/// as neighbourhood filters (ContentGrader).
+struct BasicTone: Hashable {
+    var exposure: Double = 0
+    var highlights: Double = 0
+    var shadows: Double = 0
+    var whites: Double = 0
+    var blacks: Double = 0
+    var vibrance: Double = 0
+    var dehaze: Double = 0
+    var texture: Double = 0
+
+    var isColorIdentity: Bool {
+        exposure == 0 && highlights == 0 && shadows == 0 && whites == 0 && blacks == 0
+            && vibrance == 0 && dehaze == 0
+    }
+
+    /// One sRGB color (0...1) through exposure, the tonal ranges, dehaze and
+    /// vibrance.
+    func apply(_ r: Double, _ g: Double, _ b: Double) -> (r: Double, g: Double, b: Double) {
+        func lin(_ v: Double) -> Double { v <= 0.04045 ? v / 12.92 : pow((v + 0.055) / 1.055, 2.4) }
+        func enc(_ v: Double) -> Double {
+            let c = min(max(v, 0), 1)
+            return c <= 0.0031308 ? c * 12.92 : 1.055 * pow(c, 1 / 2.4) - 0.055
+        }
+        func clamp(_ v: Double) -> Double { min(max(v, 0), 1) }
+        var c = [r, g, b]
+        // Exposure: ±2 stops in linear light, with a soft shoulder so bright
+        // tones roll off into white instead of clipping.
+        if exposure != 0 {
+            let k = pow(2, exposure * 2)
+            c = c.map { v in
+                let x = lin(v) * k
+                let knee = 0.8
+                return enc(x <= knee ? x : knee + (1 - knee) * (1 - exp(-(x - knee) / (1 - knee))))
+            }
+        }
+        // Tonal ranges: lift or lower each band of brightness (smoothly
+        // overlapping), equally on all channels so colors don't shift.
+        if highlights != 0 || shadows != 0 || whites != 0 || blacks != 0 {
+            let l = 0.299 * c[0] + 0.587 * c[1] + 0.114 * c[2]
+            func band(_ center: Double, _ width: Double) -> Double { exp(-pow((l - center) / width, 2)) }
+            let d = highlights * 0.22 * band(0.75, 0.2) + shadows * 0.22 * band(0.25, 0.2)
+                + whites * 0.14 * pow(l, 3) + blacks * 0.12 * pow(1 - l, 3)
+            c = c.map { clamp($0 + d) }
+        }
+        // Dehaze: + deeper blacks and a little color, − a soft light haze.
+        if dehaze > 0 {
+            let floor = dehaze * 0.06
+            c = c.map { clamp(($0 - floor) / (1 - floor)) }
+        } else if dehaze < 0 {
+            c = c.map { $0 + (-dehaze) * 0.3 * (0.82 - $0) }
+        }
+        // Vibrance (and dehaze's color): saturation that favours muted
+        // colors and goes easy on skin tones.
+        let satBoost = vibrance * 0.7 + dehaze * 0.2
+        if satBoost != 0 {
+            let mx = max(c[0], c[1], c[2]), mn = min(c[0], c[1], c[2])
+            if mx > 0.0001, mx > mn {
+                let s = (mx - mn) / mx
+                // Hue near skin (≈ 15–45°): orange-ish with red ≥ green ≥ blue.
+                let skin = (c[0] >= c[1] && c[1] >= c[2] && (c[1] - c[2]) / (mx - mn) < 0.75) ? 0.5 : 1.0
+                let k = 1 + satBoost * (vibrance != 0 ? (1 - s) * skin : 1)
+                let l = 0.299 * c[0] + 0.587 * c[1] + 0.114 * c[2]
+                c = c.map { clamp(l + ($0 - l) * max(k, 0)) }
+            }
+        }
+        return (c[0], c[1], c[2])
+    }
+}
+
+// MARK: - LUTs
+
+/// A 3D color lookup table from a .cube file (Adobe / Resolve format):
+/// size³ output colors, red varying fastest, sampled trilinearly.
+struct CubeLUT {
+    let size: Int
+    let data: [Float]          // r, g, b triples
+    let domainMin: [Double]
+    let domainMax: [Double]
+
+    /// Parses a .cube file; nil for 1D LUTs or malformed files.
+    init?(contentsOf url: URL) {
+        guard let text = try? String(contentsOf: url, encoding: .utf8) else { return nil }
+        var size = 0
+        var lo = [0.0, 0.0, 0.0], hi = [1.0, 1.0, 1.0]
+        var values: [Float] = []
+        for raw in text.split(whereSeparator: \.isNewline) {
+            let line = raw.trimmingCharacters(in: .whitespaces)
+            if line.isEmpty || line.hasPrefix("#") || line.hasPrefix("TITLE") { continue }
+            let parts = line.split(separator: " ", omittingEmptySubsequences: true)
+            switch parts.first {
+            case "LUT_3D_SIZE": size = Int(parts.last ?? "") ?? 0
+            case "LUT_1D_SIZE": return nil
+            case "DOMAIN_MIN": lo = parts.dropFirst().compactMap { Double($0) }
+            case "DOMAIN_MAX": hi = parts.dropFirst().compactMap { Double($0) }
+            default:
+                for p in parts { if let v = Float(p) { values.append(v) } }
+            }
+        }
+        guard size >= 2, values.count == size * size * size * 3, lo.count == 3, hi.count == 3 else { return nil }
+        self.size = size
+        self.data = values
+        self.domainMin = lo
+        self.domainMax = hi
+    }
+
+    func sample(_ r: Double, _ g: Double, _ b: Double) -> (r: Double, g: Double, b: Double) {
+        let n = size - 1
+        func coord(_ v: Double, _ c: Int) -> Double {
+            let t = (v - domainMin[c]) / max(domainMax[c] - domainMin[c], 1e-9)
+            return min(max(t, 0), 1) * Double(n)
+        }
+        let x = coord(r, 0), y = coord(g, 1), z = coord(b, 2)
+        let x0 = min(Int(x), n - 1), y0 = min(Int(y), n - 1), z0 = min(Int(z), n - 1)
+        let fx = x - Double(x0), fy = y - Double(y0), fz = z - Double(z0)
+        func at(_ i: Int, _ j: Int, _ k: Int, _ c: Int) -> Double {
+            Double(data[((k * size + j) * size + i) * 3 + c])
+        }
+        var out = [0.0, 0.0, 0.0]
+        for c in 0..<3 {
+            let c00 = at(x0, y0, z0, c) * (1 - fx) + at(x0 + 1, y0, z0, c) * fx
+            let c10 = at(x0, y0 + 1, z0, c) * (1 - fx) + at(x0 + 1, y0 + 1, z0, c) * fx
+            let c01 = at(x0, y0, z0 + 1, c) * (1 - fx) + at(x0 + 1, y0, z0 + 1, c) * fx
+            let c11 = at(x0, y0 + 1, z0 + 1, c) * (1 - fx) + at(x0 + 1, y0 + 1, z0 + 1, c) * fx
+            let c0 = c00 * (1 - fy) + c10 * fy, c1 = c01 * (1 - fy) + c11 * fy
+            out[c] = min(max(c0 * (1 - fz) + c1 * fz, 0), 1)
+        }
+        return (out[0], out[1], out[2])
+    }
+}
+
+/// A named set of filters (a chip on the Filter page).
+struct FilterGroup: Identifiable {
+    let name: String
+    let filters: [ColorFilter]
+    var id: String { name }
+}
+
+/// The .cube LUTs bundled into the app (copied from the project's luts/
+/// folder at build time — that folder stays out of git, as LUT packs are
+/// usually licensed for use, not redistribution). Parsed on first use.
+final class LUTLibrary: @unchecked Sendable {
+    static let shared = LUTLibrary()
+
+    /// LUT groups by folder (luts/<Group>/…; loose files go to "LUTs"),
+    /// each with its LUT keys "Group/Name", sorted.
+    let groups: [(name: String, keys: [String])]
+    private let urls: [String: URL]
+    private var cache: [String: CubeLUT] = [:]
+    private let lock = NSLock()
+
+    /// "Lutify/Hackmanite" → "Hackmanite".
+    static func displayName(_ key: String) -> String {
+        key.split(separator: "/").last.map(String.init) ?? key
+    }
+
+    private init() {
+        var urls: [String: URL] = [:]
+        if let root = Bundle.main.resourceURL?.appendingPathComponent("LUTs"),
+           let walker = FileManager.default.enumerator(at: root, includingPropertiesForKeys: nil) {
+            for case let url as URL in walker where url.pathExtension.lowercased() == "cube" {
+                let folder = url.deletingLastPathComponent().lastPathComponent
+                let group = folder == "LUTs" ? "LUTs" : folder
+                var name = url.deletingPathExtension().lastPathComponent
+                for suffix in [" - Rec709", " - Rec.709", "_Rec709"] where name.hasSuffix(suffix) {
+                    name = String(name.dropLast(suffix.count))
+                }
+                urls["\(group)/\(name)"] = url
+            }
+        }
+        self.urls = urls
+        let byGroup = Dictionary(grouping: urls.keys) { $0.split(separator: "/").first.map(String.init) ?? "LUTs" }
+        self.groups = byGroup.keys.sorted().map { (name: $0, keys: byGroup[$0]!.sorted()) }
+    }
+
+    func lut(named name: String) -> CubeLUT? {
+        lock.lock()
+        defer { lock.unlock() }
+        if let cached = cache[name] { return cached }
+        guard let url = urls[name], let lut = CubeLUT(contentsOf: url) else { return nil }
+        cache[name] = lut
+        return lut
+    }
 }
 
 // MARK: - Camera calibration
@@ -819,37 +1020,66 @@ struct CameraCalibration: Hashable {
 /// Preset looks on the Filter page. Each is pure per-pixel color math (run
 /// through the same color cube as HSL, before it), so it applies to the
 /// photos and background only.
-enum ColorFilter: String, CaseIterable, Identifiable {
-    case none = "None"
+enum ColorFilter: Hashable, Identifiable {
+    case none
     /// Port of the pojemario.com/brownie web filter at its default settings
     /// (intensity 60, warmth 55, lift 30, saturation 50, contrast /
     /// highlights / brightness 50); its random grain is left to the Grain
     /// effect. 100% here equals the page's default output.
-    case brownie = "Brownie"
+    case brownie
     /// Portra-style film look, matched to reference photos: green-teal
     /// shadows, olive-warm mids, muted yellow-green foliage, warm cream
     /// highlights held just under white, barely lifted blacks.
-    case melancholy = "Melancholy"
+    case melancholy
     /// Fujifilm Classic Negative-style look, matched to reference shots:
     /// muted olive greens, vivid reds, cyan-leaning blues, strong contrast
     /// over green-teal shadows and near-neutral highlights.
-    case classicNegative = "Classic Neg"
+    case classicNegative
     /// Classic Neg with strong teal (instead of green-teal) shadows.
-    case classicNegative2 = "Classic Neg 2"
+    case classicNegative2
     /// Kodak Portra 400 look, matched to a gallery of Portra 400 scans: bright
     /// and airy with gentle contrast, warm natural skin, cooler muted
     /// blue-green foliage, clear cyan water / sky, muted blues, near-neutral
     /// grays with faintly warm highlights.
-    case portra400 = "Portra 400"
+    case portra400
 
-    var id: String { rawValue }
-    var title: String { rawValue }
+    /// A 3D LUT (.cube) bundled from the project's luts/ folder, by its key
+    /// "Group/Name" (see LUTLibrary).
+    case lut(String)
+
+    /// The built-in looks, in tile order.
+    static let builtIns: [ColorFilter] = [.none, .brownie, .melancholy, .classicNegative,
+                                          .classicNegative2, .portra400]
+    /// Every filter offered: built-ins, then the bundled LUTs.
+    static var allCases: [ColorFilter] { groups.flatMap(\.filters) }
+
+    /// Filter groups, like the frame packs: "Basic" (the built-in looks),
+    /// then one group per LUT folder (luts/<Group>/*.cube).
+    static var groups: [FilterGroup] {
+        [FilterGroup(name: "Basic", filters: builtIns.filter { $0 != .none })]
+            + LUTLibrary.shared.groups.map { g in FilterGroup(name: g.name, filters: g.keys.map { .lut($0) }) }
+    }
+
+    var id: String { title }
+    var title: String {
+        switch self {
+        case .none: return "None"
+        case .brownie: return "Brownie"
+        case .melancholy: return "Melancholy"
+        case .classicNegative: return "Classic Neg"
+        case .classicNegative2: return "Classic Neg 2"
+        case .portra400: return "Portra 400"
+        case .lut(let key): return LUTLibrary.displayName(key)
+        }
+    }
 
     /// One sRGB color through the filter at full strength.
     func apply(_ r: Double, _ g: Double, _ b: Double) -> (r: Double, g: Double, b: Double) {
         switch self {
         case .none:
             return (r, g, b)
+        case .lut(let name):
+            return LUTLibrary.shared.lut(named: name)?.sample(r, g, b) ?? (r, g, b)
         case .brownie:
             return Self.brownie(r, g, b)
         case .classicNegative:

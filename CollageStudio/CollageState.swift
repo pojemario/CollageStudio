@@ -488,7 +488,7 @@ class CollageState: ObservableObject {
         }
     }
 
-    // MARK: - Effects (brightness, contrast, fade, glow, …)
+    // MARK: - Effects (exposure, contrast, fade, glow, …)
 
     /// Intensity per effect, 0...100; absent or 0 means off. Like the frame
     /// and overlays, effects apply to every page.
@@ -520,9 +520,10 @@ class CollageState: ObservableObject {
             switch effect {
             case .temperature: effects[effect] = Double(Int.random(in: -25...25))
             case .tint:       effects[effect] = Double(Int.random(in: -15...15))
+            case .vibrance, .exposure, .highlights, .shadows, .whites, .blacks, .texture, .dehaze:
+                break   // Basic corrections: not shuffled
             case .clarity:    effects[effect] = Double(Int.random(in: 0...30))
             case .sharpness:  effects[effect] = Double(Int.random(in: 0...30))
-            case .brightness: effects[effect] = Double(Int.random(in: -15...15))
             case .contrast:   effects[effect] = Double(Int.random(in: -20...30))
             case .fade:       effects[effect] = Double(Int.random(in: -40...60))
             case .halation:   effects[effect] = Double(Int.random(in: 0...70))
@@ -575,6 +576,14 @@ class CollageState: ObservableObject {
     /// The grade with the filter, even while it's being bypassed.
     private var fullGrade: ContentGrade {
         ContentGrade(calibration: calibration,
+                     tone: BasicTone(exposure: effectAmount(.exposure),
+                                     highlights: effectAmount(.highlights),
+                                     shadows: effectAmount(.shadows),
+                                     whites: effectAmount(.whites),
+                                     blacks: effectAmount(.blacks),
+                                     vibrance: effectAmount(.vibrance),
+                                     dehaze: effectAmount(.dehaze),
+                                     texture: effectAmount(.texture)),
                      filter: colorFilter,
                      filterStrength: filterStrength / 100,
                      hsl: hsl,

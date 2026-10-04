@@ -184,6 +184,7 @@
 				AABP0000 /* Sources */,
 				AABP0001 /* Frameworks */,
 				AABP0002 /* Resources */,
+				AABP0004 /* Bundle LUTs */,
 				22CD5210300B696A0026FB00 /* Embed Foundation Extensions */,
 			);
 			buildRules = (
@@ -271,6 +272,25 @@
 			runOnlyForDeploymentPostprocessing = 0;
 			shellPath = /bin/sh;
 			shellScript = "# Writes the build number (git commit count) and short commit hash (with\n# a + when the working tree has uncommitted changes) into a header that\n# Info.plist preprocessing reads; shown next to the logo.\ncd \"$SRCROOT\"\nif git rev-parse --git-dir >/dev/null 2>&1; then\n  COUNT=$(git rev-list --count HEAD)\n  HASH=$(git rev-parse --short HEAD)\n  if [ -n \"$(git status --porcelain)\" ]; then HASH=\"$HASH+\"; fi\nelse\n  COUNT=0; HASH=unknown\nfi\nmkdir -p \"$DERIVED_FILE_DIR\"\nprintf '#define GIT_BUILD_NUMBER %s\\n#define GIT_COMMIT_HASH %s\\n' \"$COUNT\" \"$HASH\" > \"$DERIVED_FILE_DIR/BuildInfo.h\"\n";
+		};
+		AABP0004 /* Bundle LUTs */ = {
+			isa = PBXShellScriptBuildPhase;
+			alwaysOutOfDate = 1;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			inputFileListPaths = (
+			);
+			inputPaths = (
+			);
+			name = "Bundle LUTs";
+			outputFileListPaths = (
+			);
+			outputPaths = (
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+			shellPath = /bin/sh;
+			shellScript = "# Copies the .cube LUTs from the project's luts/ folder into the app\n# (LUTs/ in the bundle), where they show up as filters. luts/ is kept\n# out of git: LUT packs are usually licensed for use, not for\n# redistribution in a public repository.\nSRC=\"$SRCROOT/luts\"\nDST=\"$TARGET_BUILD_DIR/$UNLOCALIZED_RESOURCES_FOLDER_PATH/LUTs\"\nrm -rf \"$DST\"\n# Subfolders become filter groups (luts/Lutify/*.cube -> \"Lutify\").\nif [ -d \"$SRC\" ]; then\n  cd \"$SRC\"\n  find . -name '*.cube' | while read -r f; do\n    mkdir -p \"$DST/$(dirname \"$f\")\"\n    cp \"$f\" \"$DST/$f\"\n  done\nfi\n";
 		};
 /* End PBXShellScriptBuildPhase section */
 
