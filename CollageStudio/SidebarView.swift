@@ -139,7 +139,7 @@ struct SidebarView: View {
                     get: { Double(min(state.numCols, state.maxSelectableCols)) },
                     set: { v in state.numCols = Int(v); state.rebuildLayout(resetGrows: true) }
                 ), range: 1...Double(state.maxSelectableCols), step: 1, format: "%.0f", resetValue: 2,
-                   reservesSwatchSlot: true)
+                   reservesSwatchSlot: true, customLabel: AnyView(LanesSwitch()))
                     .disabled(state.maxSelectableCols <= 1)
                     .opacity(state.maxSelectableCols <= 1 ? 0.4 : 1)
             
@@ -496,18 +496,26 @@ struct LabeledSlider: View {
     var reservesSwatchSlot = false
     /// Forwarded to the slider's track (see ModernSlider.trackColors).
     var trackColors: [Color]? = nil
+    /// Shown in place of the label text (e.g. the Cols | Rows switch); the
+    /// label string still names the row for focus mode.
+    var customLabel: AnyView? = nil
 
     var body: some View {
         HStack(spacing: 8) {
-            Text(label)
-                .font(.subheadline)
-                .foregroundColor(.primary)
-                .lineLimit(1)
-                .minimumScaleFactor(0.85)
-                .frame(width: labelWidth, alignment: .leading)
-                // Double-tapping the label resets to default, like the value
-                .contentShape(Rectangle())
-                .onTapGesture(count: 2) { resetToDefault() }
+            if let customLabel {
+                customLabel
+                    .frame(width: labelWidth, alignment: .leading)
+            } else {
+                Text(label)
+                    .font(.subheadline)
+                    .foregroundColor(.primary)
+                    .lineLimit(1)
+                    .minimumScaleFactor(0.85)
+                    .frame(width: labelWidth, alignment: .leading)
+                    // Double-tapping the label resets to default, like the value
+                    .contentShape(Rectangle())
+                    .onTapGesture(count: 2) { resetToDefault() }
+            }
             if let swatchColor {
                 ColorSwatchButton(color: swatchColor, depth: 0.55)
                     // Pure minimal in focus mode: only label + slider + value.
@@ -550,6 +558,24 @@ struct LabeledSlider: View {
         #if canImport(UIKit)
         UIImpactFeedbackGenerator(style: .light).impactOccurred()
         #endif
+    }
+}
+
+/// Label of the lanes slider in Layout: a two-way switch between columns
+/// and rows; the slider next to it sets how many.
+struct LanesSwitch: View {
+    @EnvironmentObject var state: CollageState
+
+    var body: some View {
+        Picker("Lanes", selection: Binding(
+            get: { state.isRows },
+            set: { rows in withAnimation(.spring(response: 0.35)) { state.isRows = rows } })) {
+            Text("Cols").tag(false)
+            Text("Rows").tag(true)
+        }
+        .pickerStyle(.segmented)
+        .labelsHidden()
+        .controlSize(.small)
     }
 }
 

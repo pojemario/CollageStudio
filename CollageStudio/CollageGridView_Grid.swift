@@ -277,13 +277,30 @@ struct CollageGridView_Grid: View {
 
     // MARK: - Grid
 
+    /// Lanes are columns, or rows (the same layout math on the transposed
+    /// canvas: lane thickness becomes height, box length becomes width).
+    private func laneCanvas(_ canvasSize: CGSize) -> CGSize {
+        state.isRows ? CGSize(width: canvasSize.height, height: canvasSize.width) : canvasSize
+    }
+
     @ViewBuilder
     private func grid(canvasSize: CGSize, gap: CGFloat, cols: [[ColumnItem]]) -> some View {
-        let widths = columnWidths(canvasSize: canvasSize, gap: gap, cols: cols)
+        let lane = laneCanvas(canvasSize)
+        let widths = columnWidths(canvasSize: lane, gap: gap, cols: cols)
 
-        HStack(spacing: gap) {
-            ForEach(Array(cols.enumerated()), id: \.offset) { ci, col in
-                columnView(col: col, ci: ci, canvasSize: canvasSize, gap: gap, colWidth: widths[ci])
+        Group {
+            if state.isRows {
+                VStack(spacing: gap) {
+                    ForEach(Array(cols.enumerated()), id: \.offset) { ci, col in
+                        columnView(col: col, ci: ci, canvasSize: lane, gap: gap, colWidth: widths[ci])
+                    }
+                }
+            } else {
+                HStack(spacing: gap) {
+                    ForEach(Array(cols.enumerated()), id: \.offset) { ci, col in
+                        columnView(col: col, ci: ci, canvasSize: lane, gap: gap, colWidth: widths[ci])
+                    }
+                }
             }
         }
         // Center the collage block so the reserved edge gaps are
@@ -293,25 +310,39 @@ struct CollageGridView_Grid: View {
         .animation(state.isResizing ? nil : .interactiveSpring(), value: state.layout.boxGrows)
     }
 
+    /// One lane. `canvasSize` is in lane space (see laneCanvas): its width
+    /// runs across lanes, its height along them.
     @ViewBuilder
     private func columnView(col: [ColumnItem], ci: Int, canvasSize: CGSize, gap: CGFloat, colWidth: CGFloat) -> some View {
+        let length = max(canvasSize.height - gap * 2, 0)
         if col.isEmpty {
-            // Column without images: one transparent placeholder box spanning
-            // the full column height
+            // Lane without images: one transparent placeholder box spanning
+            // the whole lane
             EmptyBoxView(scale: scale, columnIndex: ci)
-                .frame(width: colWidth)
-                .frame(height: max(canvasSize.height - gap * 2, 0))
+                .frame(width: state.isRows ? length : colWidth,
+                       height: state.isRows ? colWidth : length)
         } else {
             let heights = boxHeights(col: col, ci: ci, canvasSize: canvasSize, gap: gap)
 
-            VStack(spacing: gap) {
-                ForEach(Array(col.enumerated()), id: \.element.id) { bi, item in
-                    ImageBoxView(imageId: item.imageId, scale: scale)
-                        .frame(maxWidth: .infinity)
-                        .frame(height: heights[bi])
+            if state.isRows {
+                HStack(spacing: gap) {
+                    ForEach(Array(col.enumerated()), id: \.element.id) { bi, item in
+                        ImageBoxView(imageId: item.imageId, scale: scale)
+                            .frame(maxHeight: .infinity)
+                            .frame(width: heights[bi])
+                    }
                 }
+                .frame(height: colWidth)
+            } else {
+                VStack(spacing: gap) {
+                    ForEach(Array(col.enumerated()), id: \.element.id) { bi, item in
+                        ImageBoxView(imageId: item.imageId, scale: scale)
+                            .frame(maxWidth: .infinity)
+                            .frame(height: heights[bi])
+                    }
+                }
+                .frame(width: colWidth)
             }
-            .frame(width: colWidth)
         }
     }
 
@@ -339,7 +370,12 @@ struct CollageGridView_Grid: View {
     // MARK: - Resize handles
 
     @ViewBuilder
-    private func resizeHandles(canvasSize: CGSize, gap: CGFloat, cols: [[ColumnItem]]) -> some View {
+    private func resizeHandles(canvasSize realSize: CGSize, gap: CGFloat, cols: [[ColumnItem]]) -> some View {
+        // Positions are worked out in lane space and transposed for rows.
+        let rows = state.isRows
+        let canvasSize = laneCanvas(realSize)
+        let at: (CGFloat, CGFloat) -> CGPoint = { x, y in rows ? CGPoint(x: y, y: x) : CGPoint(x: x, y: y) }
+        let size: (CGFloat, CGFloat) -> CGSize = { w, h in rows ? CGSize(width: h, height: w) : CGSize(width: w, height: h) }
         let widths = columnWidths(canvasSize: canvasSize, gap: gap, cols: cols)
         let availW = canvasSize.width - gap * CGFloat(cols.count + 1)
         // A finger-sized strip over the gap. Kept in check on purpose: 28pt
@@ -352,9 +388,10 @@ struct CollageGridView_Grid: View {
             // Vertical handles between columns
             ForEach(1..<max(cols.count, 1), id: \.self) { ci in
                 let x = gap + widths.prefix(ci).reduce(0, +) + gap * CGFloat(ci - 1) + gap / 2
-                ColumnResizeHandle(ciA: ci - 1, ciB: ci, availW: availW, gap: gap)
-                    .frame(width: hitThickness, height: max(canvasSize.height - gap * 2, 0))
-                    .position(x: x, y: canvasSize.height / 2)
+                let s = size(hitThickness, max(canvasSize.height - gap * 2, 0))
+                ColumnResizeHandle(ciA: ci - 1, ciB: ci, availW: availW, gap: gap, rows: rows)
+                    .frame(width: s.width, height: s.height)
+                    .position(at(x, canvasSize.height / 2))
             }
 
             // Horizontal handles between boxes within each column
@@ -365,9 +402,10 @@ struct CollageGridView_Grid: View {
 
                 ForEach(1..<max(col.count, 1), id: \.self) { bi in
                     let y = gap + heights.prefix(bi).reduce(0, +) + gap * CGFloat(bi - 1) + gap / 2
-                    BoxResizeHandle(ci: ci, biA: bi - 1, biB: bi, availH: availH, gap: gap)
-                        .frame(width: max(widths[ci], 0), height: hitThickness)
-                        .position(x: colCenterX, y: y)
+                    let s = size(max(widths[ci], 0), hitThickness)
+                    BoxResizeHandle(ci: ci, biA: bi - 1, biB: bi, availH: availH, gap: gap, rows: rows)
+                        .frame(width: s.width, height: s.height)
+                        .position(at(colCenterX, y))
                 }
             }
         }
@@ -417,6 +455,8 @@ private struct ColumnResizeHandle: View {
     let ciB: Int
     let availW: CGFloat
     let gap: CGFloat
+    /// Lanes are rows: the handle lies across and drags up / down.
+    var rows = false
 
     @GestureState private var isDragging = false
     @State private var isHovering = false
@@ -425,11 +465,11 @@ private struct ColumnResizeHandle: View {
         ZStack {
             Color.clear
             if isHovering || isDragging {
-                SeparatorHighlight(axis: .vertical, gap: gap, active: isDragging)
+                SeparatorHighlight(axis: rows ? .horizontal : .vertical, gap: gap, active: isDragging)
             }
         }
         .contentShape(Rectangle())
-        .cursor(.resizeLeftRight)
+        .cursor(rows ? .resizeUpDown : .resizeLeftRight)
         .onHover { isHovering = $0 }
         .animation(.easeOut(duration: 0.15), value: isDragging)
         .gesture(
@@ -440,8 +480,9 @@ private struct ColumnResizeHandle: View {
                 .updating($isDragging) { _, dragState, _ in dragState = true }
                 .onChanged { value in
                     if !state.isResizing { state.beginResize() }
+                    let delta = rows ? value.translation.height : value.translation.width
                     state.updateResizeCols(ciA: ciA, ciB: ciB,
-                                           totalDeltaFraction: value.translation.width / max(availW, 1))
+                                           totalDeltaFraction: delta / max(availW, 1))
                 }
                 .onEnded { _ in state.endResize() }
         )
@@ -457,6 +498,8 @@ private struct BoxResizeHandle: View {
     let biB: Int
     let availH: CGFloat
     let gap: CGFloat
+    /// Lanes are rows: the handle stands upright and drags left / right.
+    var rows = false
 
     @GestureState private var isDragging = false
     @State private var isHovering = false
@@ -465,11 +508,11 @@ private struct BoxResizeHandle: View {
         ZStack {
             Color.clear
             if isHovering || isDragging {
-                SeparatorHighlight(axis: .horizontal, gap: gap, active: isDragging)
+                SeparatorHighlight(axis: rows ? .vertical : .horizontal, gap: gap, active: isDragging)
             }
         }
         .contentShape(Rectangle())
-        .cursor(.resizeUpDown)
+        .cursor(rows ? .resizeLeftRight : .resizeUpDown)
         .onHover { isHovering = $0 }
         .animation(.easeOut(duration: 0.15), value: isDragging)
         .gesture(
@@ -478,8 +521,9 @@ private struct BoxResizeHandle: View {
                 .updating($isDragging) { _, dragState, _ in dragState = true }
                 .onChanged { value in
                     if !state.isResizing { state.beginResize() }
+                    let delta = rows ? value.translation.width : value.translation.height
                     state.updateResizeBoxes(colIndex: ci, biA: biA, biB: biB,
-                                            totalDeltaFraction: value.translation.height / max(availH, 1))
+                                            totalDeltaFraction: delta / max(availH, 1))
                 }
                 .onEnded { _ in state.endResize() }
         )

@@ -1112,7 +1112,7 @@ struct ProtrusionLayer: View {
     @ObservedObject var live: LiveGesture
 
     var body: some View {
-        let rects = state.layout.rects(canvasSize: canvasSize, gap: gap)
+        let rects = state.layout.rects(canvasSize: canvasSize, gap: gap, rows: state.isRows)
         ZStack(alignment: .topLeading) {
             ForEach(state.images.filter { $0.protrusion != nil && $0.canProtrude }) { img in
                 protrusion(img, box: rects[img.id])

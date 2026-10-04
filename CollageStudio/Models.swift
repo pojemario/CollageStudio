@@ -439,6 +439,8 @@ struct ImagePlacement {
 /// with the same plain look.
 struct PageStyle: Equatable {
     var numCols: Int = 2
+    /// The lanes run across as rows instead of down as columns.
+    var isRows: Bool = false
     var gap: Double = 10
     var cornerRadius: Double = 20
     var backgroundColor: Color = .white
@@ -452,7 +454,7 @@ struct PageStyle: Equatable {
 extension PageStyle {
     /// Plist form for UserDefaults (the last-used Layout settings).
     var defaultsValue: [String: Any] {
-        ["numCols": numCols, "gap": gap, "cornerRadius": cornerRadius,
+        ["numCols": numCols, "isRows": isRows, "gap": gap, "cornerRadius": cornerRadius,
          "backgroundColor": backgroundColor.srgbComponents,
          "borderColor": borderColor.srgbComponents,
          "borderThickness": borderThickness, "borderStyle": borderStyle.rawValue,
@@ -464,6 +466,7 @@ extension PageStyle {
     init(defaultsValue d: [String: Any]) {
         self.init()
         if let v = d["numCols"] as? Int { numCols = max(1, v) }
+        if let v = d["isRows"] as? Bool { isRows = v }
         if let v = d["gap"] as? Double { gap = v }
         if let v = d["cornerRadius"] as? Double { cornerRadius = v }
         if let v = d["backgroundColor"] as? [Double], let c = Color(srgbComponents: v) { backgroundColor = c }
@@ -1521,6 +1524,14 @@ struct CollageLayout {
     mutating func resetGrows() {
         colGrows = []
         boxGrows = []
+    }
+
+    /// Pixel rects for every image; `rows` lays the lanes out as rows (the
+    /// column layout of the transposed canvas, transposed back).
+    func rects(canvasSize: CGSize, gap: CGFloat, rows: Bool) -> [UUID: CGRect] {
+        guard rows else { return rects(canvasSize: canvasSize, gap: gap) }
+        let flipped = rects(canvasSize: CGSize(width: canvasSize.height, height: canvasSize.width), gap: gap)
+        return flipped.mapValues { CGRect(x: $0.minY, y: $0.minX, width: $0.height, height: $0.width) }
     }
 
     // Compute pixel rects for every image at a given canvas size

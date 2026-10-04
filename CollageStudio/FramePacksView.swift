@@ -55,7 +55,9 @@ struct PackChip: View {
                 .padding(.horizontal, 12)
                 .padding(.vertical, 7)
                 .foregroundColor(isActive ? .white : .primary)
-                .appButtonBackground(prominent: isActive)
+                // Unselected chips: just a soft fill, no outline.
+                .background(RoundedRectangle(cornerRadius: ButtonStyleGuide.cornerRadius, style: .continuous)
+                    .fill(isActive ? Color.accentColor : ColorManager.systemFill))
                 .overlay(alignment: .topTrailing) {
                     if marked {
                         Circle()

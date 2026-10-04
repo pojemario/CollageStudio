@@ -99,10 +99,13 @@ struct CanvasContainerView: View {
                         // Insert marker: a bar across the hovered splitter.
                         .overlay(alignment: .topLeading) {
                             if let target = state.dropInsertTarget {
+                                // Across a column's gap, or down a row's.
+                                let across = !state.isRows
                                 Capsule()
                                     .fill(Color.accentColor)
                                     .overlay(Capsule().strokeBorder(Color.white.opacity(0.9), lineWidth: 1.5))
-                                    .frame(width: max(target.frame.width - 8, 20), height: 8)
+                                    .frame(width: across ? max(target.frame.width - 8, 20) : 8,
+                                           height: across ? 8 : max(target.frame.height - 8, 20))
                                     .shadow(color: .black.opacity(0.3), radius: 4, y: 1)
                                     .position(x: target.frame.midX, y: target.frame.midY)
                                     .allowsHitTesting(false)

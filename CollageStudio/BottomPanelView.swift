@@ -276,7 +276,7 @@ struct BottomPanelView: View {
                     get: { Double(min(state.numCols, state.maxSelectableCols)) },
                     set: { v in state.numCols = Int(v); state.rebuildLayout(resetGrows: true) }
                 ), range: 1...Double(state.maxSelectableCols), step: 1, format: "%.0f", resetValue: 2,
-                   reservesSwatchSlot: true)
+                   reservesSwatchSlot: true, customLabel: AnyView(LanesSwitch()))
                     .disabled(state.maxSelectableCols <= 1)
                     .opacity(state.maxSelectableCols <= 1 ? 0.4 : 1)
 

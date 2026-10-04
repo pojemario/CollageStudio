@@ -94,6 +94,11 @@ class CollageState: ObservableObject {
         get { currentPage.style.numCols }
         set { currentPage.style.numCols = newValue }
     }
+    /// Lanes as rows (side-by-side boxes) instead of columns.
+    var isRows: Bool {
+        get { currentPage.style.isRows }
+        set { currentPage.style.isRows = newValue }
+    }
     /// Highest column count that makes sense for the current page — one column
     /// per image, capped at 6. Drives the Columns slider's range; the slider is
     /// disabled entirely when this is 1 (0 or 1 images on the page).
@@ -2111,10 +2116,14 @@ class CollageState: ObservableObject {
     /// Gaps right next to the dragged image are skipped (dropping there
     /// would change nothing).
     func insertTarget(at location: CGPoint, excluding sourceId: UUID) -> InsertTarget? {
+        // Worked out for columns; with rows, everything is transposed in and
+        // the zone transposed back out.
+        func t(_ r: CGRect) -> CGRect { isRows ? CGRect(x: r.minY, y: r.minX, width: r.height, height: r.width) : r }
+        let location = isRows ? CGPoint(x: location.y, y: location.x) : location
         let insertZoneHeight: CGFloat = 28
         let source = layout.position(of: sourceId)
         for (ci, column) in layout.columns.enumerated() {
-            let frames = column.compactMap { imageFrames[$0.imageId] }
+            let frames = column.compactMap { imageFrames[$0.imageId] }.map(t)
             guard frames.count == column.count, !frames.isEmpty else { continue }
             for index in 0...column.count {
                 if let source, source.col == ci, index == source.row || index == source.row + 1 { continue }
@@ -2129,7 +2138,7 @@ class CollageState: ObservableObject {
                 let height = max(bottom - top, insertZoneHeight)
                 let zone = CGRect(x: minX, y: midY - height / 2, width: maxX - minX, height: height)
                 if zone.contains(location) {
-                    return InsertTarget(column: ci, index: index, frame: zone)
+                    return InsertTarget(column: ci, index: index, frame: t(zone))
                 }
             }
         }

@@ -452,12 +452,24 @@ enum ContentGrader {
 /// with the per-color HSL controls on a second page.
 struct EffectsPanel: View {
     @EnvironmentObject var state: CollageState
+    /// The Edit tab's pages (in this order): Light, Color, HSL, camera
+    /// calibration, Detail, Effects, Filter.
     enum Page: String, CaseIterable {
-        case edit = "Basic", hsl = "HSL", cc = "CC", effects = "Effects", filter = "Filter"
+        case light = "Light", color = "Color", hsl = "HSL", cc = "CC"
+        case detail = "Detail", effects = "Effects", filter = "Filter"
+
+        /// The Basic corrections on this page, if it's one of those.
+        var basicEffects: [CollageEffect]? {
+            switch self {
+            case .light: return CollageEffect.light
+            case .color: return CollageEffect.color
+            case .detail: return CollageEffect.detail
+            default: return nil
+            }
+        }
     }
-    @State private var page: Page = .edit
+    @State private var page: Page = .light
     @State private var band: HSLBand = .master
-    @State private var basicSection: BasicSection = .light
 
     var body: some View {
         VStack(spacing: 10) {
@@ -472,7 +484,7 @@ struct EffectsPanel: View {
             .panelChrome(state)
 
             switch page {
-            case .edit: editControls
+            case .light, .color, .detail: basicControls(page.basicEffects ?? [])
             case .filter: FilterControls()
             case .effects: effectControls
             case .hsl: hslControls
@@ -484,7 +496,7 @@ struct EffectsPanel: View {
     /// Everything on a page back to its default (double-tap its chip).
     private func resetPage(_ page: Page) {
         switch page {
-        case .edit: state.resetEffects(in: CollageEffect.adjustments)
+        case .light, .color, .detail: state.resetEffects(in: page.basicEffects ?? [])
         case .hsl: state.resetHSL()
         case .cc: state.calibration = CameraCalibration()
         case .effects: state.resetEffects(in: CollageEffect.looks)
@@ -497,7 +509,7 @@ struct EffectsPanel: View {
     /// Whether anything on a page differs from its default.
     private func isChanged(_ page: Page) -> Bool {
         switch page {
-        case .edit: return state.hasEffects(in: CollageEffect.adjustments)
+        case .light, .color, .detail: return state.hasEffects(in: page.basicEffects ?? [])
         case .hsl: return !state.hsl.isIdentity
         case .cc: return !state.calibration.isIdentity
         case .effects: return state.hasEffects(in: CollageEffect.looks)
@@ -516,36 +528,12 @@ struct EffectsPanel: View {
         }
     }
 
-    /// Basic corrections in three sections, like Lightroom: Light (exposure
-    /// and tone), Color (white balance, vibrance), Detail (texture, clarity,
-    /// dehaze, sharpness). A dot marks a section with changes.
-    private var editControls: some View {
-        VStack(spacing: 10) {
-            HStack(spacing: 8) {
-                ForEach(BasicSection.allCases, id: \.self) { section in
-                    PackChip(title: section.rawValue, isActive: basicSection == section,
-                             marked: state.hasEffects(in: section.effects)) { basicSection = section }
-                        .doubleTapToReset { state.resetEffects(in: section.effects) }
-                }
-                Spacer()
+    /// One Basic page (Light, Color or Detail).
+    private func basicControls(_ effects: [CollageEffect]) -> some View {
+        sliders(effects)
+            .swipeNumbersToReset(canReset: state.hasEffects(in: effects)) {
+                state.resetEffects(in: effects)
             }
-            .panelChrome(state)
-            sliders(basicSection.effects)
-                .swipeNumbersToReset(canReset: state.hasEffects(in: basicSection.effects)) {
-                    state.resetEffects(in: basicSection.effects)
-                }
-        }
-    }
-
-    enum BasicSection: String, CaseIterable {
-        case light = "Light", color = "Color", detail = "Detail"
-        var effects: [CollageEffect] {
-            switch self {
-            case .light: return CollageEffect.light
-            case .color: return CollageEffect.color
-            case .detail: return CollageEffect.detail
-            }
-        }
     }
 
     /// Looks: fade, halation, glow, vignette, grain.
