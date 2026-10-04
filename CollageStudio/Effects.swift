@@ -17,7 +17,8 @@ struct EffectToning: ViewModifier {
     let enabled: Bool
 
     func body(content: Content) -> some View {
-        let fade = enabled ? state.effectAmount(.fade) : 0
+        // Fade at half strength for finer steps (100 = the old 50).
+        let fade = enabled ? state.effectAmount(.fade) * 0.5 : 0
         let contrast = enabled ? state.effectAmount(.contrast) : 0
         content
             .saturation(1 - 0.4 * fade)
@@ -41,7 +42,7 @@ struct EffectLayers: View {
     var body: some View {
         let temperature = state.effectAmount(.temperature)
         let tint = state.effectAmount(.tint)
-        let fade = state.effectAmount(.fade)
+        let fade = state.effectAmount(.fade) * 0.5     // see EffectToning
         let glow = state.effectAmount(.glow)
         let halation = state.effectAmount(.halation)
         let vignette = state.effectAmount(.vignette)
@@ -263,13 +264,8 @@ enum HSLGrader {
                        _ hsl: HSLAdjustments) -> (r: Double, g: Double, b: Double) {
         let maxC = max(r, g, b), minC = min(r, g, b)
         let chroma = maxC - minC
-        let master = hsl[.master]
-        guard chroma > 0.0001 else {
-            // Grays have no hue or saturation: only Master's luminance
-            // reaches them.
-            let l = shiftLuminance((maxC + minC) / 2, by: master.luminance / 100)
-            return (l, l, l)
-        }
+        // Grays have no hue: nothing to shift.
+        guard chroma > 0.0001 else { return (r, g, b) }
 
         var l = (maxC + minC) / 2
         var s = chroma / (1 - abs(2 * l - 1))
@@ -302,11 +298,6 @@ enum HSLGrader {
         h = (h + dh * maxHueShift + 360).truncatingRemainder(dividingBy: 360)
         s = min(max(s * (1 + ds), 0), 1)
         l = shiftLuminance(l, by: dl)
-
-        // Master, over the whole image.
-        h = (h + master.hue / 100 * maxHueShift + 360).truncatingRemainder(dividingBy: 360)
-        s = min(max(s * (1 + master.saturation / 100), 0), 1)
-        l = shiftLuminance(l, by: master.luminance / 100)
 
         // Back to RGB.
         let c2 = (1 - abs(2 * l - 1)) * s
@@ -469,16 +460,16 @@ struct EffectsPanel: View {
         }
     }
     @State private var page: Page = .light
-    @State private var band: HSLBand = .master
+    @State private var band: HSLBand = .red
 
     var body: some View {
         VStack(spacing: 10) {
-            ScrollView(.horizontal, showsIndicators: false) {
-                HStack(spacing: 8) {
-                    ForEach(Page.allCases, id: \.self) { p in
-                        PackChip(title: p.rawValue, isActive: page == p, marked: isChanged(p)) { page = p }
-                            .doubleTapToReset { resetPage(p) }
-                    }
+            // All pages fit on one line: tight spacing, equal widths.
+            HStack(spacing: 4) {
+                ForEach(Page.allCases, id: \.self) { p in
+                    PackChip(title: p.rawValue, isActive: page == p, marked: isChanged(p),
+                             horizontalPadding: 4, fillsWidth: true) { page = p }
+                        .doubleTapToReset { resetPage(p) }
                 }
             }
             .panelChrome(state)
@@ -553,18 +544,7 @@ struct EffectsPanel: View {
                 ForEach(HSLBand.allCases) { b in
                     Button { band = b } label: {
                         VStack(spacing: 3) {
-                            Group {
-                                if b == .master {
-                                    // A full color wheel: it touches every color.
-                                    Circle().fill(AngularGradient(
-                                        colors: stride(from: 0.0, through: 1.0, by: 1.0 / 12).map {
-                                            Color(hue: $0, saturation: 0.85, brightness: 0.95)
-                                        },
-                                        center: .center))
-                                } else {
-                                    Circle().fill(b.swatch)
-                                }
-                            }
+                            Circle().fill(b.swatch)
                                 .frame(width: 24, height: 24)
                                 .padding(3)
                                 .overlay(Circle().stroke(band == b ? Color.primary : .clear, lineWidth: 2))

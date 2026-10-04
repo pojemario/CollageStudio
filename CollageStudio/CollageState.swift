@@ -275,7 +275,6 @@ class CollageState: ObservableObject {
             "Analog916_Amber400_m61436143_r9x16",
             "Analog916_Sloppy_m58625862_r9x16",
             "Analog916_Pan100_m57415741_r9x16",
-            "Analog916_Leak_m47434743_r9x16",
             "Analog916_Dust_m39393939_r9x16",
             "Analog916_Portra400_m61426142_r9x16",
             "Analog916_Portra160_m40614061_r9x16",
@@ -525,7 +524,7 @@ class CollageState: ObservableObject {
             switch effect {
             case .temperature: effects[effect] = Double(Int.random(in: -25...25))
             case .tint:       effects[effect] = Double(Int.random(in: -15...15))
-            case .vibrance, .exposure, .highlights, .shadows, .whites, .blacks, .texture, .dehaze:
+            case .vibrance, .saturation, .exposure, .highlights, .shadows, .whites, .blacks, .texture, .dehaze:
                 break   // Basic corrections: not shuffled
             case .clarity:    effects[effect] = Double(Int.random(in: 0...30))
             case .sharpness:  effects[effect] = Double(Int.random(in: 0...30))
@@ -587,6 +586,7 @@ class CollageState: ObservableObject {
                                      whites: effectAmount(.whites),
                                      blacks: effectAmount(.blacks),
                                      vibrance: effectAmount(.vibrance),
+                                     saturation: effectAmount(.saturation),
                                      dehaze: effectAmount(.dehaze),
                                      texture: effectAmount(.texture)),
                      filter: colorFilter,

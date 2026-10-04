@@ -45,6 +45,9 @@ struct PackChip: View {
     /// Shows a small dot in the corner: something under this chip has been
     /// changed from its default (like the HSL color circles).
     var marked = false
+    var horizontalPadding: CGFloat = 12
+    /// Share the row's width with its siblings (a row that must fit).
+    var fillsWidth = false
     let action: () -> Void
 
     var body: some View {
@@ -52,7 +55,9 @@ struct PackChip: View {
             Text(title)
                 .font(.system(size: 12, weight: .medium))
                 .lineLimit(1)
-                .padding(.horizontal, 12)
+                .minimumScaleFactor(0.8)
+                .padding(.horizontal, horizontalPadding)
+                .frame(maxWidth: fillsWidth ? .infinity : nil)
                 .padding(.vertical, 7)
                 .foregroundColor(isActive ? .white : .primary)
                 // Unselected chips: just a soft fill, no outline.

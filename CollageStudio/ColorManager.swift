@@ -4,7 +4,7 @@ import SwiftUI
 /// radius, either prominent (accent fill, white content) or secondary
 /// (system fill, primary content, hairline).
 public enum ButtonStyleGuide {
-    public static let cornerRadius: CGFloat = 10
+    public static let cornerRadius: CGFloat = 6
 }
 
 extension View {

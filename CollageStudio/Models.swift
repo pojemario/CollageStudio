@@ -676,6 +676,7 @@ enum CollageEffect: String, CaseIterable, Identifiable {
     case temperature = "Temperature" // + warmer, − cooler
     case tint = "Tint"              // + magenta, − green
     case vibrance = "Vibrance"      // saturation, gentlest on rich colors and skin
+    case saturation = "Saturation"  // all colors alike; −100 = black & white
     case exposure = "Exposure"      // ±2 stops, in linear light
     case contrast = "Contrast"
     case highlights = "Highlights"
@@ -697,7 +698,7 @@ enum CollageEffect: String, CaseIterable, Identifiable {
 
     /// Basic corrections, on the Edit page, in its three sections.
     static let light: [CollageEffect] = [.exposure, .contrast, .highlights, .shadows, .whites, .blacks]
-    static let color: [CollageEffect] = [.temperature, .tint, .vibrance]
+    static let color: [CollageEffect] = [.temperature, .tint, .vibrance, .saturation]
     static let detail: [CollageEffect] = [.texture, .clarity, .dehaze, .sharpness]
     static let adjustments: [CollageEffect] = light + color + detail
     /// Looks, on the Effects page (and what Shuffle can touch).
@@ -760,12 +761,13 @@ struct BasicTone: Hashable {
     var whites: Double = 0
     var blacks: Double = 0
     var vibrance: Double = 0
+    var saturation: Double = 0
     var dehaze: Double = 0
     var texture: Double = 0
 
     var isColorIdentity: Bool {
         exposure == 0 && highlights == 0 && shadows == 0 && whites == 0 && blacks == 0
-            && vibrance == 0 && dehaze == 0
+            && vibrance == 0 && saturation == 0 && dehaze == 0
     }
 
     /// One sRGB color (0...1) through exposure, the tonal ranges, dehaze and
@@ -817,6 +819,11 @@ struct BasicTone: Hashable {
                 let l = 0.299 * c[0] + 0.587 * c[1] + 0.114 * c[2]
                 c = c.map { clamp(l + ($0 - l) * max(k, 0)) }
             }
+        }
+        // Saturation: every color alike (−1 = black & white).
+        if saturation != 0 {
+            let l = 0.299 * c[0] + 0.587 * c[1] + 0.114 * c[2]
+            c = c.map { clamp(l + ($0 - l) * (1 + saturation)) }
         }
         return (c[0], c[1], c[2])
     }
@@ -1275,24 +1282,20 @@ enum ColorFilter: Hashable, Identifiable {
 
 /// The eight color ranges the HSL panel adjusts, by center hue.
 enum HSLBand: String, CaseIterable, Identifiable {
-    /// Not a color range: shifts the whole image (every hue, all of the
-    /// saturation, the full tonal range including grays), on top of the
-    /// per-color shifts.
-    case master = "Master"
     case red = "Red", orange = "Orange", yellow = "Yellow", green = "Green"
     case aqua = "Aqua", blue = "Blue", purple = "Purple", magenta = "Magenta"
 
     var id: String { rawValue }
     var title: String { rawValue }
 
-    /// The eight color ranges, by hue (everything but Master).
-    static let colors: [HSLBand] = allCases.filter { $0 != .master }
+    /// The eight color ranges, by hue.
+    static let colors: [HSLBand] = allCases
 
     /// Center hue in degrees. Spacing is uneven on purpose (like Lightroom):
     /// the warm tones that matter most for skin get the narrow bands.
     var hue: Double {
         switch self {
-        case .master, .red: return 0
+        case .red: return 0
         case .orange: return 30
         case .yellow: return 60
         case .green: return 120
@@ -1306,10 +1309,9 @@ enum HSLBand: String, CaseIterable, Identifiable {
     var swatch: Color { Color(hue: hue / 360, saturation: 0.85, brightness: 0.95) }
 
     /// What the Hue slider turns this color into, from −100 to +100 (the
-    /// grader shifts by up to ±30°). None for Master, which turns every color.
+    /// grader shifts by up to ±30°).
     var hueSweep: [Color]? {
-        guard self != .master else { return nil }
-        return stride(from: -30.0, through: 30.0, by: 7.5).map { d in
+        stride(from: -30.0, through: 30.0, by: 7.5).map { d in
             let h = (hue + d + 360).truncatingRemainder(dividingBy: 360)
             return Color(hue: h / 360, saturation: 0.85, brightness: 0.95)
         }
