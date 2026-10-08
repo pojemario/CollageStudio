@@ -643,9 +643,9 @@ struct OverlayLayer: Identifiable, Equatable {
 
     /// This layer with a gesture applied, forced back into sane territory:
     /// non-finite values are discarded, the drawn size stays within
-    /// `longEdgeRange`, the rotation is normalized, and the center can't
-    /// leave the canvas — so an overlay can never vanish from the screen.
-    /// `translation` is in canvas pixels.
+    /// `longEdgeRange`, the rotation is normalized, and — whatever its size
+    /// and angle — part of the overlay always stays on the canvas, so it can
+    /// never be lost off-screen. `translation` is in canvas pixels.
     func applying(scaleBy: CGFloat = 1, rotateBy: CGFloat = 0, translation: CGSize = .zero,
                   canvasSize: CGSize) -> OverlayLayer {
         func finite(_ v: CGFloat, or fallback: CGFloat) -> CGFloat { v.isFinite ? v : fallback }
@@ -661,8 +661,17 @@ struct OverlayLayer: Identifiable, Equatable {
 
         let x = finite(offset.width, or: 0) + finite(translation.width, or: 0)
         let y = finite(offset.height, or: 0) + finite(translation.height, or: 0)
-        layer.offset = CGSize(width: min(max(x, -canvasSize.width / 2), canvasSize.width / 2),
-                              height: min(max(y, -canvasSize.height / 2), canvasSize.height / 2))
+        // The overlay's footprint: the canvas-sized texture at this scale,
+        // turned by its rotation (axis-aligned bounding box).
+        let w = canvasSize.width * layer.scale, h = canvasSize.height * layer.scale
+        let c = abs(cos(layer.rotation)), s = abs(sin(layer.rotation))
+        let boxW = w * c + h * s, boxH = w * s + h * c
+        // Keep at least this much of it on the canvas along each axis (all of
+        // it when it's smaller than that).
+        let keep = longEdge * 0.1
+        let maxX = max(canvasSize.width / 2 + boxW / 2 - min(keep, boxW), 0)
+        let maxY = max(canvasSize.height / 2 + boxH / 2 - min(keep, boxH), 0)
+        layer.offset = CGSize(width: min(max(x, -maxX), maxX), height: min(max(y, -maxY), maxY))
         return layer
     }
 }

@@ -1,10 +1,10 @@
 import SwiftUI
 
 /// Overlay tab / sidebar section: pick a pack (dust & scratches, light
-/// leaks) and tap a texture to preview it live on the collage. The preview
-/// is adjustable like a layer — opacity and placement by finger on the
-/// canvas — but only joins the layer stack with
-/// "Add layer". Existing layers are edited by selecting them in the stack.
+/// leaks) and tap a texture to add it as a layer — straight away, so work on
+/// it can't be lost by leaving the tab. The new layer is selected for
+/// editing (opacity, blur, placement by finger on the canvas); other layers
+/// are edited by selecting them in the stack.
 ///
 /// Choosing this panel puts the app in overlay mode: the collage is frozen
 /// and canvas gestures move / zoom / rotate the edited overlay (double tap
@@ -65,14 +65,14 @@ struct OverlayPanel: View {
         }
     }
 
-    // MARK: - Textures (tap to preview; the previewed one carries a "+"
-    // badge that adds it as a layer)
+    // MARK: - Textures (tap to add as a layer; the edited layer's texture is
+    // highlighted)
 
     private func textureRow(pack: OverlayPack) -> some View {
         ScrollView(.horizontal, showsIndicators: false) {
             HStack(alignment: .top, spacing: 10) {
                 ForEach(pack.assets, id: \.self) { asset in
-                    let isPreviewed = state.overlayPreview?.asset == asset
+                    let isPreviewed = state.editedOverlay?.asset == asset
                     VStack(spacing: 5) {
                         OverlayThumbnail(asset: asset, height: 72)
                             .padding(2)
@@ -82,36 +82,17 @@ struct OverlayPanel: View {
                             )
                             .shadow(color: isPreviewed ? Color.accentColor.opacity(0.5) : .clear, radius: 6)
                             .contentShape(Rectangle())
+                            // A tap adds it as a layer at once (nothing pending
+                            // that leaving the tab could lose).
                             .onTapGesture {
-                                state.previewOverlay(asset: asset, kind: pack.kind)
-                            }
-                            // Previewed: a "+" badge at the bottom edge adds
-                            // the layer.
-                            .overlay(alignment: .bottom) {
-                                if isPreviewed {
-                                    Button {
-                                        #if canImport(UIKit)
-                                        UIImpactFeedbackGenerator(style: .light).impactOccurred()
-                                        #endif
-                                        state.commitOverlayPreview()
-                                    } label: {
-                                        Image(systemName: "plus")
-                                            .font(.system(size: 13, weight: .bold))
-                                            .foregroundColor(.white)
-                                            .frame(width: 26, height: 26)
-                                            .background(Circle().fill(Color.accentColor))
-                                            .overlay(Circle().strokeBorder(Color.white, lineWidth: 2))
-                                            .shadow(color: .black.opacity(0.3), radius: 3, y: 1)
-                                    }
-                                    .buttonStyle(.plain)
-                                    .offset(y: 10)
-                                    .transition(.scale.combined(with: .opacity))
-                                }
+                                #if canImport(UIKit)
+                                UIImpactFeedbackGenerator(style: .light).impactOccurred()
+                                #endif
+                                state.addOverlayLayer(asset: asset, kind: pack.kind)
                             }
                         Text(OverlayPack.label(forAsset: asset))
                             .font(.system(size: 11, weight: isPreviewed ? .bold : .regular))
                             .foregroundColor(isPreviewed ? .accentColor : .primary.opacity(0.75))
-                            .padding(.top, isPreviewed ? 8 : 0)
                     }
                 }
             }
@@ -130,7 +111,7 @@ struct OverlayPanel: View {
                 .foregroundColor(.primary)
                 .frame(width: 76, alignment: .leading)
             if state.overlayLayers.isEmpty {
-                Text(state.overlayPreview == nil ? "Tap an overlay to preview it" : "No layers yet")
+                Text("Tap an overlay to add it")
                     .font(.caption)
                     .foregroundColor(.secondary)
                     .frame(maxWidth: .infinity, minHeight: 40, alignment: .leading)

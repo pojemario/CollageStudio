@@ -12,7 +12,10 @@ struct CollageGridView_Grid: View {
     @GestureState private var overlayPinching = false
     /// A two-finger pinch spawns a stray one-finger drag — its translation
     /// must not be committed as a move.
-    @State private var overlayDragTainted = false
+    /// When the last pinch ended: a one-finger drag ending within a moment
+    /// of it is the pinch's stray drift, not a move. (No sticky flag — any
+    /// later drag always moves the overlay.)
+    @State private var lastOverlayPinchEnd = Date.distantPast
     @GestureState private var overlayTouching = false
 
     var body: some View {
@@ -174,7 +177,7 @@ struct CollageGridView_Grid: View {
                 // same clamps a commit applies. The stray one-finger drag of a
                 // pinch never moves it.
                 let live = layer.id == state.editedOverlayId && state.overlayModeActive
-                let drag = live && !overlayPinching && !overlayDragTainted ? overlayDrag : .zero
+                let drag = live && !overlayPinching ? overlayDrag : .zero
                 let shown = live
                     ? layer.applying(scaleBy: overlayPinchScale,
                                      rotateBy: CGFloat(overlayPinchAngle.radians),
@@ -222,9 +225,8 @@ struct CollageGridView_Grid: View {
                     }
                     .onChanged { _ in state.beginOverlayGesture() }
                     .onEnded { value in
-                        defer { overlayDragTainted = false }
                         state.endOverlayGesture()
-                        guard !overlayDragTainted, !overlayPinching else { return }
+                        guard !overlayPinching, Date().timeIntervalSince(lastOverlayPinchEnd) > 0.25 else { return }
                         state.transformEditedOverlay(
                             translation: CGSize(width: value.translation.width / scale,
                                                 height: value.translation.height / scale))
@@ -233,7 +235,6 @@ struct CollageGridView_Grid: View {
             .simultaneousGesture(
                 SimultaneousGesture(MagnificationGesture(), RotationGesture())
                     .onChanged { _ in
-                        overlayDragTainted = true
                         state.beginOverlayGesture()
                     }
                     .updating($overlayPinching) { _, pinching, _ in pinching = true }
@@ -244,6 +245,7 @@ struct CollageGridView_Grid: View {
                         if let a = value.second { angle = a }
                     }
                     .onEnded { value in
+                        lastOverlayPinchEnd = Date()
                         state.endOverlayGesture()
                         state.transformEditedOverlay(scaleBy: value.first ?? 1,
                                                      rotateBy: CGFloat((value.second ?? .zero).radians))
@@ -264,12 +266,7 @@ struct CollageGridView_Grid: View {
                     .updating($overlayTouching) { _, touching, _ in
                         guard !touching else { return }
                         touching = true
-                        DispatchQueue.main.async {
-                            state.beginOverlayGesture()
-                            // A fresh touch starts clean — a pinch that ended
-                            // without its stray drag must not block this one.
-                            if !overlayPinching { overlayDragTainted = false }
-                        }
+                        DispatchQueue.main.async { state.beginOverlayGesture() }
                     }
                     .onEnded { _ in state.endOverlayGesture() }
             )

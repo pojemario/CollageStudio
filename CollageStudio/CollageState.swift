@@ -373,31 +373,13 @@ class CollageState: ObservableObject {
         return layers
     }
 
-    /// Shows a texture live on the canvas. Swapping textures keeps the
-    /// opacity and placement already dialed in, so packs can be browsed
-    /// at the same settings; tapping the previewed texture again dismisses it.
-    func previewOverlay(asset: String, kind: OverlayKind) {
+    /// Tapping a texture adds it as a layer right away (and selects it for
+    /// editing) — nothing is left pending, so nothing can be lost by
+    /// leaving the tab.
+    func addOverlayLayer(asset: String, kind: OverlayKind) {
         guard canAddOverlay else { return }
-        if overlayPreview?.asset == asset {
-            overlayPreview = nil
-            return
-        }
-        var layer = OverlayLayer(asset: asset, kind: kind)
-        if let current = overlayPreview {
-            layer.opacity = current.opacity
-            layer.blur = current.blur
-            layer.aboveFrame = current.aboveFrame
-            layer.scale = current.scale
-            layer.rotation = current.rotation
-            layer.offset = current.offset
-        }
-        overlayPreview = layer
-    }
-
-    /// Stacks the previewed texture on top as a real layer and selects it.
-    func commitOverlayPreview() {
-        guard let layer = overlayPreview, canAddOverlay else { return }
         overlayPreview = nil
+        let layer = OverlayLayer(asset: asset, kind: kind)
         overlayLayers.append(layer)
         selectedOverlayId = layer.id
     }
