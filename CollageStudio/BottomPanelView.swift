@@ -414,7 +414,8 @@ struct BottomPanelView: View {
                     onAllOnOne: { showAllOnOneConfirm = true },
                     onBurstAll: { showBurstAllConfirm = true })
 
-                ToolbarTile(sf: "trash", title: "Clear", prominent: false) { state.clear() }
+                // Saved collages and "New Collage" (the open one is kept).
+                ToolbarTile(sf: "square.stack", title: "Collages", prominent: false) { state.showProjects = true }
             }
             .alert("Burst!", isPresented: $showBurstAllConfirm) {
                 Button("Proceed") { state.burstBalanced() }

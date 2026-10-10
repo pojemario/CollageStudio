@@ -201,6 +201,9 @@ struct ContentView: View {
         }
         // Topmost: the long-press image menu floats above every panel.
         .overlay { BoxActionMenuLayer() }
+        .sheet(isPresented: $state.showProjects) {
+            ProjectsView(store: state.projectStore).environmentObject(state)
+        }
         // "Undo" / "Redo" after a shake.
         .overlay(alignment: .top) {
             HistoryToast().padding(.top, 70)

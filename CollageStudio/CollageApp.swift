@@ -31,6 +31,9 @@ struct CollageApp: App {
                     // (e.g. from Photos) whenever the app becomes active.
                     if phase == .active {
                         importSharedImages()
+                    } else if phase == .background {
+                        // Leaving the app: save right away, not after the delay.
+                        state.saveProjectNow()
                     }
                 }
                 .onOpenURL { _ in
@@ -80,6 +83,12 @@ struct CollageApp: App {
     }
 
     private func importSharedImages() {
+        // The last collage is still loading: come back once it's in place,
+        // so shared photos join it instead of being overwritten by it.
+        guard !state.isRestoringProject else {
+            DispatchQueue.main.asyncAfter(deadline: .now() + 0.4) { importSharedImages() }
+            return
+        }
         let shared = SharedInbox.drainPendingImages()
         guard !shared.isEmpty else { return }
 

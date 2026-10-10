@@ -302,6 +302,10 @@ struct CollageImage: Identifiable, Equatable {
     /// Rotation of the image within its box, in radians.
     var rotation: CGFloat = 0
     var lastBoxSize: CGSize = .zero
+    /// Where the photo's subject is (a face, else what draws the eye), in
+    /// normalized image coordinates (0...1, y down); nil until found or
+    /// when there's nothing in particular. The box crops around it.
+    var focus: CGPoint? = nil
 
     static func == (lhs: CollageImage, rhs: CollageImage) -> Bool {
         // Compare the image reference too, so views refresh when an image
@@ -309,8 +313,8 @@ struct CollageImage: Identifiable, Equatable {
         lhs.id == rhs.id && lhs.image === rhs.image
     }
 
-    init(image: PlatformImage) {
-        self.id = UUID()
+    init(id: UUID = UUID(), image: PlatformImage) {
+        self.id = id
         self.image = image
         self.proxy = image.downsampled(longEdge: Self.proxyLongEdge)
         self.thumb = image.downsampled(longEdge: Self.thumbLongEdge)
@@ -328,15 +332,15 @@ struct CollageImage: Identifiable, Equatable {
     }
 
     /// A "Text image": a rendered text box that behaves like any other image.
-    static func textImage(style: TextBoxStyle) -> CollageImage {
-        var img = CollageImage(image: renderTextImage(style: style))
+    static func textImage(style: TextBoxStyle, id: UUID = UUID()) -> CollageImage {
+        var img = CollageImage(id: id, image: renderTextImage(style: style))
         img.textStyle = style
         return img
     }
 
     /// An "empty image": a fully transparent square placeholder that users
     /// place to leave deliberate gaps in a collage.
-    static func emptyPlaceholder(side: CGFloat = 300) -> CollageImage {
+    static func emptyPlaceholder(side: CGFloat = 300, id: UUID = UUID()) -> CollageImage {
         let size = CGSize(width: side, height: side)
         #if canImport(UIKit)
         let format = UIGraphicsImageRendererFormat()
@@ -347,7 +351,7 @@ struct CollageImage: Identifiable, Equatable {
         #else
         let img = NSImage(size: size)
         #endif
-        var collage = CollageImage(image: img)
+        var collage = CollageImage(id: id, image: img)
         collage.isPlaceholder = true
         return collage
     }

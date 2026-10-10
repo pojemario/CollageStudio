@@ -26,6 +26,7 @@
 		AA000009 /* BottomPanelView.swift in Sources */ = {isa = PBXBuildFile; fileRef = AA100009 /* BottomPanelView.swift */; };
 		AA000010 /* Assets.xcassets in Resources */ = {isa = PBXBuildFile; fileRef = AA100010 /* Assets.xcassets */; };
 		CD138EBBCAF5CCD287E4472D /* History.swift in Sources */ = {isa = PBXBuildFile; fileRef = CC138EBBCAF5CCD287E4472D /* History.swift */; };
+		CDF39BEA1DCABCA4CC123172 /* Projects.swift in Sources */ = {isa = PBXBuildFile; fileRef = CCF39BEA1DCABCA4CC123172 /* Projects.swift */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXContainerItemProxy section */
@@ -75,6 +76,7 @@
 		AA100011 /* Info.plist */ = {isa = PBXFileReference; lastKnownFileType = text.plist.xml; path = Info.plist; sourceTree = "<group>"; };
 		AAPROD001 /* CollageStudio.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = CollageStudio.app; sourceTree = BUILT_PRODUCTS_DIR; };
 		CC138EBBCAF5CCD287E4472D /* History.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = History.swift; sourceTree = "<group>"; };
+		CCF39BEA1DCABCA4CC123172 /* Projects.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Projects.swift; sourceTree = "<group>"; };
 /* End PBXFileReference section */
 
 /* Begin PBXFileSystemSynchronizedBuildFileExceptionSet section */
@@ -140,6 +142,7 @@
 				AA0000F7 /* Effects.swift */,
 				22BA1EDC30028033000137C9 /* CollageGridView_Grid.swift */,
 				22CD51FB300B66E20026FB00 /* SharedInbox.swift */,
+				CCF39BEA1DCABCA4CC123172 /* Projects.swift */,
 				CC138EBBCAF5CCD287E4472D /* History.swift */,
 			);
 			path = CollageStudio;
@@ -324,6 +327,7 @@
 				AA000007 /* ImageBoxView.swift in Sources */,
 				AA000008 /* SidebarView.swift in Sources */,
 				AA000009 /* BottomPanelView.swift in Sources */,
+				CDF39BEA1DCABCA4CC123172 /* Projects.swift in Sources */,
 				CD138EBBCAF5CCD287E4472D /* History.swift in Sources */,
 				22CD51FC300B66E20026FB00 /* SharedInbox.swift in Sources */,
 			);

@@ -155,6 +155,13 @@ struct CanvasContainerView: View {
                 }
             }
             .animation(.easeInOut(duration: 0.2), value: state.isLoading)
+            // Start screen: saved collages are one tap away.
+            .overlay(alignment: .bottom) {
+                if !state.hasAnyImages && !state.isRestoringProject {
+                    RecentCollagesButton(store: state.projectStore)
+                        .padding(.bottom, 24)
+                }
+            }
             // Before / after peek (holding a filter tile). Only the badge
             // fades — the pictures themselves switch instantly (animating
             // the whole canvas made the swap flash).

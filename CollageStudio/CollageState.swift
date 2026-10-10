@@ -666,7 +666,7 @@ class CollageState: ObservableObject {
     private(set) var isRenderingEffectSource = false
     /// True while any offscreen render runs (effect snapshot or export):
     /// boxes drawn there must not report their geometry as the on-screen one.
-    var isRenderingOffscreen: Bool { isRenderingEffectSource || renderFullResolution }
+    var isRenderingOffscreen: Bool { isRenderingEffectSource || renderFullResolution || isRenderingThumbnail }
     private var effectMapRefresh: AnyCancellable?
 
     /// Re-derives the maps shortly after anything settles; cheap no-op while
@@ -867,7 +867,22 @@ class CollageState: ObservableObject {
     var historyWatcher: AnyCancellable?
 
     /// Called after every recorded change (and undo / redo).
-    func documentDidChange() {}
+    func documentDidChange() { scheduleAutosave() }
+
+    // MARK: - Saved collages (see Projects.swift)
+    let projectStore = ProjectStore()
+    /// The collage being edited; it's saved under this id.
+    var currentProjectId = UUID()
+    var autosaveWork: DispatchWorkItem?
+    /// Photo files already written for this collage, by picture.
+    var savedImageFiles: [ObjectIdentifier: (image: PlatformImage, file: String)] = [:]
+    /// True while a saved collage loads (at launch or from the list).
+    @Published var isRestoringProject = false
+    var isRenderingThumbnail = false
+    @Published var showProjects = false
+
+    /// Finds where each photo's subject is (see CollageImage.focus).
+    func detectFocusPoints() {}
 
     // MARK: - Export
     /// While true, image boxes draw the full-resolution originals instead of
@@ -1219,7 +1234,7 @@ class CollageState: ObservableObject {
         pendingSharedImages = []
         guard !shared.isEmpty else { return }
         if replacingCurrent {
-            clear()
+            startNewCollage()
         }
         addImages(shared)
     }
@@ -1644,6 +1659,10 @@ class CollageState: ObservableObject {
         observeEffectSources()
         observePageStyle()
         observeHistory()
+        restoreLastProject()
+        #if DEBUG && canImport(UIKit)
+        seedDemoImagesIfRequested()
+        #endif
     }
 
     /// The Layout settings last used — new collages start with them, so a
