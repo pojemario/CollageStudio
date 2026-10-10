@@ -612,7 +612,7 @@ struct BoxActionMenu: View {
                     }
                 }
                 Divider()
-                menuButton("Delete", sf: "trash", destructive: true) {
+                menuButton("Remove", sf: "trash", destructive: true) {
                     state.removeImage(id: imageId)
                     dismissMenu()
                 }

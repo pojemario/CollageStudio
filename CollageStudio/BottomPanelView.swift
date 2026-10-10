@@ -223,55 +223,76 @@ struct BottomPanelView: View {
     @State private var showAllOnOneConfirm = false
     @State private var pagesContentHeight: CGFloat = 0
 
+    /// Natural height of the panel content, and how much of it shows.
+    @State private var contentHeight: CGFloat = 0
+    @State private var shownHeight: CGFloat = 0
+    /// Content height while the grabber is being dragged (and while the
+    /// panel slides away after a drag closed it); nil otherwise.
+    @State private var liveCap: CGFloat?
+    @State private var dragStartHeight: CGFloat?
+    /// Whether letting go now would close the panel, for the haptic tick.
+    @State private var willClose = false
+    @State private var cardHeight: CGFloat = 0
+
+    /// Below this much content a released drag closes the panel.
+    private static let closeHeight: CGFloat = 70
+    /// Within this of the full height a released drag snaps to full.
+    private static let fullSnap: CGFloat = 28
+
     private let card = RoundedRectangle(cornerRadius: FloatingTabBar.cornerRadius, style: .continuous)
     /// While up, the card's glass reaches down around the tab pill so the
     /// two read as one piece (see FloatingTabBar.merged).
     private var merged: Bool { state.isPanelOpen && state.panelDrag == 0 }
+    /// Shorter than its content: the content scrolls.
+    private var scrolls: Bool { contentHeight > shownHeight + 1 }
 
     var body: some View {
         VStack(spacing: 0) {
-            // Grabber: a downward swipe on it collapses the panel (no
-            // interactive follow — just closes on release, so no flicker).
+            // Grabber: drag it to size the panel (it stays where it's left,
+            // and the content scrolls when it doesn't all fit); drag it
+            // nearly shut, or flick it down, to close the panel.
             Capsule()
                 .fill(Color.primary.opacity(0.22))
                 .frame(width: 36, height: 5)
                 .padding(.top, 8)
-                .padding(.bottom, 2)
+                .padding(.bottom, 8)
                 .frame(maxWidth: .infinity)
                 .contentShape(Rectangle())
+                // A taller touch area, reaching over the content's top padding.
+                .padding(.bottom, -6)
                 .panelChrome(state)
-                .simultaneousGesture(
-                    DragGesture(minimumDistance: 12)
-                        .onEnded { value in
-                            if value.translation.height > 20 {
-                                state.collapsePanel()
-                            }
-                        }
-                )
+                .gesture(resizeGesture)
+                .zIndex(1)
 
-            // Panel content — each tab is only as tall as its own content.
-            Group {
-                // Editing a text box takes over the panel until it's done.
-                if let textId = state.textEditTargetId {
-                    TextEditPanel(imageId: textId)
-                } else if let protrudeId = state.protrusionTargetId {
-                    // So does a photo's protrusion (long-press → Protrude).
-                    ProtrusionPanel(imageId: protrudeId)
-                } else {
-                    switch state.selectedPanelTab {
-                    case 0: imagesTab
-                    case 1: layoutTab
-                    case 2: borderTab
-                    case 3: framesTab
-                    case 4: overlayTab
-                    case 5: effectsTab
-                    default: FilterControls()
+            // Panel content — each tab is only as tall as its own content,
+            // or as the size the panel was dragged to.
+            CappedHeight(cap: liveCap ?? state.panelCap ?? .infinity) {
+                ScrollView(.vertical) {
+                    panelContent
+                        .onGeometryChange(for: CGFloat.self) { $0.size.height } action: { contentHeight = $0 }
+                }
+                .scrollDisabled(!scrolls || state.activeAdjustment != nil)
+                .scrollBounceBehavior(.basedOnSize)
+                .scrollIndicators(scrolls ? .automatic : .hidden)
+                // Full size: nothing is clipped (row highlights and shadows
+                // reach past the edges, as before).
+                .scrollClipDisabled(!scrolls)
+                // Cut short: the content fades out at the edges.
+                .mask {
+                    VStack(spacing: 0) {
+                        LinearGradient(colors: [.clear, .black], startPoint: .top, endPoint: .bottom)
+                            .frame(height: scrolls ? 10 : 0)
+                        Color.black
+                        LinearGradient(colors: [.black, .clear], startPoint: .top, endPoint: .bottom)
+                            .frame(height: scrolls ? 14 : 0)
                     }
+                    // Never clips sideways; vertically only when cut short.
+                    .padding(.horizontal, -40)
+                    .padding(.vertical, scrolls ? 0 : -40)
                 }
             }
-            .padding(.horizontal, 12)
-            .padding(.top, 8)
-            .padding(.bottom, 6)
+            .onGeometryChange(for: CGFloat.self) { $0.size.height } action: { shownHeight = $0 }
+            .environment(\.panelScrolls, scrolls)
         }
         // Floating glass card. Fades while adjusting a slider so the collage
         // shows through; lives here so the drag offset moves it with the content.
@@ -286,16 +307,88 @@ struct BottomPanelView: View {
                 .animation(.easeInOut(duration: 0.2), value: state.activeAdjustment)
         }
         // Report the card's height so it knows how far to slide to be fully
-        // hidden: past the tab bar zone and the home-indicator area.
-        .background(
-            GeometryReader { g in
-                Color.clear
-                    .onAppear { state.panelHeight = g.size.height + FloatingTabBar.zoneHeight + 60 }
-                    .onChange(of: g.size.height) { _, h in
-                        state.panelHeight = h + FloatingTabBar.zoneHeight + 60
-                    }
+        // hidden: past the tab bar zone and the home-indicator area. Not
+        // while the grabber is dragged (that would redraw the whole app
+        // every frame); the drag reports it when it ends.
+        .onGeometryChange(for: CGFloat.self) { $0.size.height } action: { h in
+            cardHeight = h
+            if !state.isPanelDragging { state.panelHeight = h + FloatingTabBar.zoneHeight + 60 }
+        }
+        // A panel a drag closed comes back at the size chosen before it.
+        .onChange(of: state.isPanelOpen) { _, open in
+            if open { liveCap = nil }
+        }
+    }
+
+    @ViewBuilder
+    private var panelContent: some View {
+        Group {
+            // Editing a text box takes over the panel until it's done.
+            if let textId = state.textEditTargetId {
+                TextEditPanel(imageId: textId)
+            } else if let protrudeId = state.protrusionTargetId {
+                // So does a photo's protrusion (long-press → Protrude).
+                ProtrusionPanel(imageId: protrudeId)
+            } else {
+                switch state.selectedPanelTab {
+                case 0: imagesTab
+                case 1: layoutTab
+                case 2: borderTab
+                case 3: framesTab
+                case 4: overlayTab
+                case 5: effectsTab
+                default: FilterControls()
+                }
             }
-        )
+        }
+        .padding(.horizontal, 12)
+        .padding(.top, 8)
+        .padding(.bottom, 6)
+    }
+
+    /// The panel follows the finger, from nothing up to its full height.
+    /// Released: nearly shut (or flicked down) closes it, close to full
+    /// snaps to full, anywhere else it stays — for every tab, and the next
+    /// time it opens.
+    private var resizeGesture: some Gesture {
+        DragGesture(minimumDistance: 2, coordinateSpace: .global)
+            .onChanged { v in
+                if dragStartHeight == nil {
+                    dragStartHeight = shownHeight
+                    state.isPanelDragging = true
+                }
+                let h = min(max((dragStartHeight ?? shownHeight) - v.translation.height, 0), contentHeight)
+                liveCap = h
+                let closing = h < Self.closeHeight
+                if closing != willClose {
+                    willClose = closing
+                    #if canImport(UIKit)
+                    UIImpactFeedbackGenerator(style: .light).impactOccurred()
+                    #endif
+                }
+            }
+            .onEnded { v in
+                let h = liveCap ?? shownHeight
+                dragStartHeight = nil
+                willClose = false
+                if h < Self.closeHeight || (v.velocity.height > 900 && v.translation.height > 0) {
+                    // liveCap stays until it reopens, so the panel slides
+                    // away at the size it was let go.
+                    state.collapsePanel()
+                } else if h >= contentHeight - Self.fullSnap {
+                    withAnimation(.snappy(duration: 0.22)) {
+                        liveCap = contentHeight
+                    } completion: {
+                        state.panelCap = nil
+                        liveCap = nil
+                    }
+                } else {
+                    state.panelCap = h
+                    liveCap = nil
+                }
+                state.isPanelDragging = false
+                state.panelHeight = cardHeight + FloatingTabBar.zoneHeight + 60
+            }
     }
 
     // MARK: - Images tab
@@ -344,7 +437,7 @@ struct BottomPanelView: View {
                 Button("Proceed") { state.mergeAllOntoOnePage() }
                 Button("Cancel", role: .cancel) {}
             } message: {
-                Text("This will put all images on a single page and delete the other pages, do you want to proceed?")
+                Text("This will put all images on a single page and remove the other pages, do you want to proceed?")
             }
 
             // The page list hugs its content (one row for a single page) and
@@ -440,3 +533,24 @@ struct BottomPanelView: View {
     }
 }
 
+/// Sizes the panel's scroll view to its content's own height, up to `cap`,
+/// in the same layout pass (no frame of the wrong size when a tab changes).
+private struct CappedHeight: Layout {
+    var cap: CGFloat
+
+    var animatableData: CGFloat {
+        get { cap.isFinite ? cap : 0 }
+        set { if cap.isFinite { cap = newValue } }
+    }
+
+    func sizeThatFits(proposal: ProposedViewSize, subviews: Subviews, cache: inout ()) -> CGSize {
+        guard let child = subviews.first else { return .zero }
+        // A vertical scroll view's ideal height is its content's height.
+        let natural = child.sizeThatFits(ProposedViewSize(width: proposal.width, height: nil))
+        return CGSize(width: proposal.width ?? natural.width, height: min(natural.height, cap))
+    }
+
+    func placeSubviews(in bounds: CGRect, proposal: ProposedViewSize, subviews: Subviews, cache: inout ()) {
+        subviews.first?.place(at: bounds.origin, proposal: ProposedViewSize(bounds.size))
+    }
+}

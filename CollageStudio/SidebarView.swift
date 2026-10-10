@@ -113,7 +113,7 @@ struct SidebarView: View {
                 Button("Proceed") { state.mergeAllOntoOnePage() }
                 Button("Cancel", role: .cancel) {}
             } message: {
-                Text("This will put all images on a single page and delete the other pages, do you want to proceed?")
+                Text("This will put all images on a single page and remove the other pages, do you want to proceed?")
             }
 
             PageGroupsView()
@@ -371,7 +371,11 @@ struct ModernSlider: View {
     var trackColors: [Color]? = nil
 
     @Environment(\.colorScheme) private var colorScheme
+    @Environment(\.panelScrolls) private var panelScrolls
     @State private var isDragging = false
+    /// In a scrolling panel: whether this touch went sideways (the slider's)
+    /// or up/down (the scroll view's); nil until it has moved.
+    @State private var claimed: Bool?
 
     private var isDark: Bool { colorScheme == .dark }
 
@@ -449,25 +453,58 @@ struct ModernSlider: View {
                     .onChanged { g in
                         if !isDragging { onEditingChanged?(true) }
                         isDragging = true
-                        let f = min(max((g.location.x - thumbBase / 2) / usable, 0), 1)
-                        var v = range.lowerBound + Double(f) * span
-                        if step > 0 { v = (v / step).rounded() * step }
-                        v = min(max(v, range.lowerBound), range.upperBound)
-                        if v != value {
-                            value = v
-                            #if canImport(UIKit)
-                            UISelectionFeedbackGenerator().selectionChanged()
-                            #endif
-                        }
+                        setValue(atX: g.location.x, usable: usable, span: span)
                     }
                     .onEnded { _ in
                         isDragging = false
                         onEditingChanged?(false)
+                    },
+                including: panelScrolls ? .subviews : .all
+            )
+            // In a scrolling panel the slider only takes sideways drags, so a
+            // swipe up or down over it scrolls instead of moving the value;
+            // a tap still jumps to that spot.
+            .simultaneousGesture(
+                DragGesture(minimumDistance: 6)
+                    .onChanged { g in
+                        if claimed == nil {
+                            claimed = abs(g.translation.width) > abs(g.translation.height)
+                        }
+                        guard claimed == true else { return }
+                        if !isDragging { onEditingChanged?(true) }
+                        isDragging = true
+                        setValue(atX: g.location.x, usable: usable, span: span)
                     }
+                    .onEnded { _ in
+                        if claimed == true {
+                            isDragging = false
+                            onEditingChanged?(false)
+                        }
+                        claimed = nil
+                    },
+                including: panelScrolls ? .all : .subviews
+            )
+            .simultaneousGesture(
+                SpatialTapGesture()
+                    .onEnded { t in setValue(atX: t.location.x, usable: usable, span: span) },
+                including: panelScrolls ? .all : .subviews
             )
         }
         .frame(height: 32)
         .animation(.easeOut(duration: 0.12), value: isDragging)
+    }
+
+    private func setValue(atX x: CGFloat, usable: CGFloat, span: Double) {
+        let f = min(max((x - thumbBase / 2) / usable, 0), 1)
+        var v = range.lowerBound + Double(f) * span
+        if step > 0 { v = (v / step).rounded() * step }
+        v = min(max(v, range.lowerBound), range.upperBound)
+        if v != value {
+            value = v
+            #if canImport(UIKit)
+            UISelectionFeedbackGenerator().selectionChanged()
+            #endif
+        }
     }
 }
 
@@ -477,10 +514,20 @@ private struct ResetArmedKey: EnvironmentKey {
     static let defaultValue = false
 }
 
+/// True while the bottom panel is shorter than its content and scrolls:
+/// gestures inside it then leave vertical drags to the scroll view.
+private struct PanelScrollsKey: EnvironmentKey {
+    static let defaultValue = false
+}
+
 extension EnvironmentValues {
     var resetArmed: Bool {
         get { self[ResetArmedKey.self] }
         set { self[ResetArmedKey.self] = newValue }
+    }
+    var panelScrolls: Bool {
+        get { self[PanelScrollsKey.self] }
+        set { self[PanelScrollsKey.self] = newValue }
     }
 }
 

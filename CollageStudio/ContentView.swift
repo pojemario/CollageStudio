@@ -92,7 +92,7 @@ struct PageTabBar: View {
                 Button(role: .destructive) {
                     state.deletePage(at: state.currentPageIndex)
                 } label: {
-                    Label("Delete Page \(state.currentPageIndex + 1)", systemImage: "trash")
+                    Label("Remove Page \(state.currentPageIndex + 1)", systemImage: "trash")
                 }
             }
         }
@@ -434,9 +434,17 @@ struct ContentView: View {
                         BottomPanelView()
                             .background(
                                 GeometryReader { g in
-                                    Color.clear.onChange(of: g.frame(in: .global).minY, initial: true) { _, y in
-                                        state.panelTopGlobalY = state.isPanelOpen ? y : 0
-                                    }
+                                    // Not per frame while the grabber is dragged
+                                    // (it would redraw the whole app); once at the end.
+                                    Color.clear
+                                        .onChange(of: g.frame(in: .global).minY, initial: true) { _, y in
+                                            guard !state.isPanelDragging else { return }
+                                            state.panelTopGlobalY = state.isPanelOpen ? y : 0
+                                        }
+                                        .onChange(of: state.isPanelDragging) { _, dragging in
+                                            guard !dragging else { return }
+                                            state.panelTopGlobalY = state.isPanelOpen ? g.frame(in: .global).minY : 0
+                                        }
                                 }
                             )
                             .padding(.horizontal, 10)

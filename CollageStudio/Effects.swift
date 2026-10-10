@@ -760,6 +760,8 @@ struct FilterControls: View {
 struct NumbersSwipeReset: ViewModifier {
     let canReset: Bool
     let reset: () -> Void
+    /// A scrolling panel owns vertical swipes; double-tap still resets.
+    @Environment(\.panelScrolls) private var panelScrolls
     @State private var width: CGFloat = 0
     @State private var armed = false
 
@@ -806,7 +808,8 @@ struct NumbersSwipeReset: ViewModifier {
                             #endif
                         }
                         armed = false
-                    }
+                    },
+                including: panelScrolls ? .subviews : .all
             )
     }
 }

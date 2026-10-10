@@ -755,8 +755,11 @@ class CollageState: ObservableObject {
     @Published var panelTopGlobalY: CGFloat = 0
     /// Live drag translation while the user is pulling the panel (+ = down).
     @Published var panelDrag: CGFloat = 0
-    /// True while a pull is in progress.
+    /// True while the panel's grabber is being dragged.
     @Published var isPanelDragging: Bool = false
+    /// The panel content height the user dragged the panel to (nil = each
+    /// tab's full height); taller content scrolls.
+    @Published var panelCap: CGFloat? = nil
 
     /// Current vertical offset of the panel from its fully-open position.
     /// 0 = open, `panelHeight` = fully hidden below the bottom edge.
