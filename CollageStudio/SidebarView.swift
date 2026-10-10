@@ -139,7 +139,7 @@ struct SidebarView: View {
                     set: { v in state.numCols = Int(v); state.rebuildLayout(resetGrows: true) }
                 ), range: 1...Double(state.maxSelectableCols), step: 1, format: "%.0f", resetValue: 2,
                    reservesSwatchSlot: true, customLabel: AnyView(LanesSwitch()),
-                   valueWidth: LabeledSlider.twoDigitValueWidth)
+                   compactValue: true)
                     .disabled(state.maxSelectableCols <= 1)
                     .opacity(state.maxSelectableCols <= 1 ? 0.4 : 1)
             
@@ -154,11 +154,11 @@ struct SidebarView: View {
 
                 LabeledSlider(label: "Spacing", value: $state.gap, range: 0...40, step: 1, format: "%.0f",
                               resetValue: 10, swatchColor: $state.backgroundColor,
-                              valueWidth: LabeledSlider.twoDigitValueWidth)
+                              compactValue: true)
 
                 LabeledSlider(label: "Rounding", value: $state.cornerRadius, range: 0...100, step: 1, format: "%.0f",
                               resetValue: 20, reservesSwatchSlot: true,
-                              valueWidth: LabeledSlider.twoDigitValueWidth)
+                              compactValue: true)
 
                 BorderStyleRow()
 
@@ -507,9 +507,9 @@ struct LabeledSlider: View {
     /// Shown in place of the label text (e.g. the Cols | Rows switch); the
     /// label string still names the row for focus mode.
     var customLabel: AnyView? = nil
-    /// Width of the value column: four characters by default; Layout's
-    /// rows use twoDigitValueWidth so their sliders get the spare room.
-    var valueWidth: CGFloat = 38
+    /// Layout's rows: a two-digit value column right at the panel's inset,
+    /// so their sliders get all the spare room.
+    var compactValue = false
     /// Two monospaced digits ("70"); "100" shrinks a little to fit.
     static let twoDigitValueWidth: CGFloat = 20
 
@@ -549,10 +549,10 @@ struct LabeledSlider: View {
                 .lineLimit(1)
                 // Longer values ("-12.5°") shrink a little to fit.
                 .minimumScaleFactor(0.7)
-                // Room for four characters ("-100", "-60°") unless narrowed,
+                // Room for four characters ("-100", "-60°") unless compact,
                 // hugging the slider and kept clear of the panel edge.
-                .frame(width: valueWidth, alignment: .leading)
-                .padding(.trailing, 8)
+                .frame(width: compactValue ? Self.twoDigitValueWidth : 38, alignment: .leading)
+                .padding(.trailing, compactValue ? 0 : 8)
                 // Double-tapping the value also resets to default
                 .contentShape(Rectangle())
                 .onTapGesture(count: 2) { resetToDefault() }
@@ -739,7 +739,6 @@ struct BorderStyleRow: View {
                 .fixedSize()
                 // Two digits (at most 40), like the other Layout rows.
                 .frame(width: LabeledSlider.twoDigitValueWidth, alignment: .leading)
-                .padding(.trailing, 8)
                 // Double-tapping the value resets border thickness to zero.
                 .contentShape(Rectangle())
                 .onTapGesture(count: 2) {
@@ -791,8 +790,8 @@ struct BorderPlacementRow: View {
             .labelsHidden()
             .disabled(disabled)
             .opacity(disabled ? 0.4 : 1)
-            // Match the sliders' value column (and its edge clearance)
-            Color.clear.frame(width: LabeledSlider.twoDigitValueWidth + 8, height: 24)
+            // Match the sliders' value column
+            Color.clear.frame(width: LabeledSlider.twoDigitValueWidth, height: 24)
         }
         .panelChrome(state)
     }

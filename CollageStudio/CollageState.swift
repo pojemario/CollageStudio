@@ -745,6 +745,10 @@ class CollageState: ObservableObject {
     /// Full-screen preview: the floating tab bar (and panel) get out of the
     /// way so nothing but the collage is on screen.
     @Published var chromeHidden: Bool = false
+    /// The full-screen button's second step: the toolbar and status bar go
+    /// too, leaving only the collage; a tap anywhere comes back to the
+    /// full-screen preview.
+    @Published var toolbarHidden: Bool = false
     /// Top edge of the open panel card in global coordinates (0 while
     /// closed) — how much of the screen bottom the panel (and the keyboard
     /// pushing it up) covers, for keeping an edited text box in view.

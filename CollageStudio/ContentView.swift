@@ -245,110 +245,138 @@ struct ContentView: View {
     // MARK: - iPhone: canvas + bottom panel
 
 
-    var iPhoneLayout: some View {
-        VStack(spacing: 0) {
-            // Toolbar: the logo on the left and the controls on the right,
-            // floating straight on the backdrop (no panel behind them).
-            HStack {
-                // Placeholder reserving horizontal space for the logo, which
-                // is drawn as an overlay so it can spill below the toolbar.
-                Color.clear.frame(width: 77, height: 1)
-                Spacer()
+    private var toolbar: some View {
+        // Toolbar: the logo on the left and the controls on the right,
+        // floating straight on the backdrop (no panel behind them).
+        HStack {
+            // Placeholder reserving horizontal space for the logo, which
+            // is drawn as an overlay so it can spill below the toolbar.
+            Color.clear.frame(width: 77, height: 1)
+            Spacer()
 
-                HStack(spacing: 2) {
-                    // Ratio selector — always available, even before images exist.
-                    Button {
-                        if state.isRatioOpen { state.closeRatio() } else { state.openRatio() }
-                    } label: {
-                        HStack(spacing: 5) {
-                            Image(systemName: "aspectratio")
-                                .font(.system(size: 15, weight: .medium))
-                            Text(state.ratio.rawValue.replacingOccurrences(of: ":", with: "×"))
-                                .font(.footnote.weight(.bold))
-                                .lineLimit(1)
+            HStack(spacing: 2) {
+                // Ratio selector — always available, even before images exist.
+                Button {
+                    if state.isRatioOpen { state.closeRatio() } else { state.openRatio() }
+                } label: {
+                    HStack(spacing: 5) {
+                        Image(systemName: "aspectratio")
+                            .font(.system(size: 15, weight: .medium))
+                        Text(state.ratio.rawValue.replacingOccurrences(of: ":", with: "×"))
+                            .font(.footnote.weight(.bold))
+                            .lineLimit(1)
+                    }
+                    // Plain like the other toolbar icons; accent-colored
+                    // while its popup is open.
+                    .foregroundColor(state.isRatioOpen ? .accentColor : .primary)
+                    .padding(.horizontal, 8)
+                    .frame(height: 40)
+                    .contentShape(Rectangle())
+                }
+                .buttonStyle(.plain)
+                .background(
+                    GeometryReader { g in
+                        Color.clear.onChange(of: g.frame(in: .global), initial: true) { _, f in
+                            ratioButtonFrame = f
                         }
-                        // Plain like the other toolbar icons; accent-colored
-                        // while its popup is open.
-                        .foregroundColor(state.isRatioOpen ? .accentColor : .primary)
-                        .padding(.horizontal, 8)
-                        .frame(height: 40)
-                        .contentShape(Rectangle())
+                    }
+                )
+
+                // Full-screen preview and Share — only once there are images.
+                if state.hasAnyImages {
+                    // First click: full-screen preview (no tab bar or panel).
+                    // Second click: only the collage (see toolbarHidden).
+                    Button {
+                        withAnimation(.easeInOut(duration: 0.25)) {
+                            if state.chromeHidden {
+                                state.closeRatio()
+                                state.toolbarHidden = true
+                            } else {
+                                state.chromeHidden = true
+                                state.collapsePanel()
+                            }
+                        }
+                    } label: {
+                        Image(systemName: state.chromeHidden
+                              ? "arrow.up.and.down.and.arrow.left.and.right"
+                              : "arrow.up.left.and.arrow.down.right")
+                            .font(.system(size: 16, weight: .medium))
+                            .foregroundColor(.primary)
+                            .frame(width: 40, height: 40)
+                            .contentShape(Rectangle())
                     }
                     .buttonStyle(.plain)
-                    .background(
-                        GeometryReader { g in
-                            Color.clear.onChange(of: g.frame(in: .global), initial: true) { _, f in
-                                ratioButtonFrame = f
-                            }
-                        }
-                    )
 
-                    // Full-screen preview and Share — only once there are images.
-                    if state.hasAnyImages {
+                    // Back from the full-screen preview to editing.
+                    if state.chromeHidden {
                         Button {
-                            withAnimation(.easeInOut(duration: 0.25)) {
-                                state.chromeHidden.toggle()
-                                if state.chromeHidden { state.collapsePanel() }
-                            }
+                            withAnimation(.easeInOut(duration: 0.25)) { state.chromeHidden = false }
                         } label: {
-                            Image(systemName: state.chromeHidden
-                                  ? "arrow.down.right.and.arrow.up.left"
-                                  : "arrow.up.left.and.arrow.down.right")
+                            Image(systemName: "arrow.down.right.and.arrow.up.left")
                                 .font(.system(size: 16, weight: .medium))
                                 .foregroundColor(.primary)
                                 .frame(width: 40, height: 40)
                                 .contentShape(Rectangle())
                         }
                         .buttonStyle(.plain)
-
-                        Button {
-                            if state.pages.count > 1 {
-                                state.showExportOptions = true
-                            } else {
-                                Task { await state.exportPages(allPages: false) }
-                            }
-                        } label: {
-                            Image(systemName: "square.and.arrow.up")
-                                .font(.system(size: 17, weight: .medium))
-                                .foregroundColor(.primary)
-                                .frame(width: 40, height: 40)
-                                .contentShape(Rectangle())
-                        }
-                        .buttonStyle(.plain)
+                        .transition(.opacity)
                     }
+
+                    Button {
+                        if state.pages.count > 1 {
+                            state.showExportOptions = true
+                        } else {
+                            Task { await state.exportPages(allPages: false) }
+                        }
+                    } label: {
+                        Image(systemName: "square.and.arrow.up")
+                            .font(.system(size: 17, weight: .medium))
+                            .foregroundColor(.primary)
+                            .frame(width: 40, height: 40)
+                            .contentShape(Rectangle())
+                    }
+                    .buttonStyle(.plain)
                 }
-                .padding(.horizontal, 5)
-                .frame(height: 44)
             }
-            // Fixed height so the bar doesn't collapse before any images are
-            // added (the icons only appear once images exist) — keeps the logo
-            // clear of the system clock.
-            .frame(height: 48)
-            .padding(.horizontal, 12)
-            .padding(.vertical, 4)
-            // Logo overlay: larger than the toolbar and unclipped, so it
-            // spills below the bar's bottom edge.
-            .overlay(alignment: .bottomLeading) {
-                HStack(alignment: .bottom, spacing: 6) {
-                    Image("DasKolazLogo")
-                        .resizable()
-                        .scaledToFit()
-                        .frame(height: 52)
-                        // Monochrome on the empty start screen; color arrives
-                        // with the first photos.
-                        .grayscale(state.hasAnyImages ? 0 : 1)
-                        .animation(.easeInOut(duration: 0.4), value: state.hasAnyImages)
-                        .shimmering(state.isBusy)
-                    // Build version, to tell installed builds apart.
-                    VersionLabel()
-                        .padding(.bottom, 6)
-                }
-                .padding(.leading, 10)
-                .offset(y: 2)
-                .allowsHitTesting(false)
+            .padding(.horizontal, 5)
+            .frame(height: 44)
+        }
+        // Fixed height so the bar doesn't collapse before any images are
+        // added (the icons only appear once images exist) — keeps the logo
+        // clear of the system clock.
+        .frame(height: 48)
+        .padding(.horizontal, 12)
+        .padding(.vertical, 4)
+        // Logo overlay: larger than the toolbar and unclipped, so it
+        // spills below the bar's bottom edge.
+        .overlay(alignment: .bottomLeading) {
+            HStack(alignment: .bottom, spacing: 6) {
+                Image("DasKolazLogo")
+                    .resizable()
+                    .scaledToFit()
+                    .frame(height: 52)
+                    // Monochrome on the empty start screen; color arrives
+                    // with the first photos.
+                    .grayscale(state.hasAnyImages ? 0 : 1)
+                    .animation(.easeInOut(duration: 0.4), value: state.hasAnyImages)
+                    .shimmering(state.isBusy)
+                // Build version, to tell installed builds apart.
+                VersionLabel()
+                    .padding(.bottom, 6)
             }
-            // Keep the toolbar (and its spilling logo) above the canvas below
-            .zIndex(1)
+            .padding(.leading, 10)
+            .offset(y: 2)
+            .allowsHitTesting(false)
+        }
+        // Keep the toolbar (and its spilling logo) above the canvas below
+        .zIndex(1)
+    }
+
+    var iPhoneLayout: some View {
+        VStack(spacing: 0) {
+            if !state.toolbarHidden {
+                toolbar
+            }
             // Ratio panel takes real layout space, so the canvas below
             // resizes and shows the chosen ratio exactly
             if state.isRatioOpen {
@@ -389,7 +417,9 @@ struct ContentView: View {
             }
             // Floating page counter pill over the top of the canvas.
             .overlay(alignment: .top) {
-                PageTabBar().padding(.top, 2)
+                if !state.toolbarHidden {
+                    PageTabBar().padding(.top, 2)
+                }
             }
             .overlay(alignment: .bottom) {
                 // No chrome until there are images — the empty canvas just
@@ -450,6 +480,19 @@ struct ContentView: View {
                 }
             }
         }
+        // Only the collage: a tap anywhere brings the toolbar back (still
+        // in the full-screen preview), and nothing underneath reacts.
+        .overlay {
+            if state.toolbarHidden {
+                Color.black.opacity(0.001)
+                    .ignoresSafeArea()
+                    .onTapGesture {
+                        withAnimation(.easeInOut(duration: 0.25)) { state.toolbarHidden = false }
+                    }
+            }
+        }
+        .statusBarHidden(state.toolbarHidden)
+        .persistentSystemOverlays(state.toolbarHidden ? .hidden : .automatic)
         // One background tone across the whole app, including behind the
         // toolbar and status bar
         .background(ColorManager.canvasAreaBackground.ignoresSafeArea())
