@@ -226,18 +226,24 @@ struct BottomPanelView: View {
     /// Natural height of the panel content, and how much of it shows.
     @State private var contentHeight: CGFloat = 0
     @State private var shownHeight: CGFloat = 0
-    /// Content height while the grabber is being dragged (and while the
-    /// panel slides away after a drag closed it); nil otherwise.
+    /// Content height while the grabber is being dragged (and while it
+    /// settles after); nil otherwise.
     @State private var liveCap: CGFloat?
     @State private var dragStartHeight: CGFloat?
-    /// Whether letting go now would close the panel, for the haptic tick.
-    @State private var willClose = false
     @State private var cardHeight: CGFloat = 0
 
-    /// Below this much content a released drag closes the panel.
-    private static let closeHeight: CGFloat = 70
+    /// The smallest the panel can be dragged to (about one row of content).
+    private static let minHeight: CGFloat = 80
     /// Within this of the full height a released drag snaps to full.
     private static let fullSnap: CGFloat = 28
+
+    /// Each tab (and the text / protrusion editors) keeps its own size; one
+    /// not resized yet shows at full height.
+    private var capKey: Int {
+        if state.textEditTargetId != nil { return -1 }
+        if state.protrusionTargetId != nil { return -2 }
+        return state.selectedPanelTab
+    }
 
     private let card = RoundedRectangle(cornerRadius: FloatingTabBar.cornerRadius, style: .continuous)
     /// While up, the card's glass reaches down around the tab pill so the
@@ -249,8 +255,8 @@ struct BottomPanelView: View {
     var body: some View {
         VStack(spacing: 0) {
             // Grabber: drag it to size the panel (it stays where it's left,
-            // and the content scrolls when it doesn't all fit); drag it
-            // nearly shut, or flick it down, to close the panel.
+            // and the content scrolls when it doesn't all fit). It doesn't
+            // close the panel: tapping the open tab does.
             Capsule()
                 .fill(Color.primary.opacity(0.22))
                 .frame(width: 36, height: 5)
@@ -266,7 +272,7 @@ struct BottomPanelView: View {
 
             // Panel content — each tab is only as tall as its own content,
             // or as the size the panel was dragged to.
-            CappedHeight(cap: liveCap ?? state.panelCap ?? .infinity) {
+            CappedHeight(cap: liveCap ?? state.panelCaps[capKey] ?? .infinity) {
                 ScrollView(.vertical) {
                     panelContent
                         .onGeometryChange(for: CGFloat.self) { $0.size.height } action: { contentHeight = $0 }
@@ -314,10 +320,6 @@ struct BottomPanelView: View {
             cardHeight = h
             if !state.isPanelDragging { state.panelHeight = h + FloatingTabBar.zoneHeight + 60 }
         }
-        // A panel a drag closed comes back at the size chosen before it.
-        .onChange(of: state.isPanelOpen) { _, open in
-            if open { liveCap = nil }
-        }
     }
 
     @ViewBuilder
@@ -346,10 +348,9 @@ struct BottomPanelView: View {
         .padding(.bottom, 6)
     }
 
-    /// The panel follows the finger, from nothing up to its full height.
-    /// Released: nearly shut (or flicked down) closes it, close to full
-    /// snaps to full, anywhere else it stays — for every tab, and the next
-    /// time it opens.
+    /// The panel follows the finger, between about one row and its full
+    /// height; past the smallest size it resists and springs back. Released
+    /// close to full it snaps to full, anywhere else it stays (for this tab).
     private var resizeGesture: some Gesture {
         DragGesture(minimumDistance: 2, coordinateSpace: .global)
             .onChanged { v in
@@ -357,38 +358,38 @@ struct BottomPanelView: View {
                     dragStartHeight = shownHeight
                     state.isPanelDragging = true
                 }
-                let h = min(max((dragStartHeight ?? shownHeight) - v.translation.height, 0), contentHeight)
-                liveCap = h
-                let closing = h < Self.closeHeight
-                if closing != willClose {
-                    willClose = closing
-                    #if canImport(UIKit)
-                    UIImpactFeedbackGenerator(style: .light).impactOccurred()
-                    #endif
-                }
+                let floor = min(Self.minHeight, contentHeight)
+                let raw = (dragStartHeight ?? shownHeight) - v.translation.height
+                // Rubber band below the smallest size.
+                let h = raw >= floor ? raw : floor - min((floor - raw) * 0.25, 24)
+                liveCap = min(h, contentHeight)
             }
-            .onEnded { v in
+            .onEnded { _ in
+                let floor = min(Self.minHeight, contentHeight)
                 let h = liveCap ?? shownHeight
+                let key = capKey
                 dragStartHeight = nil
-                willClose = false
-                if h < Self.closeHeight || (v.velocity.height > 900 && v.translation.height > 0) {
-                    // liveCap stays until it reopens, so the panel slides
-                    // away at the size it was let go.
-                    state.collapsePanel()
-                } else if h >= contentHeight - Self.fullSnap {
-                    withAnimation(.snappy(duration: 0.22)) {
-                        liveCap = contentHeight
-                    } completion: {
-                        state.panelCap = nil
-                        liveCap = nil
-                    }
+                if h >= contentHeight - Self.fullSnap {
+                    settle(to: contentHeight) { state.panelCaps[key] = nil }
+                } else if h < floor {
+                    settle(to: floor) { state.panelCaps[key] = floor }
                 } else {
-                    state.panelCap = h
+                    state.panelCaps[key] = h
                     liveCap = nil
                 }
                 state.isPanelDragging = false
                 state.panelHeight = cardHeight + FloatingTabBar.zoneHeight + 60
             }
+    }
+
+    /// Springs the live height to `height`, then hands over to the stored size.
+    private func settle(to height: CGFloat, then store: @escaping () -> Void) {
+        withAnimation(.snappy(duration: 0.22)) {
+            liveCap = height
+        } completion: {
+            store()
+            liveCap = nil
+        }
     }
 
     // MARK: - Images tab
