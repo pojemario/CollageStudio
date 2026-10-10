@@ -167,7 +167,7 @@ struct CanvasContainerView: View {
             // the whole canvas made the swap flash).
             .overlay(alignment: .top) {
                 ZStack {
-                    if state.filterBypass {
+                    if state.filterBypass || state.compareOriginal {
                         Text("Before")
                             .font(.system(size: 13, weight: .semibold))
                             .foregroundColor(.white)
@@ -179,8 +179,19 @@ struct CanvasContainerView: View {
                     }
                 }
                 .animation(.easeInOut(duration: 0.12), value: state.filterBypass)
+                .animation(.easeInOut(duration: 0.12), value: state.compareOriginal)
                 .allowsHitTesting(false)
             }
+            // Hold to see the collage without its edits, effects and filter.
+            .overlay(alignment: .topTrailing) {
+                if state.hasAnyImages && state.hasLookEdits && !state.toolbarHidden {
+                    CompareButton()
+                        .padding(.top, 10)
+                        .padding(.trailing, 10)
+                        .transition(.opacity)
+                }
+            }
+            .animation(.easeInOut(duration: 0.2), value: state.hasLookEdits)
             .onChange(of: photoItems) { _, newItems in
                 loadPhotos(newItems)
             }
@@ -319,5 +330,36 @@ private struct EmptyCanvasContent: View {
                 .foregroundColor(.accentColor)
                 .fixedSize()
         }
+    }
+}
+
+/// Press and hold: the collage without its edits, effects and filter.
+private struct CompareButton: View {
+    @EnvironmentObject var state: CollageState
+    @GestureState private var holding = false
+
+    var body: some View {
+        Image(systemName: "square.split.2x1")
+            .font(.system(size: 15, weight: .semibold))
+            .foregroundColor(holding ? .white : .primary)
+            .frame(width: 38, height: 38)
+            .background(Circle().fill(holding ? AnyShapeStyle(Color.accentColor) : AnyShapeStyle(.ultraThinMaterial)))
+            .overlay(Circle().strokeBorder(ColorManager.glassStroke, lineWidth: 0.8))
+            .shadow(color: .black.opacity(0.15), radius: 6, y: 2)
+            .scaleEffect(holding ? 0.92 : 1)
+            .animation(.spring(response: 0.25, dampingFraction: 0.7), value: holding)
+            .gesture(
+                DragGesture(minimumDistance: 0)
+                    .updating($holding) { _, holding, _ in holding = true }
+            )
+            .onChange(of: holding) { _, down in
+                state.compareOriginal = down
+                #if canImport(UIKit)
+                if down { UIImpactFeedbackGenerator(style: .light).impactOccurred() }
+                #endif
+            }
+            .accessibilityLabel("Compare with original")
+            .accessibilityHint("Touch and hold to see the photos without edits, effects and filter")
+            .accessibilityAddTraits(.isButton)
     }
 }

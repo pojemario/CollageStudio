@@ -484,6 +484,7 @@ class CollageState: ObservableObject {
 
     /// Strength of an effect, 0...1 (fade: −1...1).
     func effectAmount(_ effect: CollageEffect) -> Double {
+        guard !compareOriginal else { return 0 }
         let r = effect.range
         return min(max((effects[effect] ?? 0) / 100, r.lowerBound / 100), r.upperBound / 100)
     }
@@ -554,9 +555,19 @@ class CollageState: ObservableObject {
 
     /// What the pictures currently get graded with.
     var contentGrade: ContentGrade {
+        guard !compareOriginal else { return ContentGrade() }
         var grade = fullGrade
         if filterBypass { grade.filter = .none }
         return grade
+    }
+
+    /// True while the compare button is held: the collage shows without any
+    /// edits, effects or filter (overlays and the frame stay).
+    @Published var compareOriginal = false
+
+    /// Whether the pictures have any edit, effect or filter to compare against.
+    var hasLookEdits: Bool {
+        !fullGrade.isIdentity || CollageEffect.allCases.contains { (effects[$0] ?? 0) != 0 }
     }
 
     /// The grade with the filter, even while it's being bypassed.

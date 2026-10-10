@@ -52,8 +52,9 @@ extension CollageState {
                     point = CGPoint(x: 0.7, y: 0.3)
                 }
                 #endif
+                let found = point
                 await MainActor.run {
-                    guard let point, let pi = self.pageIndex(containing: id),
+                    guard let point = found, let pi = self.pageIndex(containing: id),
                           let idx = self.pages[pi].images.firstIndex(where: { $0.id == id }),
                           self.pages[pi].images[idx].image === source else { return }
                     var img = self.pages[pi].images[idx]

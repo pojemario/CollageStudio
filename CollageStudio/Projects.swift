@@ -787,7 +787,15 @@ extension CollageState {
                 self.isPanelOpen = true
             }
         }
-        if args.contains("-showProjects") {
+        if let t = args.firstIndex(of: "-style"), t + 1 < args.count, let n = Int(args[t + 1]) {
+            DispatchQueue.main.asyncAfter(deadline: .now() + 1.2) {
+                if StylePreset.builtIns.indices.contains(n) { self.applyStylePreset(StylePreset.builtIns[n]) }
+            }
+        }
+        if args.contains("-compare") {
+            DispatchQueue.main.asyncAfter(deadline: .now() + 3) { self.compareOriginal = true }
+        }
+                if args.contains("-showProjects") {
             DispatchQueue.main.asyncAfter(deadline: .now() + 2.5) { self.showProjects = true }
         }
         guard let i = args.firstIndex(of: "-demoSeed"), !hasAnyImages else { return }
