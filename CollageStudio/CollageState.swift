@@ -946,13 +946,12 @@ class CollageState: ObservableObject {
     }
 
     /// Opening Protrude turns it on (once the subject is known) for a photo
-    /// that doesn't protrude yet: across the edges the subject crosses, or
-    /// all of them if it crosses none.
+    /// that doesn't protrude yet, across all edges, so every way it can
+    /// break out shows at first.
     private func turnOnProtrusionIfNew(_ id: UUID) {
         guard protrusionTargetId == id, let img = images.first(where: { $0.id == id }),
               img.protrusion == nil, subjectMask(for: img)?.mask != nil else { return }
-        let crossing = protrudableEdges(for: id)
-        setProtrusion(crossing.isEmpty ? .all : crossing, for: id)
+        setProtrusion(.all, for: id)
     }
 
     func endProtrusionEditing() {

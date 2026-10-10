@@ -337,9 +337,8 @@ struct ImageBoxView: View {
         let v = (-x * s + y * c) / placement.size.height + 0.5
         if let index = subject.instance(atU: u, v: v) {
             if img.protrusion == nil {
-                // Picking a subject also turns protrusion on.
-                let crossing = state.protrudableEdges(for: img.id)
-                state.setProtrusion(crossing.isEmpty ? .all : crossing, for: img.id)
+                // Picking a subject also turns protrusion on, across all edges.
+                state.setProtrusion(.all, for: img.id)
             }
             state.toggleProtrusionObject(index, for: img.id)
         }
@@ -1408,10 +1407,7 @@ struct ProtrusionPanel: View {
                 if let img {
                     Toggle("Protrude", isOn: Binding(
                         get: { img.protrusion != nil },
-                        set: { on in
-                            let crossing = state.protrudableEdges(for: img.id)
-                            state.setProtrusion(on ? (crossing.isEmpty ? .all : crossing) : nil, for: img.id)
-                        }))
+                        set: { on in state.setProtrusion(on ? .all : nil, for: img.id) }))
                         .labelsHidden()
                         .tint(.accentColor)
                         .disabled(state.subjectMask(for: img)?.mask == nil)

@@ -6,13 +6,21 @@ import PhotosUI
 /// The floating tab pill at the bottom of the phone layout: one glass
 /// capsule, always visible while there are images, a tab per panel. Tapping
 /// a tab raises the panel card above it; tapping the open tab again lowers
-/// it. The active tab sits in a soft bubble that slides between tabs.
+/// it. The active tab sits in a lens that slides between tabs; dragging
+/// across the pill lifts the lens into clear glass that follows the finger,
+/// and letting go opens the tab under it.
 struct FloatingTabBar: View {
     @EnvironmentObject var state: CollageState
     /// True while the panel card is up: the pill drops its own glass and
     /// becomes the bottom row of the card, behind an inset separator.
     var merged = false
-    @Namespace private var bubble
+
+    /// Width of the tab row, for turning a finger position into a tab.
+    @State private var rowWidth: CGFloat = 0
+    /// Finger x (in the tab row) while scrubbing; nil otherwise.
+    @State private var scrubX: CGFloat?
+    /// Tab under the finger while scrubbing, for the haptic tick.
+    @State private var hoverTab: Int?
 
     static let tabs = ["Images", "Layout", "Canvas", "Frames", "Overlay", "Edit", "Filter"]
     static let icons = ["photo.on.rectangle.angled", "square.grid.2x2", "rectangle.inset.filled",
@@ -28,60 +36,32 @@ struct FloatingTabBar: View {
     static let openLift: CGFloat = 0
     /// Corner radius of the pill, and of the card it merges into.
     static let cornerRadius: CGFloat = 24
+    /// Horizontal travel before a touch becomes a scrub instead of a tap.
+    private static let scrubThreshold: CGFloat = 8
+    private static let rowSpace = "FloatingTabBar.row"
+    private static let tabHeight: CGFloat = 50
 
-    /// The chosen tab keeps its bubble even while its panel is lowered, so
+    /// The chosen tab keeps its lens even while its panel is lowered, so
     /// the pill always shows which tools are one tap away.
     private var activeTab: Int { state.selectedPanelTab }
+    private var scrubbing: Bool { scrubX != nil }
+    private var tabWidth: CGFloat { rowWidth / CGFloat(Self.tabs.count) }
 
     var body: some View {
         HStack(spacing: 0) {
             ForEach(Self.tabs.indices, id: \.self) { i in
-                let active = activeTab == i
-                Button {
-                    select(i)
-                } label: {
-                    VStack(spacing: 3) {
-                        Image(systemName: Self.icons[i])
-                            .font(.system(size: 19, weight: active ? .medium : .regular))
-                            .frame(height: 24)
-                        Text(Self.tabs[i])
-                            .font(.system(size: 9.5, weight: .semibold))
-                            .lineLimit(1)
-                            .minimumScaleFactor(0.8)
-                    }
-                    .padding(.horizontal, 8)
-                    .foregroundStyle(active ? Color.white : Color.primary.opacity(0.72))
-                    .frame(maxWidth: .infinity)
-                    .frame(height: 50)
-                    // Selection bubble: a solid accent-colored chip with the
-                    // icon and label in white, so the active tab reads at a
-                    // glance over any canvas.
-                    .background {
-                        if active {
-                            let shape = RoundedRectangle(cornerRadius: ButtonStyleGuide.cornerRadius, style: .continuous)
-                            shape
-                                .fill(LinearGradient(colors: [Color.accentColor.opacity(0.85), Color.accentColor],
-                                                     startPoint: .top, endPoint: .bottom))
-                                .overlay(shape.strokeBorder(Color.white.opacity(0.35), lineWidth: 0.8))
-                                .shadow(color: Color.accentColor.opacity(0.45), radius: 6, y: 2)
-                                .matchedGeometryEffect(id: "bubble", in: bubble)
-                        }
-                    }
-                    .contentShape(Rectangle())
-                }
-                .buttonStyle(.plain)
+                tabLabel(i)
             }
         }
+        .background(alignment: .leading) { lens }
+        .onGeometryChange(for: CGFloat.self) { $0.size.width } action: { rowWidth = $0 }
+        .coordinateSpace(.named(Self.rowSpace))
         .padding(.vertical, 5)
         .padding(.horizontal, 10)
+        .contentShape(Rectangle())
+        .gesture(scrubGesture)
         .background {
-            if !merged {
-                let shape = RoundedRectangle(cornerRadius: Self.cornerRadius, style: .continuous)
-                shape
-                    .fill(.ultraThinMaterial)
-                    .overlay(shape.strokeBorder(ColorManager.glassStroke, lineWidth: 0.8))
-                    .shadow(color: .black.opacity(0.14), radius: 16, y: 6)
-            }
+            if !merged { pillGlass }
         }
         // Inset separator between the card's content and its tab row.
         .overlay(alignment: .top) {
@@ -94,12 +74,127 @@ struct FloatingTabBar: View {
             }
         }
         .animation(.spring(response: 0.32, dampingFraction: 0.82), value: activeTab)
+        .animation(.spring(response: 0.3, dampingFraction: 0.68), value: scrubbing)
         .animation(.easeInOut(duration: 0.25), value: merged)
         .padding(.horizontal, 10)
         .padding(.bottom, Self.bottomMargin)
     }
 
-    private func select(_ i: Int) {
+    private func tabLabel(_ i: Int) -> some View {
+        // Idle: the active tab is white on the accent lens. Scrubbing: the
+        // lens turns clear and the tab under it takes the accent color.
+        let onChip = !scrubbing && activeTab == i
+        let hovered = scrubbing && hoverTab == i
+        return VStack(spacing: 3) {
+            Image(systemName: Self.icons[i])
+                .font(.system(size: 19, weight: onChip || hovered ? .medium : .regular))
+                .frame(height: 24)
+            Text(Self.tabs[i])
+                .font(.system(size: 9.5, weight: .semibold))
+                .lineLimit(1)
+                .minimumScaleFactor(0.8)
+        }
+        .padding(.horizontal, 8)
+        .foregroundStyle(onChip ? Color.white : hovered ? Color.accentColor : Color.primary.opacity(0.72))
+        .scaleEffect(hovered ? 1.12 : 1)
+        .animation(.spring(response: 0.25, dampingFraction: 0.7), value: hovered)
+        .frame(maxWidth: .infinity)
+        .frame(height: Self.tabHeight)
+        .accessibilityElement(children: .combine)
+        .accessibilityAddTraits(activeTab == i ? [.isButton, .isSelected] : .isButton)
+        .accessibilityAction { select(i) }
+    }
+
+    /// The selection lens: a solid accent chip at rest, so the active tab
+    /// reads at a glance over any canvas; lifted, larger clear glass while
+    /// scrubbing, tracking the finger.
+    private var lens: some View {
+        let shape = RoundedRectangle(cornerRadius: ButtonStyleGuide.cornerRadius, style: .continuous)
+        let center = scrubX.map { min(max($0, tabWidth / 2), rowWidth - tabWidth / 2) }
+            ?? (CGFloat(activeTab) + 0.5) * tabWidth
+        return ZStack {
+            shape
+                .fill(LinearGradient(colors: [Color.accentColor.opacity(0.85), Color.accentColor],
+                                     startPoint: .top, endPoint: .bottom))
+                .overlay(shape.strokeBorder(Color.white.opacity(0.35), lineWidth: 0.8))
+                .shadow(color: Color.accentColor.opacity(0.45), radius: 6, y: 2)
+                .opacity(scrubbing ? 0 : 1)
+            clearGlass(shape)
+                .opacity(scrubbing ? 1 : 0)
+        }
+        .frame(width: tabWidth, height: Self.tabHeight)
+        .scaleEffect(scrubbing ? CGSize(width: 1.22, height: 1.3) : CGSize(width: 1, height: 1))
+        .offset(x: center - tabWidth / 2)
+        // Glued to the finger while scrubbing; a spring otherwise.
+        .animation(scrubbing ? .interactiveSpring(response: 0.18, dampingFraction: 0.86) : nil, value: scrubX)
+        .allowsHitTesting(false)
+    }
+
+    @ViewBuilder
+    private func clearGlass(_ shape: RoundedRectangle) -> some View {
+        if #available(iOS 26, macOS 26, *) {
+            Color.clear.glassEffect(.clear, in: shape)
+        } else {
+            shape
+                .fill(.ultraThinMaterial)
+                .overlay(shape.strokeBorder(ColorManager.glassStroke, lineWidth: 1))
+                .shadow(color: .black.opacity(0.18), radius: 10, y: 4)
+        }
+    }
+
+    @ViewBuilder
+    private var pillGlass: some View {
+        let shape = RoundedRectangle(cornerRadius: Self.cornerRadius, style: .continuous)
+        if #available(iOS 26, macOS 26, *) {
+            Color.clear.glassEffect(.regular, in: shape)
+        } else {
+            shape
+                .fill(.ultraThinMaterial)
+                .overlay(shape.strokeBorder(ColorManager.glassStroke, lineWidth: 0.8))
+                .shadow(color: .black.opacity(0.14), radius: 16, y: 6)
+        }
+    }
+
+    /// One gesture for the whole pill: a touch that stays put is a tap on
+    /// the tab under it; one that travels sideways scrubs the lens.
+    private var scrubGesture: some Gesture {
+        DragGesture(minimumDistance: 0, coordinateSpace: .named(Self.rowSpace))
+            .onChanged { v in
+                if !scrubbing {
+                    guard abs(v.translation.width) > Self.scrubThreshold else { return }
+                    hoverTab = tab(at: v.location.x)
+                    #if canImport(UIKit)
+                    UIImpactFeedbackGenerator(style: .soft).impactOccurred()
+                    #endif
+                }
+                scrubX = v.location.x
+                let i = tab(at: v.location.x)
+                if i != hoverTab {
+                    hoverTab = i
+                    #if canImport(UIKit)
+                    UISelectionFeedbackGenerator().selectionChanged()
+                    #endif
+                }
+            }
+            .onEnded { v in
+                let i = tab(at: v.location.x)
+                if scrubbing {
+                    // A scrub always lands open on its tab, never toggles it shut.
+                    select(i, toggles: false)
+                    scrubX = nil
+                    hoverTab = nil
+                } else {
+                    select(i)
+                }
+            }
+    }
+
+    private func tab(at x: CGFloat) -> Int {
+        guard tabWidth > 0 else { return activeTab }
+        return min(max(Int(x / tabWidth), 0), Self.tabs.count - 1)
+    }
+
+    private func select(_ i: Int, toggles: Bool = true) {
         #if canImport(UIKit)
         UIImpactFeedbackGenerator(style: .light).impactOccurred()
         #endif
@@ -109,7 +204,7 @@ struct FloatingTabBar: View {
             state.endTextEditing()
             state.endProtrusionEditing()
             state.selectedPanelTab = i
-        } else if state.selectedPanelTab == i && state.isPanelOpen {
+        } else if toggles && state.selectedPanelTab == i && state.isPanelOpen {
             withAnimation(.easeInOut(duration: 0.25)) { state.isPanelOpen = false }
         } else {
             state.selectedPanelTab = i
