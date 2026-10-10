@@ -799,6 +799,9 @@ extension CollageState {
         if let t = args.firstIndex(of: "-fill"), t + 1 < args.count, let kind = BackgroundKind(rawValue: args[t + 1]) {
             DispatchQueue.main.asyncAfter(deadline: .now() + 2) { self.backgroundKind = kind; self.gap = 40 }
         }
+                if args.contains("-export") {
+            DispatchQueue.main.asyncAfter(deadline: .now() + 2.5) { self.showExportOptions = true }
+        }
                 if args.contains("-compare") {
             DispatchQueue.main.asyncAfter(deadline: .now() + 3) { self.compareOriginal = true }
         }

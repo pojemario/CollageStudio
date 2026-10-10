@@ -41,14 +41,10 @@ struct CollageApp: App {
                     // saving shared photos — import them right away.
                     importSharedImages()
                 }
-                .confirmationDialog("Export", isPresented: $state.showExportOptions) {
-                    Button("Current Page") {
-                        Task { await state.exportPages(allPages: false) }
-                    }
-                    Button("All Pages (\(state.pages.count))") {
-                        Task { await state.exportPages(allPages: true) }
-                    }
-                    Button("Cancel", role: .cancel) {}
+                .sheet(isPresented: $state.showExportOptions) {
+                    ExportOptionsView()
+                        .environmentObject(state)
+                        .presentationDetents([.medium, .large])
                 }
                 .alert("Add Shared Photos", isPresented: $state.showSharedImportChoice) {
                     Button("Start New Collage", role: .destructive) {

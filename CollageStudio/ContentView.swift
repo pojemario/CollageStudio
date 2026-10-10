@@ -342,11 +342,7 @@ struct ContentView: View {
                     }
 
                     Button {
-                        if state.pages.count > 1 {
-                            state.showExportOptions = true
-                        } else {
-                            Task { await state.exportPages(allPages: false) }
-                        }
+                        state.showExportOptions = true
                     } label: {
                         Image(systemName: "square.and.arrow.up")
                             .font(.system(size: 17, weight: .medium))

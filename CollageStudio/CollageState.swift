@@ -896,7 +896,7 @@ class CollageState: ObservableObject {
         case idle, saving
     }
     @Published var savePhase: SavePhase = .idle
-    /// PNG files written by the last export, named 001.png … 00N.png.
+    /// Files written by the last export ("Collage 01.jpg" …).
     @Published var exportedFiles: [URL] = []
     @Published var showExportSheet: Bool = false
     /// Asks the user whether to export the current page or all pages.
@@ -2284,9 +2284,9 @@ class CollageState: ObservableObject {
 
     // MARK: - Export
 
-    /// Exports the current page, or all non-empty pages, as pixel-perfect
-    /// PNG files named 001.png … 00N.png, then presents the share sheet.
-    func exportPages(allPages: Bool) async {
+    /// Exports the current page, or all non-empty pages, at the chosen size
+    /// and format, numbered in order, then presents the share sheet.
+    func exportPages(allPages: Bool, settings: ExportSettings = .saved) async {
         guard hasAnyImages else { return }
         isExporting = true
         isBusy = true
@@ -2316,9 +2316,11 @@ class CollageState: ObservableObject {
         for (n, pi) in targets.enumerated() {
             currentPageIndex = pi
             refreshEffectMaps(force: true)
-            guard let image = renderCurrentPage(),
-                  let data = Self.pngData(image) else { continue }
-            let url = dir.appendingPathComponent(String(format: "%03d.png", n + 1))
+            guard let image = renderCurrentPage(scale: settings.scale(for: canvasSize)),
+                  let data = settings.encode(image) else { continue }
+            // Numbered in order, so a carousel posts in the right sequence.
+            let name = targets.count > 1 ? String(format: "Collage %02d", n + 1) : "Collage"
+            let url = dir.appendingPathComponent(name + "." + settings.format.fileExtension)
             do {
                 try data.write(to: url)
                 urls.append(url)
@@ -2349,15 +2351,15 @@ class CollageState: ObservableObject {
     /// way to rasterize a SwiftUI view and free of the offscreen
     /// `drawHierarchy(afterScreenUpdates:)` crash.
     @MainActor
-    private func renderCurrentPage() -> PlatformImage? {
+    private func renderCurrentPage(scale: CGFloat = 2) -> PlatformImage? {
         let gridView = CollageGridView_Grid(scale: 1.0)
             .frame(width: canvasSize.width, height: canvasSize.height)
             .environmentObject(self)
 
         let renderer = ImageRenderer(content: gridView)
         renderer.proposedSize = ProposedViewSize(canvasSize)
-        // 2× the 1024-pt canvas → crisp export while staying memory-safe.
-        renderer.scale = 2.0
+        // Standard: 2× the 1024-pt canvas → crisp while staying memory-safe.
+        renderer.scale = scale
         renderer.isOpaque = false
 
         #if canImport(UIKit)
@@ -2367,13 +2369,4 @@ class CollageState: ObservableObject {
         #endif
     }
 
-    private static func pngData(_ image: PlatformImage) -> Data? {
-        #if canImport(UIKit)
-        return image.pngData()
-        #else
-        guard let tiff = image.tiffRepresentation,
-              let rep = NSBitmapImageRep(data: tiff) else { return nil }
-        return rep.representation(using: .png, properties: [:])
-        #endif
-    }
 }
