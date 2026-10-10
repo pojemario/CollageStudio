@@ -115,7 +115,8 @@ struct BackgroundKindRow: View {
                 .frame(width: 92, alignment: .leading)
             // The gradient's bottom color, in the swatch column.
             if state.backgroundKind == .gradient {
-                ColorSwatchButton(color: $state.backgroundColor2, depth: 0.55)
+                ColorSwatchButton(color: $state.backgroundColor2, depth: 0.55,
+                                  accessibilityTitle: "Gradient bottom color")
             } else {
                 Color.clear.frame(width: 24, height: 24)
             }

@@ -268,6 +268,7 @@ struct BottomPanelView: View {
                 .padding(.bottom, -6)
                 .panelChrome(state)
                 .gesture(resizeGesture)
+                .accessibilityHidden(true)
                 .zIndex(1)
 
             // Panel content — each tab is only as tall as its own content,

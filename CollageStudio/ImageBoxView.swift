@@ -38,6 +38,15 @@ struct ImageBoxView: View {
 
     var imgData: CollageImage? { state.images.first(where: { $0.id == imageId }) }
 
+    /// "Photo 2 of 5", "Text: Hello", "Empty space".
+    private var accessibilityName: String {
+        guard let img = imgData else { return "Photo" }
+        if let style = img.textStyle { return "Text: \(style.text)" }
+        if img.isPlaceholder { return "Empty space" }
+        let n = (state.order.firstIndex(of: imageId) ?? 0) + 1
+        return "Photo \(n) of \(state.order.count)"
+    }
+
     var body: some View {
         GeometryReader { geo in
             let boxSize = geo.size
@@ -241,6 +250,21 @@ struct ImageBoxView: View {
                 // Re-grade the picture whenever the grade or the picture changes.
                 .task(id: GradeKey(proxy: imgData.map { ObjectIdentifier($0.proxy) }, grade: state.contentGrade)) {
                     if let img = imgData { state.gradeIfNeeded(img) }
+                }
+                // VoiceOver: one element per box, with the long-press menu's
+                // actions.
+                .accessibilityElement(children: .ignore)
+                .accessibilityLabel(accessibilityName)
+                .accessibilityAddTraits(imgData?.isText == true ? .isButton : .isImage)
+                .accessibilityActions {
+                    if imgData?.canProtrude == true {
+                        Button("Protrude") { state.beginProtrusion(id: imageId) }
+                    }
+                    Button("Replace") {
+                        state.boxActionTargetId = imageId
+                        state.showReplacePicker = true
+                    }
+                    Button("Remove") { state.removeImage(id: imageId) }
                 }
                 .id(imgData?.gestureEpoch ?? 0)
         }

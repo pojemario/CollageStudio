@@ -72,12 +72,15 @@ struct PageTabBar: View {
                 stepButton(system: "chevron.left", enabled: state.currentPageIndex > 0) {
                     select(state.currentPageIndex - 1)
                 }
+                .accessibilityLabel("Previous page")
                 Text("\(state.currentPageIndex + 1) / \(state.pages.count)")
+                    .accessibilityLabel("Page \(state.currentPageIndex + 1) of \(state.pages.count)")
                     .font(.subheadline.weight(.semibold).monospacedDigit())
                     .foregroundColor(.primary)
                 stepButton(system: "chevron.right", enabled: state.currentPageIndex < state.pages.count - 1) {
                     select(state.currentPageIndex + 1)
                 }
+                .accessibilityLabel("Next page")
             }
             .padding(.horizontal, 14)
             .padding(.vertical, 7)
@@ -289,6 +292,7 @@ struct ContentView: View {
                     .contentShape(Rectangle())
                 }
                 .buttonStyle(.plain)
+                .accessibilityLabel("Canvas ratio, \(state.ratio.rawValue.replacingOccurrences(of: ":", with: " by "))")
                 .background(
                     GeometryReader { g in
                         Color.clear.onChange(of: g.frame(in: .global), initial: true) { _, f in
@@ -325,6 +329,7 @@ struct ContentView: View {
                             .contentShape(Rectangle())
                     }
                     .buttonStyle(.plain)
+                    .accessibilityLabel(state.chromeHidden ? "Show only the collage" : "Full screen preview")
 
                     // Back from the full-screen preview to editing.
                     if state.chromeHidden {
@@ -338,6 +343,7 @@ struct ContentView: View {
                                 .contentShape(Rectangle())
                         }
                         .buttonStyle(.plain)
+                        .accessibilityLabel("Exit full screen")
                         .transition(.opacity)
                     }
 
@@ -351,6 +357,7 @@ struct ContentView: View {
                             .contentShape(Rectangle())
                     }
                     .buttonStyle(.plain)
+                    .accessibilityLabel("Export")
                 }
             }
             .padding(.horizontal, 5)

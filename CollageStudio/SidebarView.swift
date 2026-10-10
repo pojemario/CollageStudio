@@ -578,7 +578,8 @@ struct LabeledSlider: View {
                     .onTapGesture(count: 2) { resetToDefault() }
             }
             if let swatchColor {
-                ColorSwatchButton(color: swatchColor, depth: 0.55)
+                ColorSwatchButton(color: swatchColor, depth: 0.55,
+                                  accessibilityTitle: label == "Spacing" ? "Background color" : "\(label) color")
                     // Pure minimal in focus mode: only label + slider + value.
                     .panelChrome(state)
             } else if reservesSwatchSlot {
@@ -591,6 +592,10 @@ struct LabeledSlider: View {
                             }
                          },
                          resetValue: resetValue, trackColors: trackColors)
+                // VoiceOver gets a standard slider (swipe up / down to adjust).
+                .accessibilityRepresentation {
+                    Slider(value: $value, in: range, step: step) { Text(label) }
+                }
             Text(String(format: format, value))
                 .font(.system(size: 14, weight: resetArmed ? .bold : .medium, design: .monospaced))
                 .foregroundColor(resetArmed ? .accentColor : .primary.opacity(0.85))
@@ -767,7 +772,7 @@ struct BorderStyleRow: View {
             ColorSwatchButton(color: $state.borderColor,
                               presetTitle: "Same as Background color",
                               presetColor: { state.backgroundColor },
-                              depth: 0.55)
+                              depth: 0.55, accessibilityTitle: "Border color")
                 .panelChrome(state)
             BorderStylePicker()
                 .fixedSize()
@@ -780,6 +785,9 @@ struct BorderStyleRow: View {
                             }
                          },
                          resetValue: 0)
+                .accessibilityRepresentation {
+                    Slider(value: $state.borderThickness, in: range, step: 1) { Text("Border thickness") }
+                }
             Text(String(format: "%.0f", state.borderThickness))
                 .font(.system(size: 14, weight: resetArmed ? .bold : .medium, design: .monospaced))
                 .foregroundColor(resetArmed ? .accentColor : .primary.opacity(0.85))
@@ -860,6 +868,8 @@ struct ColorSwatchButton: View {
     var lockedMessage: String? = nil
     /// Scales how pronounced the recessed (inset) effect is. 1 = full.
     var depth: CGFloat = 1.0
+    /// What VoiceOver calls the swatch.
+    var accessibilityTitle = "Color"
     @State private var showPicker = false
     @State private var showLockedAlert = false
 
@@ -916,6 +926,7 @@ struct ColorSwatchButton: View {
             .frame(width: size, height: size)
         }
         .buttonStyle(.plain)
+        .accessibilityLabel(accessibilityTitle)
         // The system picker rides up from the bottom, over the panel, and
         // closes as soon as a color is picked.
         .sheet(isPresented: $showPicker) {
