@@ -561,21 +561,8 @@ class CollageState: ObservableObject {
 
     /// The grade with the filter, even while it's being bypassed.
     private var fullGrade: ContentGrade {
-        ContentGrade(calibration: calibration,
-                     tone: BasicTone(exposure: effectAmount(.exposure),
-                                     highlights: effectAmount(.highlights),
-                                     shadows: effectAmount(.shadows),
-                                     whites: effectAmount(.whites),
-                                     blacks: effectAmount(.blacks),
-                                     vibrance: effectAmount(.vibrance),
-                                     saturation: effectAmount(.saturation),
-                                     dehaze: effectAmount(.dehaze),
-                                     texture: effectAmount(.texture)),
-                     filter: colorFilter,
-                     filterStrength: filterStrength / 100,
-                     hsl: hsl,
-                     clarity: effectAmount(.clarity),
-                     sharpness: effectAmount(.sharpness))
+        Self.grade(effects: effects, hsl: hsl, calibration: calibration,
+                   filter: colorFilter, filterStrength: filterStrength)
     }
 
     struct Graded {

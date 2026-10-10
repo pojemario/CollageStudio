@@ -462,6 +462,9 @@ struct BottomPanelView: View {
 
     var layoutTab: some View {
         VStack(spacing: 10) {
+            // Whole looks in one tap, and the user's saved ones.
+            StylePresetsRow()
+
             VStack(spacing: 10) {
                 LabeledSlider(label: "Columns", value: Binding(
                     get: { Double(min(state.numCols, state.maxSelectableCols)) },
