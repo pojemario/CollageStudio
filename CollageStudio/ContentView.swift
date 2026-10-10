@@ -201,6 +201,18 @@ struct ContentView: View {
         }
         // Topmost: the long-press image menu floats above every panel.
         .overlay { BoxActionMenuLayer() }
+        // "Undo" / "Redo" after a shake.
+        .overlay(alignment: .top) {
+            HistoryToast().padding(.top, 70)
+        }
+        #if canImport(UIKit)
+        .onReceive(NotificationCenter.default.publisher(for: .deviceDidShake)) { _ in
+            if state.canUndo {
+                state.undo()
+                state.flashHistoryToast("Undo")
+            }
+        }
+        #endif
     }
 
     // MARK: - macOS / iPad landscape: sidebar + canvas
@@ -282,7 +294,11 @@ struct ContentView: View {
                     }
                 )
 
-                // Full-screen preview and Share — only once there are images.
+                // Undo / redo, full-screen preview and Share — only once
+                // there's a collage (or something to undo back to).
+                if state.hasAnyImages || state.canUndo {
+                    UndoRedoButtons()
+                }
                 if state.hasAnyImages {
                     // First click: full-screen preview (no tab bar or panel).
                     // Second click: only the collage (see toolbarHidden).

@@ -50,6 +50,7 @@ struct SidebarView: View {
                 .shimmering(state.isBusy)
             VersionLabel()
             Spacer()
+            UndoRedoButtons(size: 34)
             // Export / share the collage as PNG
             Button {
                 if state.pages.count > 1 {

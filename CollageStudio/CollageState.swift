@@ -853,6 +853,22 @@ class CollageState: ObservableObject {
     @Published var pendingSharedImages: [PlatformImage] = []
     @Published var showSharedImportChoice: Bool = false
 
+    // MARK: - Undo / redo (see History.swift)
+    @Published var canUndo = false
+    @Published var canRedo = false
+    /// "Undo" / "Redo" flashed over the canvas after a shake.
+    @Published var historyToast: String? = nil
+    var historyToastToken = 0
+    static let maxUndoSteps = 40
+    var undoStack: [CollageSnapshot] = []
+    var redoStack: [CollageSnapshot] = []
+    /// The document as of the last recorded step.
+    var historyCommitted: CollageSnapshot?
+    var historyWatcher: AnyCancellable?
+
+    /// Called after every recorded change (and undo / redo).
+    func documentDidChange() {}
+
     // MARK: - Export
     /// While true, image boxes draw the full-resolution originals instead of
     /// the canvas proxies. Only enabled during export rendering.
@@ -1627,6 +1643,7 @@ class CollageState: ObservableObject {
         restoreSettings()
         observeEffectSources()
         observePageStyle()
+        observeHistory()
     }
 
     /// The Layout settings last used — new collages start with them, so a
