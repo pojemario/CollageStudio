@@ -179,6 +179,7 @@ struct ProjectFile: Codable {
         var zoom: Double
         var rotation: Double
         var focus: [Double]?
+        var framedByUser: Bool?
     }
 
     struct Overlay: Codable {
@@ -395,7 +396,8 @@ extension CollageState {
                     protrusionObjects: img.protrusionObjects.map { Array($0).sorted() },
                     pan: [Double(img.panOffset.width), Double(img.panOffset.height)],
                     zoom: Double(img.zoom), rotation: Double(img.rotation),
-                    focus: img.focus.map { [Double($0.x), Double($0.y)] })
+                    focus: img.focus.map { [Double($0.x), Double($0.y)] },
+                    framedByUser: img.framedByUser)
             }
             return ProjectFile.Page(
                 images: imagesOut, order: page.order,
@@ -525,6 +527,8 @@ extension CollageState {
                     img.zoom = CGFloat(item.zoom)
                     img.rotation = CGFloat(item.rotation)
                     if let f = item.focus, f.count == 2 { img.focus = CGPoint(x: f[0], y: f[1]) }
+                    // Older files: a moved photo counts as framed by hand.
+                    img.framedByUser = item.framedByUser ?? (img.panOffset != .zero || img.zoom != 1)
                     loaded[item.id] = img
                 }
             }

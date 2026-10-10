@@ -868,8 +868,8 @@ class CollageState: ObservableObject {
     var isRenderingThumbnail = false
     @Published var showProjects = false
 
-    /// Finds where each photo's subject is (see CollageImage.focus).
-    func detectFocusPoints() {}
+    /// Photos whose subject has been looked for (see SmartLayout.swift).
+    var focusChecked: Set<UUID> = []
 
     // MARK: - Export
     /// While true, image boxes draw the full-resolution originals instead of
@@ -1166,6 +1166,7 @@ class CollageState: ObservableObject {
     /// Adds images to page `target` (default: the current page), spilling
     /// onto new pages once it's full.
     func addPreparedImages(_ prepared: [CollageImage], toPage target: Int? = nil) {
+        defer { detectFocusPoints() }
         let wasEmpty = pages.allSatisfy { $0.images.isEmpty }
 
         // Fresh collage: spread the batch across auto-created pages at
@@ -1261,7 +1262,10 @@ class CollageState: ObservableObject {
         guard let pi = pageIndex(containing: id),
               let idx = pages[pi].images.firstIndex(where: { $0.id == id }) else { return }
         pages[pi].images[idx].setImage(newImage)
+        focusChecked.remove(id)
+        defer { detectFocusPoints() }
         pages[pi].images[idx].panOffset = .zero
+        pages[pi].images[idx].framedByUser = false
         pages[pi].images[idx].zoom = 1.0
         pages[pi].images[idx].lastBoxSize = .zero
         // Swap the new picture into its box in place, keeping the user's
@@ -1324,6 +1328,7 @@ class CollageState: ObservableObject {
         var img = pages[src].images.remove(at: idx)
         pages[src].order.removeAll { $0 == id }
         img.panOffset = .zero
+        img.framedByUser = false
         img.zoom = 1.0
         img.rotation = 0
         img.lastBoxSize = .zero
@@ -1364,6 +1369,7 @@ class CollageState: ObservableObject {
         let allImages = pages.flatMap { $0.images }.prefix(Self.maxImagesPerPage).map { img -> CollageImage in
             var i = img
             i.panOffset = .zero
+            i.framedByUser = false
             i.zoom = 1.0
             i.lastBoxSize = .zero
             return i
@@ -1440,18 +1446,21 @@ class CollageState: ObservableObject {
             while chunk.count < perPage && idx < images.count {
                 var img = images[idx]
                 img.panOffset = .zero
+                img.framedByUser = false
                 img.zoom = 1.0
                 img.lastBoxSize = .zero
                 chunk.append(img)
                 idx += 1
             }
             page.images = chunk
-            page.order = chunk.map(\.id)
             // Columns ≈ √count so rows and columns stay balanced — a square-ish
             // grid (4 → 2×2, 6 → 3×2, 9 → 3×3, 12 → 4×3). Callers may override
             // with a different strategy (e.g. Burst!'s landscape bias).
             page.style.numCols = columnsFor?(chunk.count)
                 ?? max(1, min(6, Int(Double(chunk.count).squareRoot().rounded())))
+            // Tall photos into the tall boxes, wide ones into the wide.
+            page.order = Self.fittingOrder(chunk, numCols: page.style.numCols,
+                                           canvas: canvasSize, rows: page.style.isRows)
             page.layout.rebuild(images: page.images, order: page.order,
                                 numCols: page.style.numCols)
             newPages.append(page)
@@ -1475,6 +1484,7 @@ class CollageState: ObservableObject {
         var newPages: [CollagePage] = []
         for var img in allImages.prefix(Self.maxPages) {
             img.panOffset = .zero
+            img.framedByUser = false
             img.zoom = 1.0
             img.lastBoxSize = .zero
             var page = CollagePage(style: styleTemplate)
@@ -1490,6 +1500,7 @@ class CollageState: ObservableObject {
         if !overflow.isEmpty, var last = newPages.last {
             for var img in overflow.prefix(Self.maxImagesPerPage - last.images.count) {
                 img.panOffset = .zero
+                img.framedByUser = false
                 img.zoom = 1.0
                 img.lastBoxSize = .zero
                 last.images.append(img)
@@ -1724,6 +1735,7 @@ class CollageState: ObservableObject {
         for pi in pages.indices {
             for i in pages[pi].images.indices {
                 pages[pi].images[i].panOffset = .zero
+                pages[pi].images[i].framedByUser = false
                 pages[pi].images[i].zoom = 1.0
                 pages[pi].images[i].rotation = 0
                 pages[pi].images[i].lastBoxSize = .zero
@@ -1768,6 +1780,7 @@ class CollageState: ObservableObject {
         let clamped = clamp(pan: newPan, zoom: img.zoom, boxSize: boxSize, naturalSize: img.naturalSize)
         img.panOffset = Self.normalizedPan(clamped, in: boxSize)
         img.lastBoxSize = boxSize
+        img.framedByUser = true
         images[idx] = img
     }
 
@@ -1776,7 +1789,7 @@ class CollageState: ObservableObject {
         var img = images[idx]
         let px = Self.panPixels(normalizedPan, in: boxSize)
         let clamped = clamp(pan: px, zoom: img.zoom, boxSize: boxSize, naturalSize: img.naturalSize)
-        img.panOffset = Self.normalizedPan(clamped, in: boxSize)
+        img.panOffset = Self.focusPan(for: img, boxSize: boxSize) ?? Self.normalizedPan(clamped, in: boxSize)
         img.lastBoxSize = boxSize
         images[idx] = img
     }
@@ -1785,6 +1798,10 @@ class CollageState: ObservableObject {
         guard !isRenderingOffscreen else { return }
         guard let idx = images.firstIndex(where: { $0.id == id }) else { return }
         images[idx].lastBoxSize = boxSize
+        // A photo not positioned by hand keeps its subject in view.
+        if let pan = Self.focusPan(for: images[idx], boxSize: boxSize), pan != images[idx].panOffset {
+            images[idx].panOffset = pan
+        }
         // A text block always takes the shape of its box: re-render when the
         // box's proportions moved away from the bitmap's.
         if let style = images[idx].textStyle, boxSize.width > 1, boxSize.height > 1 {
@@ -1810,6 +1827,7 @@ class CollageState: ObservableObject {
             height: anchor.y - ratio * (anchor.y - panPx.height)
         )
         img.zoom = newZoom
+        img.framedByUser = true
         let clamped = clamp(pan: newPan, zoom: newZoom, boxSize: boxSize, naturalSize: img.naturalSize)
         img.panOffset = Self.normalizedPan(clamped, in: boxSize)
         images[idx] = img
@@ -1835,6 +1853,7 @@ class CollageState: ObservableObject {
         let safeAngle = angleDelta.isFinite ? angleDelta : 0
         img.zoom = max(1.0, min(4.0, img.zoom * safeScale))
         img.rotation += safeAngle
+        img.framedByUser = true
         if !img.rotation.isFinite { img.rotation = 0 }
         let panPx = Self.panPixels(img.panOffset, in: boxSize)
         let clamped = clamp(pan: panPx, zoom: img.zoom, boxSize: boxSize, naturalSize: img.naturalSize)
@@ -1858,6 +1877,7 @@ class CollageState: ObservableObject {
     func resetTransform(id: UUID) {
         guard let idx = images.firstIndex(where: { $0.id == id }) else { return }
         images[idx].panOffset = .zero
+        images[idx].framedByUser = false
         images[idx].zoom = 1.0
         images[idx].rotation = 0
     }
@@ -2014,6 +2034,7 @@ class CollageState: ObservableObject {
     private func resetPan(id: UUID) {
         guard let idx = images.firstIndex(where: { $0.id == id }) else { return }
         images[idx].panOffset = .zero
+        images[idx].framedByUser = false
         images[idx].lastBoxSize = .zero
     }
 

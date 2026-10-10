@@ -306,6 +306,9 @@ struct CollageImage: Identifiable, Equatable {
     /// normalized image coordinates (0...1, y down); nil until found or
     /// when there's nothing in particular. The box crops around it.
     var focus: CGPoint? = nil
+    /// The user moved or zoomed the photo themselves; until then the crop
+    /// follows `focus`.
+    var framedByUser = false
 
     static func == (lhs: CollageImage, rhs: CollageImage) -> Bool {
         // Compare the image reference too, so views refresh when an image
@@ -329,6 +332,8 @@ struct CollageImage: Identifiable, Equatable {
         thumb = newImage.downsampled(longEdge: Self.thumbLongEdge)
         isPlaceholder = false
         textStyle = nil
+        focus = nil
+        framedByUser = false
     }
 
     /// A "Text image": a rendered text box that behaves like any other image.
