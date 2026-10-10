@@ -5,6 +5,10 @@ struct CollageApp: App {
     @StateObject private var state = CollageState()
     @Environment(\.scenePhase) private var scenePhase
 
+    init() {
+        CollageTips.configure()
+    }
+
     var body: some Scene {
         WindowGroup {
             ContentView()

@@ -1,4 +1,5 @@
 import SwiftUI
+import TipKit
 import CoreImage
 import CoreImage.CIFilterBuiltins
 
@@ -802,6 +803,7 @@ struct NumbersSwipeReset: ViewModifier {
                         // A quick flick counts by where it was heading,
                         // even if the finger itself moved only a little.
                         if armed || isResetSwipe(start: v.startLocation, travel: v.predictedEndTranslation) {
+                            ResetSwipeTip().invalidate(reason: .actionPerformed)
                             withAnimation(.easeOut(duration: 0.2)) { reset() }
                             #if canImport(UIKit)
                             UINotificationFeedbackGenerator().notificationOccurred(.success)

@@ -1,4 +1,5 @@
 import SwiftUI
+import TipKit
 #if canImport(PhotosUI)
 import PhotosUI
 #endif
@@ -96,6 +97,16 @@ struct CanvasContainerView: View {
                             }
                         }
                         .coordinateSpace(name: "collageCanvas")
+                        // A small anchor near the top of the collage for the
+                        // touch-and-hold tip.
+                        .overlay(alignment: .top) {
+                            if state.hasAnyImages {
+                                Color.clear.frame(width: 40, height: 1)
+                                    .popoverTip(PhotoMenuTip(), arrowEdge: .bottom)
+                                    .allowsHitTesting(false)
+                                    .padding(.top, displayH * 0.3)
+                            }
+                        }
                         // Insert marker: a bar across the hovered splitter.
                         .overlay(alignment: .topLeading) {
                             if let target = state.dropInsertTarget {

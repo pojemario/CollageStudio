@@ -1,4 +1,5 @@
 import SwiftUI
+import TipKit
 
 /// Glass dialog shown while the collage is being exported, with a progress
 /// bar (per-page progress for multi-page exports).
@@ -204,6 +205,12 @@ struct ContentView: View {
         }
         // Topmost: the long-press image menu floats above every panel.
         .overlay { BoxActionMenuLayer() }
+        // First-run tips (see Tips.swift).
+        .task { await CollageTips.follow() }
+        .onChange(of: state.hasAnyImages, initial: true) { _, has in CollageTips.hasImages = has }
+        .onChange(of: state.showBoxActionMenu) { _, open in
+            if open { PhotoMenuTip().invalidate(reason: .actionPerformed) }
+        }
         .sheet(isPresented: $state.showProjects) {
             ProjectsView(store: state.projectStore).environmentObject(state)
         }
@@ -495,6 +502,7 @@ struct ContentView: View {
 
                         FloatingTabBar(merged: state.isPanelOpen && state.panelDrag == 0)
                             .panelChrome(state)
+                            .popoverTip(TabBarTip(), arrowEdge: .bottom)
                             // In overlay mode an "OVERLAY" label floats above
                             // the pill, so a frozen collage never looks broken.
                             .overlay(alignment: .top) {

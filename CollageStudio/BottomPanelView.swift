@@ -1,4 +1,5 @@
 import SwiftUI
+import TipKit
 #if canImport(PhotosUI)
 import PhotosUI
 #endif
@@ -179,6 +180,7 @@ struct FloatingTabBar: View {
             .onEnded { v in
                 let i = tab(at: v.location.x)
                 if scrubbing {
+                    TabBarTip().invalidate(reason: .actionPerformed)
                     // A scrub always lands open on its tab, never toggles it shut.
                     select(i, toggles: false)
                     scrubX = nil
@@ -492,6 +494,7 @@ struct BottomPanelView: View {
             }
             // No Reset button: swipe up or down on the labels or numbers.
             .swipeNumbersToReset(canReset: state.hasStyleChanges) { state.resetStyle() }
+            .popoverTip(ResetSwipeTip(), arrowEdge: .bottom)
 
             HStack(spacing: 8) {
                 // Shuffle stays visible in shuffle-focus mode; the others fade.

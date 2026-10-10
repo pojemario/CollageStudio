@@ -31,6 +31,7 @@
 		CDCFFB50E3A38E486960EC62 /* SmartLayout.swift in Sources */ = {isa = PBXBuildFile; fileRef = CCCFFB50E3A38E486960EC62 /* SmartLayout.swift */; };
 		CD1D20EACFDBA78B13F8849D /* Backgrounds.swift in Sources */ = {isa = PBXBuildFile; fileRef = CC1D20EACFDBA78B13F8849D /* Backgrounds.swift */; };
 		CD1AEE73E469CECF122CC288 /* ExportOptions.swift in Sources */ = {isa = PBXBuildFile; fileRef = CC1AEE73E469CECF122CC288 /* ExportOptions.swift */; };
+		CD2E1D6C7C956F2B46F32590 /* Tips.swift in Sources */ = {isa = PBXBuildFile; fileRef = CC2E1D6C7C956F2B46F32590 /* Tips.swift */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXContainerItemProxy section */
@@ -85,6 +86,7 @@
 		CCCFFB50E3A38E486960EC62 /* SmartLayout.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SmartLayout.swift; sourceTree = "<group>"; };
 		CC1D20EACFDBA78B13F8849D /* Backgrounds.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Backgrounds.swift; sourceTree = "<group>"; };
 		CC1AEE73E469CECF122CC288 /* ExportOptions.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ExportOptions.swift; sourceTree = "<group>"; };
+		CC2E1D6C7C956F2B46F32590 /* Tips.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Tips.swift; sourceTree = "<group>"; };
 /* End PBXFileReference section */
 
 /* Begin PBXFileSystemSynchronizedBuildFileExceptionSet section */
@@ -150,6 +152,7 @@
 				AA0000F7 /* Effects.swift */,
 				22BA1EDC30028033000137C9 /* CollageGridView_Grid.swift */,
 				22CD51FB300B66E20026FB00 /* SharedInbox.swift */,
+				CC2E1D6C7C956F2B46F32590 /* Tips.swift */,
 				CC1AEE73E469CECF122CC288 /* ExportOptions.swift */,
 				CC1D20EACFDBA78B13F8849D /* Backgrounds.swift */,
 				CCCFFB50E3A38E486960EC62 /* SmartLayout.swift */,
@@ -339,6 +342,7 @@
 				AA000007 /* ImageBoxView.swift in Sources */,
 				AA000008 /* SidebarView.swift in Sources */,
 				AA000009 /* BottomPanelView.swift in Sources */,
+				CD2E1D6C7C956F2B46F32590 /* Tips.swift in Sources */,
 				CD1AEE73E469CECF122CC288 /* ExportOptions.swift in Sources */,
 				CD1D20EACFDBA78B13F8849D /* Backgrounds.swift in Sources */,
 				CDCFFB50E3A38E486960EC62 /* SmartLayout.swift in Sources */,
