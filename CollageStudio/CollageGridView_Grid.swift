@@ -17,6 +17,10 @@ struct CollageGridView_Grid: View {
     /// later drag always moves the overlay.)
     @State private var lastOverlayPinchEnd = Date.distantPast
     @GestureState private var overlayTouching = false
+    /// Which center lines a dragged overlay is snapped to (for the guides
+    /// and the haptic tick).
+    @State private var snappedX = false
+    @State private var snappedY = false
 
     var body: some View {
         GeometryReader { geo in
@@ -136,6 +140,7 @@ struct CollageGridView_Grid: View {
                         // Overlay mode: a touch surface above everything freezes
                         // the collage and steers the edited overlay instead.
                         if state.overlayModeActive && !state.isExporting {
+                            if !state.isRenderingOffscreen { snapGuides(canvasSize: canvasSize) }
                             overlayGestureSurface
                         }
                     }
@@ -178,12 +183,11 @@ struct CollageGridView_Grid: View {
                 // pinch never moves it.
                 let live = layer.id == state.editedOverlayId && state.overlayModeActive
                 let drag = live && !overlayPinching ? overlayDrag : .zero
+                let snap = snapped(layer, translation: CGSize(width: drag.width / scale, height: drag.height / scale),
+                                   rotateBy: CGFloat(overlayPinchAngle.radians))
                 let shown = live
-                    ? layer.applying(scaleBy: overlayPinchScale,
-                                     rotateBy: CGFloat(overlayPinchAngle.radians),
-                                     translation: CGSize(width: drag.width / scale,
-                                                         height: drag.height / scale),
-                                     canvasSize: state.canvasSize)
+                    ? layer.applying(scaleBy: overlayPinchScale, rotateBy: snap.rotateBy,
+                                     translation: snap.translation, canvasSize: state.canvasSize)
                     : layer
                 Group {
                     #if canImport(UIKit)
@@ -207,6 +211,39 @@ struct CollageGridView_Grid: View {
         }
     }
 
+    /// A move / turn of an overlay with snapping: its center sticks to the
+    /// canvas's center lines within a few points, and its angle to the
+    /// nearest quarter turn within 3°. `translation` is in canvas pixels.
+    private func snapped(_ layer: OverlayLayer, translation: CGSize, rotateBy: CGFloat = 0)
+        -> (translation: CGSize, rotateBy: CGFloat, x: Bool, y: Bool) {
+        let tolerance = 8 / max(scale, 0.01)
+        var t = translation
+        let x = abs(layer.offset.width + t.width) < tolerance
+        let y = abs(layer.offset.height + t.height) < tolerance
+        if x { t.width = -layer.offset.width }
+        if y { t.height = -layer.offset.height }
+        var r = rotateBy
+        let quarter = CGFloat.pi / 2
+        let angle = layer.rotation + rotateBy
+        let nearest = (angle / quarter).rounded() * quarter
+        if rotateBy != 0, abs(angle - nearest) < 3 * .pi / 180 { r = nearest - layer.rotation }
+        return (t, r, x, y)
+    }
+
+    /// Center lines shown while a dragged overlay is snapped to them.
+    private func snapGuides(canvasSize: CGSize) -> some View {
+        ZStack {
+            if snappedX {
+                Rectangle().fill(Color.accentColor).frame(width: 1.5, height: canvasSize.height)
+            }
+            if snappedY {
+                Rectangle().fill(Color.accentColor).frame(width: canvasSize.width, height: 1.5)
+            }
+        }
+        .shadow(color: .black.opacity(0.3), radius: 1)
+        .allowsHitTesting(false)
+    }
+
     /// Invisible surface covering the canvas in overlay mode. It swallows
     /// every touch meant for the collage; drag moves the edited overlay,
     /// pinch zooms and rotates it, and a double tap resets its placement.
@@ -223,13 +260,30 @@ struct CollageGridView_Grid: View {
                     .updating($overlayDrag) { value, drag, _ in
                         drag = value.translation
                     }
-                    .onChanged { _ in state.beginOverlayGesture() }
+                    .onChanged { value in
+                        state.beginOverlayGesture()
+                        guard !overlayPinching, let layer = state.editedOverlay else { return }
+                        let snap = snapped(layer, translation: CGSize(width: value.translation.width / scale,
+                                                                      height: value.translation.height / scale))
+                        if snap.x != snappedX || snap.y != snappedY {
+                            #if canImport(UIKit)
+                            if (snap.x && !snappedX) || (snap.y && !snappedY) {
+                                UIImpactFeedbackGenerator(style: .light).impactOccurred()
+                            }
+                            #endif
+                            snappedX = snap.x
+                            snappedY = snap.y
+                        }
+                    }
                     .onEnded { value in
                         state.endOverlayGesture()
-                        guard !overlayPinching, Date().timeIntervalSince(lastOverlayPinchEnd) > 0.25 else { return }
-                        state.transformEditedOverlay(
-                            translation: CGSize(width: value.translation.width / scale,
-                                                height: value.translation.height / scale))
+                        snappedX = false
+                        snappedY = false
+                        guard !overlayPinching, Date().timeIntervalSince(lastOverlayPinchEnd) > 0.25,
+                              let layer = state.editedOverlay else { return }
+                        let snap = snapped(layer, translation: CGSize(width: value.translation.width / scale,
+                                                                      height: value.translation.height / scale))
+                        state.transformEditedOverlay(translation: snap.translation)
                     }
             )
             .simultaneousGesture(
@@ -247,8 +301,9 @@ struct CollageGridView_Grid: View {
                     .onEnded { value in
                         lastOverlayPinchEnd = Date()
                         state.endOverlayGesture()
-                        state.transformEditedOverlay(scaleBy: value.first ?? 1,
-                                                     rotateBy: CGFloat((value.second ?? .zero).radians))
+                        let turn = CGFloat((value.second ?? .zero).radians)
+                        let snap = state.editedOverlay.map { snapped($0, translation: .zero, rotateBy: turn) }
+                        state.transformEditedOverlay(scaleBy: value.first ?? 1, rotateBy: snap?.rotateBy ?? turn)
                     }
             )
             .simultaneousGesture(
