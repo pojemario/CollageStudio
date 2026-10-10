@@ -267,10 +267,11 @@ struct ContentView: View {
                                 .font(.footnote.weight(.bold))
                                 .lineLimit(1)
                         }
-                        .foregroundColor(state.isRatioOpen ? .white : .primary)
-                        .padding(.horizontal, 12)
-                        .frame(height: 34)
-                        .appButtonBackground(prominent: state.isRatioOpen)
+                        // Plain like the other toolbar icons; accent-colored
+                        // while its popup is open.
+                        .foregroundColor(state.isRatioOpen ? .accentColor : .primary)
+                        .padding(.horizontal, 8)
+                        .frame(height: 40)
                         .contentShape(Rectangle())
                     }
                     .buttonStyle(.plain)

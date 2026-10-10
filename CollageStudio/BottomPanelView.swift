@@ -372,15 +372,18 @@ struct BottomPanelView: View {
                     get: { Double(min(state.numCols, state.maxSelectableCols)) },
                     set: { v in state.numCols = Int(v); state.rebuildLayout(resetGrows: true) }
                 ), range: 1...Double(state.maxSelectableCols), step: 1, format: "%.0f", resetValue: 2,
-                   reservesSwatchSlot: true, customLabel: AnyView(LanesSwitch()))
+                   reservesSwatchSlot: true, customLabel: AnyView(LanesSwitch()),
+                   valueWidth: LabeledSlider.twoDigitValueWidth)
                     .disabled(state.maxSelectableCols <= 1)
                     .opacity(state.maxSelectableCols <= 1 ? 0.4 : 1)
 
                 LabeledSlider(label: "Spacing", value: $state.gap, range: 0...70, step: 1, format: "%.0f",
-                              resetValue: 10, swatchColor: $state.backgroundColor)
+                              resetValue: 10, swatchColor: $state.backgroundColor,
+                              valueWidth: LabeledSlider.twoDigitValueWidth)
 
                 LabeledSlider(label: "Rounding", value: $state.cornerRadius, range: 0...100, step: 1, format: "%.0f",
-                              resetValue: 20, reservesSwatchSlot: true)
+                              resetValue: 20, reservesSwatchSlot: true,
+                              valueWidth: LabeledSlider.twoDigitValueWidth)
 
                 BorderStyleRow()
 
