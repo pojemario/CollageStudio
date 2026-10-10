@@ -453,6 +453,9 @@ struct PageStyle: Equatable {
     var gap: Double = 10
     var cornerRadius: Double = 20
     var backgroundColor: Color = .white
+    var backgroundKind: BackgroundKind = .color
+    /// Bottom color of a gradient background.
+    var backgroundColor2: Color = Color(.sRGB, red: 0.85, green: 0.87, blue: 0.93, opacity: 1)
     var borderColor: Color = .white
     var borderThickness: Double = 0
     var borderStyle: BorderStyle = .solid

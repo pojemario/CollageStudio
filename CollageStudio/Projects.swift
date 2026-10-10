@@ -6,7 +6,7 @@ import Combine
 extension PageStyle: Codable {
     private enum CodingKeys: String, CodingKey {
         case numCols, isRows, gap, cornerRadius, backgroundColor, borderColor, borderThickness
-        case borderStyle, borderPlacement, linkBorderToBackground
+        case borderStyle, borderPlacement, linkBorderToBackground, backgroundKind, backgroundColor2
     }
 
     /// Missing or unknown entries keep their defaults, so older files load.
@@ -23,6 +23,8 @@ extension PageStyle: Codable {
         if let v = try c.decodeIfPresent(String.self, forKey: .borderStyle), let s = BorderStyle(rawValue: v) { borderStyle = s }
         if let v = try c.decodeIfPresent(String.self, forKey: .borderPlacement), let p = BorderPlacement(rawValue: v) { borderPlacement = p }
         linkBorderToBackground = try c.decodeIfPresent(Bool.self, forKey: .linkBorderToBackground) ?? linkBorderToBackground
+        if let v = try c.decodeIfPresent(String.self, forKey: .backgroundKind), let k = BackgroundKind(rawValue: v) { backgroundKind = k }
+        if let v = try c.decodeIfPresent([Double].self, forKey: .backgroundColor2), let col = Color(srgbComponents: v) { backgroundColor2 = col }
     }
 
     func encode(to encoder: Encoder) throws {
@@ -37,6 +39,8 @@ extension PageStyle: Codable {
         try c.encode(borderStyle.rawValue, forKey: .borderStyle)
         try c.encode(borderPlacement.rawValue, forKey: .borderPlacement)
         try c.encode(linkBorderToBackground, forKey: .linkBorderToBackground)
+        try c.encode(backgroundKind.rawValue, forKey: .backgroundKind)
+        try c.encode(backgroundColor2.srgbComponents, forKey: .backgroundColor2)
     }
 }
 
@@ -792,7 +796,10 @@ extension CollageState {
                 if StylePreset.builtIns.indices.contains(n) { self.applyStylePreset(StylePreset.builtIns[n]) }
             }
         }
-        if args.contains("-compare") {
+        if let t = args.firstIndex(of: "-fill"), t + 1 < args.count, let kind = BackgroundKind(rawValue: args[t + 1]) {
+            DispatchQueue.main.asyncAfter(deadline: .now() + 2) { self.backgroundKind = kind; self.gap = 40 }
+        }
+                if args.contains("-compare") {
             DispatchQueue.main.asyncAfter(deadline: .now() + 3) { self.compareOriginal = true }
         }
                 if args.contains("-showProjects") {

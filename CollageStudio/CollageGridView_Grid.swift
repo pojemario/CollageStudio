@@ -64,7 +64,6 @@ struct CollageGridView_Grid: View {
             // frame's opening (the whole canvas without a frame).
             let contentWindow = CGRect(x: insetL, y: insetT,
                                        width: contentSize.width, height: contentSize.height)
-            let background = ContentGrader.apply(state.contentGrade, to: state.backgroundColor)
 
             ZStack {
                 // Empty canvas is transparent so the app background shows
@@ -79,12 +78,12 @@ struct CollageGridView_Grid: View {
                     // (Left out of the effect-source snapshot so glow and
                     // halation don't bleed in from the frame's surround.)
                     if decorated { Color.white }
-                    background
+                    CollageBackground()
                         .modifier(EffectToning(state: state, enabled: decorated))
                         .frame(width: contentSize.width, height: contentSize.height)
                         .offset(x: (insetL - insetR) / 2, y: (insetT - insetB) / 2)
                 } else {
-                    background
+                    CollageBackground()
                         .modifier(EffectToning(state: state, enabled: decorated))
                 }
 

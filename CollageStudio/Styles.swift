@@ -27,9 +27,12 @@ struct StylePreset: Identifiable, Codable, Equatable {
     }
 
     private static func style(background: Color, gap: Double, rounding: Double,
-                              border: Double = 0, borderColor: Color? = nil) -> PageStyle {
+                              border: Double = 0, borderColor: Color? = nil,
+                              kind: BackgroundKind = .color, second: Color? = nil) -> PageStyle {
         var s = PageStyle()
         s.backgroundColor = background
+        s.backgroundKind = kind
+        if let second { s.backgroundColor2 = second }
         s.borderColor = borderColor ?? background
         s.linkBorderToBackground = borderColor == nil
         s.gap = gap
@@ -42,7 +45,7 @@ struct StylePreset: Identifiable, Codable, Equatable {
     static let builtIns: [StylePreset] = [
         StylePreset(name: "Clean", style: style(background: .white, gap: 10, rounding: 20)),
         StylePreset(name: "Polaroid",
-                    style: style(background: color(0.97, 0.96, 0.93), gap: 28, rounding: 0),
+                    style: style(background: color(0.97, 0.96, 0.93), gap: 28, rounding: 0, kind: .paper),
                     effects: ["Fade": 20, "Grain": 25, "Vignette": 15],
                     filter: "brownie", filterStrength: 45),
         StylePreset(name: "Magazine", style: style(background: .white, gap: 4, rounding: 0),
@@ -55,7 +58,8 @@ struct StylePreset: Identifiable, Codable, Equatable {
                     style: style(background: color(0.98, 0.95, 0.89), gap: 16, rounding: 12),
                     effects: ["Grain": 20], filter: "portra400"),
         StylePreset(name: "Pastel",
-                    style: style(background: color(1, 0.92, 0.93), gap: 22, rounding: 34),
+                    style: style(background: color(1, 0.92, 0.93), gap: 22, rounding: 34,
+                                 kind: .gradient, second: color(0.88, 0.89, 1)),
                     effects: ["Fade": 30, "Temperature": 8]),
         StylePreset(name: "Moody",
                     style: style(background: color(0.18, 0.18, 0.2), gap: 12, rounding: 10),
@@ -237,7 +241,19 @@ struct StylePreview: View {
             }
         }
         .padding(gap)
-        .background(ContentGrader.apply(grade, to: s.backgroundColor))
+        .background {
+            let top = ContentGrader.apply(grade, to: s.backgroundColor)
+            switch s.backgroundKind {
+            case .gradient:
+                LinearGradient(colors: [top, ContentGrader.apply(grade, to: s.backgroundColor2)],
+                               startPoint: .top, endPoint: .bottom)
+            case .photo:
+                LinearGradient(colors: [colors[0].opacity(0.8), colors[3].opacity(0.8)],
+                               startPoint: .topLeading, endPoint: .bottomTrailing)
+            case .color, .paper:
+                top
+            }
+        }
         .overlay {
             // A hint of vignette / fade where the look has them.
             if (preset.effectValues[.vignette] ?? 0) > 0 {

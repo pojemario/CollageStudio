@@ -1603,12 +1603,13 @@ class CollageState: ObservableObject {
     /// Whether the Layout settings differ from their defaults.
     var hasStyleChanges: Bool {
         gap != 10 || cornerRadius != 20 || borderThickness != 0 || borderStyle != .solid
-            || backgroundColor != .white || borderColor != .white
+            || backgroundColor != .white || borderColor != .white || backgroundKind != .color
     }
 
     func resetStyle() {
         gap = 10
         backgroundColor = .white
+        backgroundKind = .color
         cornerRadius = 20
         borderStyle = .solid
         borderThickness = 0

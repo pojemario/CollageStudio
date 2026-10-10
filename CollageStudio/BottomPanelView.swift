@@ -479,6 +479,8 @@ struct BottomPanelView: View {
                               resetValue: 10, swatchColor: $state.backgroundColor,
                               compactValue: true)
 
+                BackgroundKindRow()
+
                 LabeledSlider(label: "Rounding", value: $state.cornerRadius, range: 0...100, step: 1, format: "%.0f",
                               resetValue: 20, reservesSwatchSlot: true,
                               compactValue: true)

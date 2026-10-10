@@ -29,6 +29,7 @@
 		CDF39BEA1DCABCA4CC123172 /* Projects.swift in Sources */ = {isa = PBXBuildFile; fileRef = CCF39BEA1DCABCA4CC123172 /* Projects.swift */; };
 		CDE04F5A291AA82632FC7C3E /* Styles.swift in Sources */ = {isa = PBXBuildFile; fileRef = CCE04F5A291AA82632FC7C3E /* Styles.swift */; };
 		CDCFFB50E3A38E486960EC62 /* SmartLayout.swift in Sources */ = {isa = PBXBuildFile; fileRef = CCCFFB50E3A38E486960EC62 /* SmartLayout.swift */; };
+		CD1D20EACFDBA78B13F8849D /* Backgrounds.swift in Sources */ = {isa = PBXBuildFile; fileRef = CC1D20EACFDBA78B13F8849D /* Backgrounds.swift */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXContainerItemProxy section */
@@ -81,6 +82,7 @@
 		CCF39BEA1DCABCA4CC123172 /* Projects.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Projects.swift; sourceTree = "<group>"; };
 		CCE04F5A291AA82632FC7C3E /* Styles.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Styles.swift; sourceTree = "<group>"; };
 		CCCFFB50E3A38E486960EC62 /* SmartLayout.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SmartLayout.swift; sourceTree = "<group>"; };
+		CC1D20EACFDBA78B13F8849D /* Backgrounds.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Backgrounds.swift; sourceTree = "<group>"; };
 /* End PBXFileReference section */
 
 /* Begin PBXFileSystemSynchronizedBuildFileExceptionSet section */
@@ -146,6 +148,7 @@
 				AA0000F7 /* Effects.swift */,
 				22BA1EDC30028033000137C9 /* CollageGridView_Grid.swift */,
 				22CD51FB300B66E20026FB00 /* SharedInbox.swift */,
+				CC1D20EACFDBA78B13F8849D /* Backgrounds.swift */,
 				CCCFFB50E3A38E486960EC62 /* SmartLayout.swift */,
 				CCE04F5A291AA82632FC7C3E /* Styles.swift */,
 				CCF39BEA1DCABCA4CC123172 /* Projects.swift */,
@@ -333,6 +336,7 @@
 				AA000007 /* ImageBoxView.swift in Sources */,
 				AA000008 /* SidebarView.swift in Sources */,
 				AA000009 /* BottomPanelView.swift in Sources */,
+				CD1D20EACFDBA78B13F8849D /* Backgrounds.swift in Sources */,
 				CDCFFB50E3A38E486960EC62 /* SmartLayout.swift in Sources */,
 				CDE04F5A291AA82632FC7C3E /* Styles.swift in Sources */,
 				CDF39BEA1DCABCA4CC123172 /* Projects.swift in Sources */,
