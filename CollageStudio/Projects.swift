@@ -78,6 +78,8 @@ extension ColorFilter {
     var storageKey: String {
         switch self {
         case .none: return "none"
+        case .amber: return "amber"
+        case .tealSplit: return "tealSplit"
         case .brownie: return "brownie"
         case .melancholy: return "melancholy"
         case .classicNegative: return "classicNegative"
@@ -89,6 +91,8 @@ extension ColorFilter {
 
     init(storageKey key: String) {
         switch key {
+        case "amber": self = .amber
+        case "tealSplit": self = .tealSplit
         case "brownie": self = .brownie
         case "melancholy": self = .melancholy
         case "classicNegative": self = .classicNegative

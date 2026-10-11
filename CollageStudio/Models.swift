@@ -1055,6 +1055,12 @@ struct CameraCalibration: Hashable {
 /// photos and background only.
 enum ColorFilter: Hashable, Identifiable {
     case none
+    /// Amber reference look: warm amber skin and reds against teal-cyan
+    /// sky and denim, muted greens, cool mint-gray whites held under white.
+    case amber
+    /// Warm, even skin against complementary split toning: olive-green
+    /// shadows and teal highlights.
+    case tealSplit
     /// Port of the pojemario.com/brownie web filter at its default settings
     /// (intensity 60, warmth 55, lift 30, saturation 50, contrast /
     /// highlights / brightness 50); its random grain is left to the Grain
@@ -1081,7 +1087,7 @@ enum ColorFilter: Hashable, Identifiable {
     case lut(String)
 
     /// The built-in looks, in tile order.
-    static let builtIns: [ColorFilter] = [.none, .brownie, .melancholy, .classicNegative,
+    static let builtIns: [ColorFilter] = [.none, .amber, .tealSplit, .brownie, .melancholy, .classicNegative,
                                           .classicNegative2, .portra400]
     /// Every filter offered: built-ins, then the bundled LUTs.
     static var allCases: [ColorFilter] { groups.flatMap(\.filters) }
@@ -1097,6 +1103,8 @@ enum ColorFilter: Hashable, Identifiable {
     var title: String {
         switch self {
         case .none: return "None"
+        case .amber: return "Amber"
+        case .tealSplit: return "Teal Split"
         case .brownie: return "Brownie"
         case .melancholy: return "Melancholy"
         case .classicNegative: return "Classic Neg"
@@ -1113,6 +1121,10 @@ enum ColorFilter: Hashable, Identifiable {
             return (r, g, b)
         case .lut(let name):
             return LUTLibrary.shared.lut(named: name)?.sample(r, g, b) ?? (r, g, b)
+        case .amber:
+            return Self.amber(r, g, b)
+        case .tealSplit:
+            return Self.tealSplit(r, g, b)
         case .brownie:
             return Self.brownie(r, g, b)
         case .classicNegative:
@@ -1145,6 +1157,134 @@ enum ColorFilter: Hashable, Identifiable {
             let out = (0..<3).map { min(max(c[$0] + ws * shadow[$0] + wm * mid[$0] + wh * high[$0], 0), 1) }
             return (out[0], out[1], out[2])
         }
+    }
+
+    /// Matched to the amber reference shots: warm amber skin and vivid
+    /// red-orange, sky and denim pushed to teal-cyan, muted olive greens and
+    /// yellows, crisp mids over faintly lifted blacks, and cool mint-gray
+    /// whites rolled off well under 1.
+    private static func amber(_ r: Double, _ g: Double, _ b: Double) -> (r: Double, g: Double, b: Double) {
+        func bump(_ h: Double, _ center: Double, _ width: Double) -> Double {
+            var d = (h - center + 180).truncatingRemainder(dividingBy: 360)
+            if d < 0 { d += 360 }
+            d -= 180
+            let w = min(max(1 - abs(d) / width, 0), 1)
+            return w * w * (3 - 2 * w)
+        }
+        /// `h` moved `amount` of the short way round toward `target`.
+        func toward(_ h: Double, _ target: Double, _ amount: Double) -> Double {
+            var d = (target - h).truncatingRemainder(dividingBy: 360)
+            if d > 180 { d -= 360 } else if d < -180 { d += 360 }
+            return h + d * amount
+        }
+        var (h, s, v) = hsv(r, g, b)
+        // Pinks (rosy skin under colored light) warmed toward red.
+        h += bump(h, 340, 25) * 12
+        // Reds: vivid, toward red-orange.
+        let wr = bump(h, 5, 22)
+        h = toward(h, 9, wr * 0.4)
+        s = min(s * (1 + 0.18 * wr), 1)
+        // Skin / oranges: warm amber, a touch richer.
+        let wo = bump(h, 28, 20)
+        h = toward(h, 24, wo * 0.5)
+        s = min(s * (1 + 0.08 * wo), 1)
+        // Yellows and greens: pulled back toward amber / olive and muted.
+        let wy = bump(h, 60, 25)
+        h = toward(h, 45, wy * 0.45)
+        s *= 1 - 0.35 * wy
+        let wg = bump(h, 115, 60)
+        h = toward(h, 90, wg * 0.4)
+        s *= 1 - 0.6 * wg
+        // Blues: sky and denim toward teal-cyan.
+        let wb = bump(h, 222, 45)
+        h = toward(h, 203, wb * 0.75)
+        s *= 1 - 0.08 * wb
+        s *= 0.92
+        h = h.truncatingRemainder(dividingBy: 360)
+        if h < 0 { h += 360 }
+        var c = rgb(h, s, v)
+        // Crisp mids, faintly lifted blacks, whites rolled off well under 1 —
+        // mostly on luminance, so bright skin keeps its color.
+        func tone(_ x: Double) -> Double {
+            let sc = x * x * (3 - 2 * x)
+            let y = x * 0.6 + sc * 0.4
+            let top = y > 0.75 ? 0.75 + (y - 0.75) * 0.62 : y
+            return 0.03 + (1 - 0.03) * top
+        }
+        let l0 = 0.299 * c[0] + 0.587 * c[1] + 0.114 * c[2]
+        let k = l0 > 1e-4 ? tone(l0) / l0 : 1
+        c = c.map { x in tone(x) * 0.35 + min(x * k, 1) * 0.65 }
+        // Cool mint-gray lights and a faint green in the mids, on the
+        // near-neutral tones only: skin and warm colors keep their warmth.
+        let l = 0.299 * c[0] + 0.587 * c[1] + 0.114 * c[2]
+        let neutral = 1 - min(max((hsv(c[0], c[1], c[2]).1 - 0.05) / 0.12, 0), 1)
+        let wm = min(max(1 - abs(l - 0.5) / 0.3, 0), 1) * neutral
+        let wh = pow(min(max((l - 0.55) / 0.35, 0), 1), 1.2) * neutral
+        let mid = [-0.010, 0.010, -0.004]       // faint green
+        let high = [-0.016, 0.006, 0.008]       // mint-gray
+        let out = (0..<3).map { min(max(c[$0] + wm * mid[$0] + wh * high[$0], 0), 1) }
+        return (out[0], out[1], out[2])
+    }
+
+    /// Matched to the split01 reference: an even, warm tan skin (hues and
+    /// saturation drawn together), muted olive greens and amber yellows,
+    /// blues toward teal, gentle contrast over lifted blacks, and split
+    /// toning — olive-green shadows and mids, teal highlights — kept off skin.
+    private static func tealSplit(_ r: Double, _ g: Double, _ b: Double) -> (r: Double, g: Double, b: Double) {
+        func bump(_ h: Double, _ center: Double, _ width: Double) -> Double {
+            var d = (h - center + 180).truncatingRemainder(dividingBy: 360)
+            if d < 0 { d += 360 }
+            d -= 180
+            let w = min(max(1 - abs(d) / width, 0), 1)
+            return w * w * (3 - 2 * w)
+        }
+        /// `h` moved `amount` of the short way round toward `target`.
+        func toward(_ h: Double, _ target: Double, _ amount: Double) -> Double {
+            var d = (target - h).truncatingRemainder(dividingBy: 360)
+            if d > 180 { d -= 360 } else if d < -180 { d += 360 }
+            return h + d * amount
+        }
+        var (h, s, v) = hsv(r, g, b)
+        // Skin: an even, warm tan. Pinks and yellowish patches are drawn to
+        // one hue, and saturation evened out toward a gentle middle.
+        let wk = bump(h, 24, 32) * min(max((s - 0.06) / 0.12, 0), 1)
+        h = toward(h, 27, wk * 0.6)
+        s += wk * (min(max(s, 0.30), 0.55) - s) * 0.5 + wk * (0.44 - s) * 0.2
+        // Yellows toward amber and muted; greens toward a softer olive-green.
+        let wy = bump(h, 58, 22)
+        h = toward(h, 48, wy * 0.4)
+        s *= 1 - 0.30 * wy
+        let wg = bump(h, 112, 55)
+        h = toward(h, 100, wg * 0.35)
+        s *= 1 - 0.30 * wg
+        // Blues toward teal, muted.
+        let wb = bump(h, 215, 50)
+        h = toward(h, 192, wb * 0.6)
+        s *= 1 - 0.25 * wb
+        s *= 0.92
+        h = h.truncatingRemainder(dividingBy: 360)
+        if h < 0 { h += 360 }
+        var c = rgb(h, s, v)
+        // Gentle contrast over lifted blacks, highlights soft just under 1 —
+        // mostly on luminance, so skin keeps its color.
+        func tone(_ x: Double) -> Double {
+            let sc = x * x * (3 - 2 * x)
+            let y = x * 0.7 + sc * 0.3
+            return 0.04 + (0.97 - 0.04) * y
+        }
+        let l0 = 0.299 * c[0] + 0.587 * c[1] + 0.114 * c[2]
+        let k = l0 > 1e-4 ? tone(l0) / l0 : 1
+        c = c.map { x in tone(x) * 0.35 + min(x * k, 1) * 0.65 }
+        // Split toning: olive-green shadows and mids, teal highlights — kept
+        // off skin so it stays warm.
+        let l = 0.299 * c[0] + 0.587 * c[1] + 0.114 * c[2]
+        let keep = 1 - wk * 0.85
+        let ws = pow(min(max(1 - l / 0.7, 0), 1), 0.8) * keep
+        let wh = pow(min(max((l - 0.55) / 0.4, 0), 1), 1.1) * keep
+        let shadow = [-0.010, 0.030, -0.030]    // olive-green
+        let high = [-0.035, 0.006, 0.028]       // teal
+        let out = (0..<3).map { min(max(c[$0] + ws * shadow[$0] + wh * high[$0], 0), 1) }
+        return (out[0], out[1], out[2])
     }
 
     /// pojemario.com/brownie `applyFilter`, step for step, on 0...255 values.

@@ -13,6 +13,8 @@ enum CollageTips {
     static func configure() {
         #if DEBUG
         if ProcessInfo.processInfo.arguments.contains("-resetTips") { try? Tips.resetDatastore() }
+        // `-noTips` keeps them out of the way of screenshots.
+        if ProcessInfo.processInfo.arguments.contains("-noTips") { Tips.hideAllTipsForTesting() }
         #endif
         try? Tips.configure([.displayFrequency(.immediate)])
     }
