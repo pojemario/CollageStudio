@@ -258,7 +258,8 @@ struct ImageBoxView: View {
                 // Text boxes open for editing from their own small button
                 // (a tap on the box itself is left to the box's gestures).
                 .overlay(alignment: .topTrailing) {
-                    if imgData?.isText == true, !state.isRenderingOffscreen, !isPreviewing {
+                    // Always there, except when only the collage is showing.
+                    if imgData?.isText == true, !state.isRenderingOffscreen, !state.toolbarHidden {
                         TextEditButton(active: state.textEditTargetId == imageId) {
                             state.beginEditText(id: imageId)
                         }

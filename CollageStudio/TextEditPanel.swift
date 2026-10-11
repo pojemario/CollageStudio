@@ -2,9 +2,9 @@ import SwiftUI
 
 /// Live editor for a "Text image", shown in the panel (or sidebar) while its
 /// box is selected on the collage: every change re-renders the text right
-/// where it lives, so there is no separate preview. It opens with every
-/// option showing; while the keyboard is up only the text row stays,
-/// keeping the collage in view above it.
+/// where it lives, so there is no separate preview. A new text box opens
+/// ready to type; an existing one with every option showing. While the
+/// keyboard is up only the text row stays, keeping the collage in view.
 struct TextEditPanel: View {
     @EnvironmentObject var state: CollageState
     let imageId: UUID
@@ -41,8 +41,18 @@ struct TextEditPanel: View {
         .onChange(of: state.textStyle(for: imageId) == nil, initial: true) { _, gone in
             if gone { state.endTextEditing() }
         }
-        // Another text box opened in the same panel: start without the keyboard.
-        .onChange(of: imageId) { _, _ in typing = false }
+        // A new text box goes straight to typing (once the panel has risen);
+        // an existing one opens with every option showing.
+        .task(id: imageId) {
+            guard state.focusTextOnOpen else {
+                typing = false
+                return
+            }
+            state.focusTextOnOpen = false
+            try? await Task.sleep(nanoseconds: 350_000_000)
+            guard !Task.isCancelled else { return }
+            typing = true
+        }
         // The starting text is meant to be replaced: select it all as typing begins.
         .onChange(of: typing) { _, now in
             guard now, style.wrappedValue.text == TextBoxStyle().text else { return }

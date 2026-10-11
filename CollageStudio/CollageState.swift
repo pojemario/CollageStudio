@@ -780,8 +780,7 @@ class CollageState: ObservableObject {
     /// way so nothing but the collage is on screen.
     @Published var chromeHidden: Bool = false
     /// The full-screen button's second step: the toolbar and status bar go
-    /// too, leaving only the collage; a tap anywhere comes back to the
-    /// full-screen preview.
+    /// too, leaving only the collage; a tap anywhere goes back to editing.
     @Published var toolbarHidden: Bool = false
     /// Top edge of the open panel card in global coordinates (0 while
     /// closed) — how much of the screen bottom the panel (and the keyboard
@@ -969,6 +968,8 @@ class CollageState: ObservableObject {
 
     /// Text box being edited in the panel (nil = not editing text).
     @Published var textEditTargetId: UUID? = nil
+    /// A text box just added: its panel starts with the keyboard up.
+    var focusTextOnOpen = false
 
     /// Adds a text box rendered as an image (in the last used look) and
     /// opens it for editing.
@@ -976,6 +977,7 @@ class CollageState: ObservableObject {
         let image = CollageImage.textImage(style: .lastUsed)
         addPreparedImages([image])
         if currentPage.images.contains(where: { $0.id == image.id }) {
+            focusTextOnOpen = true
             beginEditText(id: image.id)
         }
     }
@@ -987,6 +989,8 @@ class CollageState: ObservableObject {
         guard textEditTargetId != id || !isPanelOpen else { return }
         closeRatio()
         withAnimation(.easeInOut(duration: 0.25)) {
+            // From the full-screen preview, back to editing.
+            chromeHidden = false
             textEditTargetId = id
             isPanelOpen = true
         }

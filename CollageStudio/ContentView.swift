@@ -344,8 +344,9 @@ struct ContentView: View {
                     UndoRedoButtons()
                 }
                 if state.hasAnyImages {
-                    // First click: full-screen preview (no tab bar or panel).
-                    // Second click: only the collage (see toolbarHidden).
+                    // One button, three states: editing → full-screen preview
+                    // (no tab bar or panel) → only the collage (see
+                    // toolbarHidden), where a tap anywhere returns to editing.
                     Button {
                         withAnimation(.easeInOut(duration: 0.25)) {
                             if state.chromeHidden {
@@ -361,28 +362,13 @@ struct ContentView: View {
                               ? "arrow.up.and.down.and.arrow.left.and.right"
                               : "arrow.up.left.and.arrow.down.right")
                             .font(.system(size: 16, weight: .medium))
-                            .foregroundColor(.primary)
+                            .foregroundColor(state.chromeHidden ? .accentColor : .primary)
                             .frame(width: 40, height: 40)
                             .contentShape(Rectangle())
+                            .contentTransition(.symbolEffect(.replace))
                     }
                     .buttonStyle(.plain)
                     .accessibilityLabel(state.chromeHidden ? "Show only the collage" : "Full screen preview")
-
-                    // Back from the full-screen preview to editing.
-                    if state.chromeHidden {
-                        Button {
-                            withAnimation(.easeInOut(duration: 0.25)) { state.chromeHidden = false }
-                        } label: {
-                            Image(systemName: "arrow.down.right.and.arrow.up.left")
-                                .font(.system(size: 16, weight: .medium))
-                                .foregroundColor(.primary)
-                                .frame(width: 40, height: 40)
-                                .contentShape(Rectangle())
-                        }
-                        .buttonStyle(.plain)
-                        .accessibilityLabel("Exit full screen")
-                        .transition(.opacity)
-                    }
 
                     Button {
                         state.showExportOptions = true
@@ -548,14 +534,17 @@ struct ContentView: View {
                 }
             }
         }
-        // Only the collage: a tap anywhere brings the toolbar back (still
-        // in the full-screen preview), and nothing underneath reacts.
+        // Only the collage: a tap anywhere goes back to editing, and
+        // nothing underneath reacts.
         .overlay {
             if state.toolbarHidden {
                 Color.black.opacity(0.001)
                     .ignoresSafeArea()
                     .onTapGesture {
-                        withAnimation(.easeInOut(duration: 0.25)) { state.toolbarHidden = false }
+                        withAnimation(.easeInOut(duration: 0.25)) {
+                            state.toolbarHidden = false
+                            state.chromeHidden = false
+                        }
                     }
             }
         }

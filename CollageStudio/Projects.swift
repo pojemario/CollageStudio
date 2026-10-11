@@ -895,6 +895,14 @@ extension CollageState {
                 }
             }
         }
+        // `-full 1` / `-full 2`: the full-screen preview / only the collage.
+        if let t = args.firstIndex(of: "-full"), t + 1 < args.count, let n = Int(args[t + 1]) {
+            DispatchQueue.main.asyncAfter(deadline: .now() + 4) {
+                self.collapsePanel()
+                self.chromeHidden = n >= 1
+                self.toolbarHidden = n >= 2
+            }
+        }
         // `-addText` adds a text box (opened in the panel) after the seed.
         if args.contains("-addText") {
             DispatchQueue.main.asyncAfter(deadline: .now() + 2.5) { self.addTextImage() }

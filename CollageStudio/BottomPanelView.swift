@@ -90,6 +90,17 @@ struct FloatingTabBar: View {
             Image(systemName: Self.icons[i])
                 .font(.system(size: 19, weight: onChip || hovered ? .medium : .regular))
                 .frame(height: 24)
+                // A dot when this tab's settings are changed on this page.
+                .overlay(alignment: .topTrailing) {
+                    if hasChanges(i) {
+                        Circle()
+                            .fill(onChip ? Color.white : Color.accentColor)
+                            .frame(width: 6, height: 6)
+                            .offset(x: 5, y: -1)
+                            .transition(.scale.combined(with: .opacity))
+                    }
+                }
+                .animation(.easeInOut(duration: 0.2), value: hasChanges(i))
             Text(Self.tabs[i])
                 .font(.system(size: 9.5, weight: .semibold))
                 .lineLimit(1)
@@ -102,6 +113,7 @@ struct FloatingTabBar: View {
         .frame(maxWidth: .infinity)
         .frame(height: Self.tabHeight)
         .accessibilityElement(children: .combine)
+        .accessibilityValue(hasChanges(i) ? "Changed" : "")
         .accessibilityAddTraits(activeTab == i ? [.isButton, .isSelected] : .isButton)
         .accessibilityAction { select(i) }
     }
@@ -189,6 +201,20 @@ struct FloatingTabBar: View {
                     select(i)
                 }
             }
+    }
+
+    /// Whether the current page has settings changed in a tab (Images has none).
+    private func hasChanges(_ i: Int) -> Bool {
+        switch i {
+        case 1: return state.hasStyleChanges || state.isRows
+        case 2: return state.canvasMargin != 0 || state.canvasRotation != 0
+        case 3: return state.canvasFrame != nil
+        case 4: return !state.overlayLayers.isEmpty
+        case 5: return state.hasEffects(in: CollageEffect.allCases) || !state.hsl.isIdentity
+            || !state.calibration.isIdentity
+        case 6: return state.colorFilter != .none
+        default: return false
+        }
     }
 
     private func tab(at x: CGFloat) -> Int {

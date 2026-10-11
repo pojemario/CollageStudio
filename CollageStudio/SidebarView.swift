@@ -308,47 +308,47 @@ struct RatioButton: View {
     }
 }
 
-/// Embossed metallic slider knob: brushed-metal ball lit from the top left,
-/// with a bright rim highlight and a drop shadow that lifts it off the track.
-/// Slider knob: a clear glass ball. The track shows through it (blurred,
-/// like light bent by the glass), the rim is brighter than the middle (glass
-/// edges reflect more), light gathers in a soft glow near the bottom, and a
-/// sharp highlight sits top-left.
+/// Slider knob: machined silver. A brushed ring with a conical sheen, lit
+/// from above, around a recessed center that's lit from below (as a dimple
+/// would be), with a shadow inside its top edge.
 struct EmbossedKnobThumb: View {
     var size: CGFloat
 
     var body: some View {
+        let inset = size * 0.52
         ZStack {
-            // The glass body: see-through, softly blurring what's behind.
-            Circle().fill(.ultraThinMaterial)
-            // Fresnel rim: clear in the middle, brighter toward the edge.
-            Circle().fill(RadialGradient(colors: [Color.white.opacity(0.05), Color.white.opacity(0.10),
-                                                  Color.white.opacity(0.55)],
-                                         center: .center, startRadius: 0, endRadius: size / 2))
-            // Light gathered at the bottom, as in a real lens.
-            Ellipse()
-                .fill(RadialGradient(colors: [Color.white.opacity(0.75), Color.white.opacity(0)],
-                                     center: .center, startRadius: 0, endRadius: size * 0.32))
-                .frame(width: size * 0.62, height: size * 0.34)
-                .offset(y: size * 0.24)
-                .blendMode(.screen)
-            // Soft reflection across the upper half.
-            Ellipse()
-                .fill(LinearGradient(colors: [Color.white.opacity(0.85), Color.white.opacity(0)],
-                                     startPoint: .top, endPoint: .bottom))
-                .frame(width: size * 0.62, height: size * 0.36)
-                .offset(y: -size * 0.2)
-            // Sharp specular hot spot.
-            Ellipse()
-                .fill(Color.white)
-                .frame(width: size * 0.2, height: size * 0.13)
-                .rotationEffect(.degrees(-30))
-                .blur(radius: 0.4)
-                .offset(x: -size * 0.17, y: -size * 0.22)
-            // Thin rim: lit at the top, in shade at the bottom.
+            // Silver body, brighter at the top.
+            Circle().fill(LinearGradient(colors: [Color(white: 0.97), Color(white: 0.80), Color(white: 0.66)],
+                                         startPoint: .top, endPoint: .bottom))
+            // Turned-metal sheen: light and dark bands around the center.
+            Circle().fill(AngularGradient(
+                colors: [.white.opacity(0.55), .black.opacity(0.10), .white.opacity(0.45), .black.opacity(0.14),
+                         .white.opacity(0.55), .black.opacity(0.10), .white.opacity(0.45), .black.opacity(0.14),
+                         .white.opacity(0.55)],
+                center: .center))
+                .blendMode(.overlay)
+            // The recess: lit from below, its top edge in shadow.
+            Circle()
+                .fill(LinearGradient(colors: [Color(white: 0.62), Color(white: 0.80), Color(white: 0.95)],
+                                     startPoint: .top, endPoint: .bottom)
+                    .shadow(.inner(color: .black.opacity(0.45), radius: size * 0.05, y: size * 0.04)))
+                .frame(width: inset, height: inset)
+            // A faint sheen across the recess floor.
+            Circle()
+                .fill(AngularGradient(colors: [.white.opacity(0.35), .clear, .white.opacity(0.25), .clear,
+                                               .white.opacity(0.35)],
+                                      center: .center))
+                .frame(width: inset, height: inset)
+                .blendMode(.overlay)
+            // Bright lip around the recess, catching light at the bottom.
+            Circle()
+                .strokeBorder(LinearGradient(colors: [Color.black.opacity(0.20), Color.white.opacity(0.9)],
+                                             startPoint: .top, endPoint: .bottom),
+                              lineWidth: 0.8)
+                .frame(width: inset + 1.5, height: inset + 1.5)
+            // Outer rim: lit at the top, in shade at the bottom.
             Circle().strokeBorder(
-                LinearGradient(colors: [Color.white.opacity(0.95), Color.white.opacity(0.25),
-                                        Color.black.opacity(0.25)],
+                LinearGradient(colors: [Color.white, Color(white: 0.75), Color(white: 0.45)],
                                startPoint: .top, endPoint: .bottom),
                 lineWidth: 1)
         }
