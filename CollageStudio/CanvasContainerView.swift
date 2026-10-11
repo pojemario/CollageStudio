@@ -56,11 +56,12 @@ struct CanvasContainerView: View {
             ScrollView([.horizontal, .vertical]) {
                 // Dock the canvas to the top (not vertically centered) so its
                 // top edge is always fully visible, even with the panel open.
-                ZStack(alignment: .top) {
+                // With only the collage showing, it sits in the middle.
+                ZStack(alignment: state.toolbarHidden ? .center : .top) {
                     Color.clear
 
                     CollageGridView_Grid(scale: scale)
-                        .padding(.top, padding)
+                        .padding(.top, state.toolbarHidden ? 0 : padding)
                         // Fresh view identity per page: during the page
                         // transition SwiftUI briefly holds the outgoing and
                         // incoming canvas and slides between them
@@ -197,7 +198,10 @@ struct CanvasContainerView: View {
             .overlay(alignment: .topTrailing) {
                 if state.hasAnyImages && state.hasLookEdits && !state.toolbarHidden {
                     CompareButton()
-                        .padding(.top, 10)
+                        // Centered on the pager's line (pager: 40 tall, 2 down).
+                        .padding(.top, 3)
+                        .onGeometryChange(for: CGRect.self) { $0.frame(in: .global) } action: { state.compareButtonFrame = $0 }
+                        .onDisappear { state.compareButtonFrame = .zero }
                         .padding(.trailing, 10)
                         .transition(.opacity)
                 }
@@ -215,6 +219,7 @@ struct CanvasContainerView: View {
                       initial: true) { _, origin in
                 state.boxActionCanvasOrigin = origin
             }
+            .onChange(of: geo.frame(in: .global), initial: true) { _, f in state.canvasVisibleRect = f }
             // Single-image picker for the "Replace" action
             .photosPicker(isPresented: $state.showReplacePicker,
                           selection: $replaceItems,

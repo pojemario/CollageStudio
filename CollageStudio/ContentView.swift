@@ -213,6 +213,14 @@ struct ContentView: View {
     // anywhere else on screen can close the popup (the button keeps its own
     // toggle behavior).
     @State private var ratioPanelFrame: CGRect = .zero
+    /// Global top of the canvas area and bottom of the pager, which limit
+    /// how tall the panel may grow.
+    @State private var canvasTopY: CGFloat = 0
+    @State private var pagerBottomY: CGFloat = 0
+
+    private struct PanelLimitKey: Equatable {
+        let canvasTop: CGFloat, pagerBottom: CGFloat, pages: Int
+    }
     @State private var ratioButtonFrame: CGRect = .zero
 
     var body: some View {
@@ -459,12 +467,27 @@ struct ContentView: View {
                     // collage; full-screen preview gives it back.
                     .padding(.bottom, state.hasAnyImages && !state.chromeHidden ? FloatingTabBar.zoneHeight : 0)
                     .animation(.easeInOut(duration: 0.25), value: state.chromeHidden)
+                    // Only the collage: the whole screen, so it sits right in the middle.
+                    .ignoresSafeArea(edges: state.toolbarHidden ? .vertical : [])
             }
             // Floating page counter pill over the top of the canvas.
             .overlay(alignment: .top) {
                 if !state.toolbarHidden {
                     PageTabBar().padding(.top, 2)
+                        .onGeometryChange(for: CGRect.self) { $0.frame(in: .global) } action: { f in
+                            pagerBottomY = f.maxY
+                            state.pagerFrame = state.pages.count > 1 ? f : .zero
+                        }
+                        .onChange(of: state.pages.count > 1) { _, shown in
+                            if !shown { state.pagerFrame = .zero }
+                        }
                 }
+            }
+            // The panel may grow up to just under the pager (or the toolbar).
+            .onGeometryChange(for: CGFloat.self) { $0.frame(in: .global).minY } action: { canvasTopY = $0 }
+            .onChange(of: PanelLimitKey(canvasTop: canvasTopY, pagerBottom: pagerBottomY, pages: state.pages.count),
+                      initial: true) { _, k in
+                state.panelTopLimitY = (k.pages > 1 ? max(k.pagerBottom, k.canvasTop) : k.canvasTop) + 8
             }
             .overlay(alignment: .bottom) {
                 // No chrome until there are images — the empty canvas just

@@ -16,7 +16,7 @@ struct SidebarView: View {
             VStack(alignment: .leading, spacing: 0) {
                 logo
                 if let textId = state.textEditTargetId {
-                    SidebarSection(title: "Text") {
+                    SidebarSection(title: "Text Box") {
                         TextEditPanel(imageId: textId)
                     }
                 }
@@ -75,10 +75,10 @@ struct SidebarView: View {
                     .opacity(state.pages.count >= CollageState.maxPages ? 0.5 : 1)
 
                 // Adds an editable text box rendered as an image.
-                ToolbarTile(sf: "character.textbox", title: "Text") { state.addTextImage() }
+                ToolbarTile(sf: "character.textbox", title: "Text Box") { state.addTextImage() }
 
                 // Adds a transparent placeholder — an intentional empty slot.
-                ToolbarTile(sf: "rectangle.dashed.badge.record", title: "Empty") { state.addEmptyImage() }
+                ToolbarTile(sf: "rectangle.dashed.badge.record", title: "Empty Box") { state.addEmptyImage() }
 
                 SpreadMenuButton(
                     onBurst: { showBurstConfirm = true },

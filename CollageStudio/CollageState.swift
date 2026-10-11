@@ -295,6 +295,7 @@ class CollageState: ObservableObject {
             "Polaroid45_Mint_m080084080220_r4x5",
         ]),
         FramePack(name: "Analog", ratio: .portrait916, assets: [
+            "Analog916_Beach_m43434237_r9x16",
             "Analog916_Notch_m45454545_r9x16",
             "Analog916_Amber400_m61436143_r9x16",
             "Analog916_Sloppy_m58625862_r9x16",
@@ -515,7 +516,8 @@ class CollageState: ObservableObject {
     func effectAmount(_ effect: CollageEffect) -> Double {
         guard !compareOriginal else { return 0 }
         let r = effect.range
-        return min(max((effects[effect] ?? 0) / 100, r.lowerBound / 100), r.upperBound / 100)
+        let s = effect.span
+        return min(max((effects[effect] ?? 0) / s, r.lowerBound / s), r.upperBound / s)
     }
 
     /// Whether any effect of the given group (Edit or Effects page) is on.
@@ -541,7 +543,7 @@ class CollageState: ObservableObject {
             case .clarity:    effects[effect] = Double(Int.random(in: 0...30))
             case .sharpness:  effects[effect] = Double(Int.random(in: 0...30))
             case .contrast:   effects[effect] = Double(Int.random(in: -20...30))
-            case .fade:       effects[effect] = Double(Int.random(in: -40...60))
+            case .fade:       effects[effect] = Double(Int.random(in: -20...30))
             case .halation:   effects[effect] = Double(Int.random(in: 0...70))
             case .glow:       effects[effect] = Double(Int.random(in: 0...60))
             case .vignette:   effects[effect] = Double(Int.random(in: 10...80))
@@ -795,6 +797,28 @@ class CollageState: ObservableObject {
     /// closed) — how much of the screen bottom the panel (and the keyboard
     /// pushing it up) covers, for keeping an edited text box in view.
     @Published var panelTopGlobalY: CGFloat = 0
+    /// Highest the panel card's top may reach (global y): just under the
+    /// pager, or under the toolbar when there's a single page.
+    @Published var panelTopLimitY: CGFloat = 0
+    /// Where on screen the canvas can be seen (global), and the controls
+    /// floating over it (pager, compare button) — a text box's edit button
+    /// moves to a corner none of them cover.
+    @Published var canvasVisibleRect: CGRect = .zero
+    @Published var pagerFrame: CGRect = .zero
+    @Published var compareButtonFrame: CGRect = .zero
+
+    /// The part of the screen where a control on the collage can be seen
+    /// and tapped: the canvas area above the open panel.
+    var canvasClearRect: CGRect {
+        var r = canvasVisibleRect
+        if isPanelOpen, panelTopGlobalY > r.minY, panelTopGlobalY < r.maxY {
+            r.size.height = panelTopGlobalY - r.minY
+        }
+        return r
+    }
+    var canvasObstacles: [CGRect] {
+        [pagerFrame, compareButtonFrame].filter { !$0.isEmpty }
+    }
     /// Live drag translation while the user is pulling the panel (+ = down).
     @Published var panelDrag: CGFloat = 0
     /// True while the panel's grabber is being dragged.

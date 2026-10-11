@@ -257,17 +257,47 @@ struct ImageBoxView: View {
                 }
                 // Text boxes open for editing from their own small button
                 // (a tap on the box itself is left to the box's gestures).
-                .overlay(alignment: .topTrailing) {
+                // In a corner nothing covers (the pager, the compare button,
+                // the panel, the screen's edge).
+                .overlay(alignment: editButtonPlacement(box: geo.frame(in: .global))) {
                     // Always there, except when only the collage is showing.
                     if imgData?.isText == true, !state.isRenderingOffscreen, !state.toolbarHidden {
                         TextEditButton(active: state.textEditTargetId == imageId) {
                             state.beginEditText(id: imageId)
                         }
-                        .padding(6)
+                        .padding(Self.editButtonInset)
                     }
                 }
+                .animation(.easeInOut(duration: 0.2), value: editButtonPlacement(box: geo.frame(in: .global)))
                 .id(imgData?.gestureEpoch ?? 0)
         }
+    }
+
+    private static let editButtonInset: CGFloat = 6
+    /// The pencil's tappable size (30 pt circle + 4 pt around it).
+    private static let editButtonSize: CGFloat = 38
+
+    /// The first of the corners (then the middles of the sides) where the
+    /// pencil is on screen and nothing floats over it.
+    private func editButtonPlacement(box: CGRect) -> Alignment {
+        guard imgData?.isText == true else { return .topTrailing }
+        let clear = state.canvasClearRect
+        let obstacles = state.canvasObstacles
+        let s = Self.editButtonSize, inset = Self.editButtonInset
+        let left = box.minX + inset, right = box.maxX - inset - s, midX = box.midX - s / 2
+        let top = box.minY + inset, bottom = box.maxY - inset - s, midY = box.midY - s / 2
+        let spots: [(Alignment, CGPoint)] = [
+            (.topTrailing, CGPoint(x: right, y: top)), (.topLeading, CGPoint(x: left, y: top)),
+            (.bottomTrailing, CGPoint(x: right, y: bottom)), (.bottomLeading, CGPoint(x: left, y: bottom)),
+            (.trailing, CGPoint(x: right, y: midY)), (.leading, CGPoint(x: left, y: midY)),
+            (.top, CGPoint(x: midX, y: top)), (.bottom, CGPoint(x: midX, y: bottom)),
+        ]
+        for (alignment, origin) in spots {
+            let r = CGRect(origin: origin, size: CGSize(width: s, height: s))
+            let onScreen = clear.isEmpty || clear.contains(r)
+            if onScreen && !obstacles.contains(where: { $0.intersects(r) }) { return alignment }
+        }
+        return .topTrailing
     }
 
     /// The pencil over a text box's corner.

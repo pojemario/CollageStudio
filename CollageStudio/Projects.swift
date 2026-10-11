@@ -46,6 +46,9 @@ extension PageStyle: Codable {
 
 extension TextBoxStyle {
     private static let lastUsedKey = "lastTextStyle"
+    /// Set once the remembered look has dropped the old white background
+    /// (from before transparent became the default).
+    private static let transparentKey = "lastTextStyleTransparentDefault"
 
     /// The look of the text box edited last (font, size, alignment, colors),
     /// for new text boxes to start from — with fresh starting text.
@@ -54,6 +57,11 @@ extension TextBoxStyle {
             guard let data = UserDefaults.standard.data(forKey: lastUsedKey),
                   var style = try? JSONDecoder().decode(TextBoxStyle.self, from: data) else { return TextBoxStyle() }
             style.text = TextBoxStyle().text
+            if !UserDefaults.standard.bool(forKey: transparentKey) {
+                style.backgroundColor = .clear
+                UserDefaults.standard.set(true, forKey: transparentKey)
+                UserDefaults.standard.set(try? JSONEncoder().encode(style), forKey: lastUsedKey)
+            }
             return style
         }
         set { UserDefaults.standard.set(try? JSONEncoder().encode(newValue), forKey: lastUsedKey) }
@@ -158,7 +166,8 @@ func effectsFromStorage(_ d: [String: Double]) -> [CollageEffect: Double] {
 /// One saved collage, as written to project.json. Photos live next to it
 /// as image files; text boxes and empty slots are re-made from their data.
 struct ProjectFile: Codable {
-    var version = 1
+    /// 2: Fade runs ±50 (was ±100) for the same look.
+    var version = 2
     var id: UUID
     var name: String?
     var created: Date
@@ -617,9 +626,15 @@ extension CollageState {
     }
 
     private func finishLoading(_ file: ProjectFile, images: [UUID: CollageImage], files: [UUID: String]) {
-        let collageLook = PageLook(file: file.collageLook)
+        var collageLook = PageLook(file: file.collageLook)
+        // Files before version 2: Fade on the old ±100 scale.
+        func halveFade(_ look: inout PageLook) {
+            if file.version < 2, let f = look.effects[.fade] { look.effects[.fade] = (f / 2).rounded() }
+        }
+        halveFade(&collageLook)
         let restoredPages: [CollagePage] = file.pages.map { p in
             var page = CollagePage(style: p.style, look: p.look.map { PageLook(file: $0) } ?? collageLook)
+            if p.look != nil { halveFade(&page.look) }
             page.images = p.images.compactMap { images[$0.id] }
             let present = Set(page.images.map(\.id))
             page.order = p.order.filter { present.contains($0) }
@@ -913,9 +928,29 @@ extension CollageState {
                 }
             }
         }
-        // `-addText` adds a text box (opened in the panel) after the seed.
+        // `-onePerPage`: every photo on its own page (lots of rows in Images).
+        if args.contains("-onePerPage") {
+            DispatchQueue.main.asyncAfter(deadline: .now() + 2) { self.distributeOneImagePerPage() }
+        }
+        // `-editsOn`: one edit, so the compare button shows.
+        if args.contains("-editsOn") {
+            DispatchQueue.main.asyncAfter(deadline: .now() + 2) { self.effects[.contrast] = 20 }
+        }
+        // `-addText` adds a text box (opened in the panel) after the seed;
+        // `-textAt N` puts it at position N (and closes the panel).
         if args.contains("-addText") {
-            DispatchQueue.main.asyncAfter(deadline: .now() + 2.5) { self.addTextImage() }
+            DispatchQueue.main.asyncAfter(deadline: .now() + 2.5) {
+                self.addTextImage()
+                if let t = args.firstIndex(of: "-textAt"), t + 1 < args.count, let n = Int(args[t + 1]),
+                   let id = self.images.last(where: \.isText)?.id {
+                    self.endTextEditing()
+                    self.collapsePanel()
+                    var order = self.order.filter { $0 != id }
+                    order.insert(id, at: min(n, order.count))
+                    self.order = order
+                    self.rebuildLayout(resetGrows: true)
+                }
+            }
         }
                 if args.contains("-showProjects") {
             DispatchQueue.main.asyncAfter(deadline: .now() + 2.5) { self.showProjects = true }

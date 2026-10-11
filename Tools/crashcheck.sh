@@ -10,7 +10,7 @@
 set -u
 DEV=${1:?device udid}
 OUT=${2:-$HOME/Library/Caches/CollageStudio-crashes/$DEV}
-mkdir -p "$OUT/ips" "$OUT/diag"
+mkdir -p "$OUT/ips"
 touch "$OUT/seen.txt"
 
 names=$(xcrun devicectl device info files --device "$DEV" --domain-type systemCrashLogs 2>/dev/null \
@@ -23,7 +23,8 @@ for n in ${(f)names}; do
   echo "$n" >> "$OUT/seen.txt"
 done
 
-rm -rf "$OUT/diag"; mkdir -p "$OUT/diag"
+# (devicectl wants a destination that doesn't exist yet; the folder's files land in it)
+rm -rf "$OUT/diag"
 xcrun devicectl device copy from --device "$DEV" --domain-type appDataContainer \
   --domain-identifier com.collagestudio.app --source Library/Logs/Diagnostics \
   --destination "$OUT/diag" >/dev/null 2>&1
@@ -46,7 +47,7 @@ EOF
 done
 
 echo "== diagnostics ($OUT/diag)"
-for f in $OUT/diag/**/crash-*.log(N); do
+for f in $OUT/diag/crash-*.log(N); do
   echo "--- ${f:t} (last lines)"; tail -n 12 "$f"
 done
-[[ -f $OUT/diag/Diagnostics/session.log ]] && { echo "--- session.log (last lines)"; tail -n 5 "$OUT/diag/Diagnostics/session.log"; }
+[[ -f $OUT/diag/session.log ]] && { echo "--- session.log (last lines)"; tail -n 5 "$OUT/diag/session.log"; }

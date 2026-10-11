@@ -68,7 +68,8 @@ struct TextBoxStyle: Equatable {
     var hAlignment: HAlign = .center
     var vAlignment: VAlign = .middle
     var textColor: Color = .black
-    var backgroundColor: Color = .white
+    /// Transparent by default: the text floats on the collage.
+    var backgroundColor: Color = .clear
 
     enum HAlign: String, CaseIterable, Identifiable {
         case leading, center, trailing
@@ -760,9 +761,14 @@ enum CollageEffect: String, CaseIterable, Identifiable {
     var range: ClosedRange<Double> {
         switch self {
         case .sharpness, .halation, .glow, .vignette, .grain: return 0...100
+        // Half the steps: ±50 is the full effect.
+        case .fade: return -50...50
         default: return -100...100
         }
     }
+
+    /// The slider value that means the full effect (100, or 50 for Fade).
+    var span: Double { max(abs(range.lowerBound), range.upperBound) }
 }
 
 /// Everything that's computed per picture (Core Image), not with view

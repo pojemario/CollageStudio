@@ -28,26 +28,32 @@ struct CollageGridView_Grid: View {
             let gap = state.gap * scale
             let resolvedFrame = state.resolvedFrame()
             // The canvas ratio always wins: a frame keeps its own proportions
-            // and is scaled, undistorted, to COVER the canvas (centered). On a
-            // ratio mismatch its overflow on the longer axis is clipped
-            // off-canvas, so the frame's baked-in margins only apply where
-            // its border is actually visible.
+            // and is FITTED, undistorted, inside the canvas (centered). On a
+            // ratio mismatch the canvas around it is left white (say a 4:5
+            // Polaroid on a 9:16 canvas: white above and below).
             let frameDrawSize: CGSize = {
                 guard let img = resolvedFrame?.image, img.size.width > 0, img.size.height > 0 else {
                     return canvasSize
                 }
-                let k = max(canvasSize.width / img.size.width, canvasSize.height / img.size.height)
+                let k = min(canvasSize.width / img.size.width, canvasSize.height / img.size.height)
                 return CGSize(width: img.size.width * k, height: img.size.height * k)
             }()
-            let overflowX = max(0, (frameDrawSize.width - canvasSize.width) / 2)
-            let overflowY = max(0, (frameDrawSize.height - canvasSize.height) / 2)
-            // Effective margins: the frame's built-in minimums (reduced by any
-            // off-canvas overflow).
+            let gapX = max(0, (canvasSize.width - frameDrawSize.width) / 2)
+            let gapY = max(0, (canvasSize.height - frameDrawSize.height) / 2)
+            // The frame's margins are in pixels of a canvas of its own ratio
+            // with this canvas's long side; fitted smaller, they shrink with it.
+            let frameScale: CGFloat = {
+                guard let img = resolvedFrame?.image, img.size.width > 0, img.size.height > 0 else { return 1 }
+                let long = max(state.canvasSize.width, state.canvasSize.height)
+                let nativeWidth = img.size.width >= img.size.height ? long : long * img.size.width / img.size.height
+                return frameDrawSize.width / max(nativeWidth * scale, 1)
+            }()
+            // Effective margins: the gap around the frame plus its built-in minimums.
             let base = state.frameBaseMargins
-            let insetL = max(0, base.left * scale - overflowX)
-            let insetT = max(0, base.top * scale - overflowY)
-            let insetR = max(0, base.right * scale - overflowX)
-            let insetB = max(0, base.bottom * scale - overflowY)
+            let insetL = gapX + base.left * scale * frameScale
+            let insetT = gapY + base.top * scale * frameScale
+            let insetR = gapX + base.right * scale * frameScale
+            let insetB = gapY + base.bottom * scale * frameScale
             let contentSize = CGSize(width: max(canvasSize.width - insetL - insetR, 0),
                                      height: max(canvasSize.height - insetT - insetB, 0))
             // The user margin is an OUTER margin: the whole collage block is
@@ -73,8 +79,8 @@ struct CollageGridView_Grid: View {
                     Color.clear
                 } else if resolvedFrame != nil {
                     // With a frame on, the collage background only fills the
-                    // frame's window; everything outside it is plain white
-                    // under the frame image.
+                    // frame's window; everything outside it (and any gap
+                    // around a frame of another ratio) is plain white.
                     // (Left out of the effect-source snapshot so glow and
                     // halation don't bleed in from the frame's surround.)
                     if decorated { Color.white }
@@ -128,8 +134,8 @@ struct CollageGridView_Grid: View {
 
                         overlayLayers(aboveFrame: false, canvasSize: canvasSize)
 
-                        // Decorative PNG frame, undistorted, covering the
-                        // canvas, centered, cropped by the canvas.
+                        // Decorative PNG frame, undistorted, fitted in the
+                        // canvas, centered.
                         if let resolvedFrame {
                             frameOverlay(image: resolvedFrame.image, size: frameDrawSize)
                         }

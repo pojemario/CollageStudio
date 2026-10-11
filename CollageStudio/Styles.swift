@@ -46,7 +46,7 @@ struct StylePreset: Identifiable, Codable, Equatable {
         StylePreset(name: "Clean", style: style(background: .white, gap: 10, rounding: 20)),
         StylePreset(name: "Polaroid",
                     style: style(background: color(0.97, 0.96, 0.93), gap: 28, rounding: 0),
-                    effects: ["Fade": 20, "Grain": 25, "Vignette": 15],
+                    effects: ["Fade": 10, "Grain": 25, "Vignette": 15],
                     filter: "brownie", filterStrength: 45),
         StylePreset(name: "Magazine", style: style(background: .white, gap: 4, rounding: 0),
                     effects: ["Contrast": 15, "Clarity": 15]),
@@ -60,10 +60,10 @@ struct StylePreset: Identifiable, Codable, Equatable {
         StylePreset(name: "Pastel",
                     style: style(background: color(1, 0.92, 0.93), gap: 22, rounding: 34,
                                  kind: .gradient, second: color(0.88, 0.89, 1)),
-                    effects: ["Fade": 30, "Temperature": 8]),
+                    effects: ["Fade": 15, "Temperature": 8]),
         StylePreset(name: "Moody",
                     style: style(background: color(0.18, 0.18, 0.2), gap: 12, rounding: 10),
-                    effects: ["Vignette": 40, "Contrast": 10, "Fade": 15],
+                    effects: ["Vignette": 40, "Contrast": 10, "Fade": 8],
                     filter: "melancholy", filterStrength: 90),
         StylePreset(name: "Cut Out",
                     style: style(background: color(0.93, 0.93, 0.95), gap: 18, rounding: 6,
@@ -77,9 +77,16 @@ enum SavedStyles {
 
     static func load() -> [StylePreset] {
         guard let data = UserDefaults.standard.data(forKey: key),
-              let list = try? JSONDecoder().decode([StylePreset].self, from: data) else { return [] }
+              var list = try? JSONDecoder().decode([StylePreset].self, from: data) else { return [] }
+        // Fade went from ±100 to ±50 for the same look: older saved styles halve theirs, once.
+        if !UserDefaults.standard.bool(forKey: fadeKey) {
+            for i in list.indices { if let f = list[i].effects["Fade"] { list[i].effects["Fade"] = (f / 2).rounded() } }
+            store(list)
+            UserDefaults.standard.set(true, forKey: fadeKey)
+        }
         return list
     }
+    private static let fadeKey = "savedStylesFadeHalved"
 
     static func store(_ list: [StylePreset]) {
         if let data = try? JSONEncoder().encode(list) { UserDefaults.standard.set(data, forKey: key) }
@@ -92,7 +99,8 @@ extension CollageState {
                       filter: ColorFilter, filterStrength: Double) -> ContentGrade {
         func amount(_ e: CollageEffect) -> Double {
             let r = e.range
-            return min(max((effects[e] ?? 0) / 100, r.lowerBound / 100), r.upperBound / 100)
+            let s = e.span
+            return min(max((effects[e] ?? 0) / s, r.lowerBound / s), r.upperBound / s)
         }
         return ContentGrade(calibration: calibration,
                             tone: BasicTone(exposure: amount(.exposure), highlights: amount(.highlights),

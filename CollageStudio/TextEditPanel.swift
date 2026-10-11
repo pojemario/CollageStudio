@@ -153,7 +153,9 @@ struct TextEditPanel: View {
             Spacer()
             Text("Background")
                 .font(.subheadline)
-            ColorSwatchButton(color: style.backgroundColor, depth: 0.55)
+            ColorSwatchButton(color: style.backgroundColor,
+                              presetTitle: "Transparent", presetColor: { .clear },
+                              depth: 0.55, accessibilityTitle: "Background color")
         }
         .foregroundColor(.primary)
     }

@@ -250,7 +250,6 @@ struct BottomPanelView: View {
     @State private var showBurstConfirm = false
     @State private var showBurstAllConfirm = false
     @State private var showAllOnOneConfirm = false
-    @State private var pagesContentHeight: CGFloat = 0
 
     /// Natural height of the panel content, and how much of it shows.
     @State private var contentHeight: CGFloat = 0
@@ -260,6 +259,8 @@ struct BottomPanelView: View {
     @State private var liveCap: CGFloat?
     @State private var dragStartHeight: CGFloat?
     @State private var cardHeight: CGFloat = 0
+    /// Global bottom of the content area (fixed while the panel is resized).
+    @State private var contentBottomY: CGFloat = 0
 
     /// The smallest the panel can be dragged to (about one row of content).
     private static let minHeight: CGFloat = 80
@@ -280,6 +281,15 @@ struct BottomPanelView: View {
     private var merged: Bool { state.isPanelOpen && state.panelDrag == 0 }
     /// Shorter than its content: the content scrolls.
     private var scrolls: Bool { contentHeight > shownHeight + 1 }
+    /// The tallest the content may show: the card's top stops just under
+    /// the pager (or the toolbar). The grabber row takes the rest.
+    private var maxShown: CGFloat {
+        guard contentBottomY > 0, state.panelTopLimitY > 0 else { return .infinity }
+        return max(contentBottomY - state.panelTopLimitY - Self.grabberHeight, Self.minHeight)
+    }
+    /// The panel at its full size: all of its content, if that fits.
+    private var fullHeight: CGFloat { min(contentHeight, maxShown) }
+    private static let grabberHeight: CGFloat = 15
 
     var body: some View {
         VStack(spacing: 0) {
@@ -302,7 +312,7 @@ struct BottomPanelView: View {
 
             // Panel content — each tab is only as tall as its own content,
             // or as the size the panel was dragged to.
-            CappedHeight(cap: liveCap ?? state.panelCaps[capKey] ?? .infinity) {
+            CappedHeight(cap: min(liveCap ?? state.panelCaps[capKey] ?? .infinity, maxShown)) {
                 ScrollView(.vertical) {
                     panelContent
                         .onGeometryChange(for: CGFloat.self) { $0.size.height } action: { contentHeight = $0 }
@@ -328,6 +338,7 @@ struct BottomPanelView: View {
                 }
             }
             .onGeometryChange(for: CGFloat.self) { $0.size.height } action: { shownHeight = $0 }
+            .onGeometryChange(for: CGFloat.self) { $0.frame(in: .global).maxY } action: { contentBottomY = $0 }
             .environment(\.panelScrolls, scrolls)
         }
         // Floating glass card. Fades while adjusting a slider so the collage
@@ -392,15 +403,15 @@ struct BottomPanelView: View {
                 let raw = (dragStartHeight ?? shownHeight) - v.translation.height
                 // Rubber band below the smallest size.
                 let h = raw >= floor ? raw : floor - min((floor - raw) * 0.25, 24)
-                liveCap = min(h, contentHeight)
+                liveCap = min(h, fullHeight)
             }
             .onEnded { _ in
                 let floor = min(Self.minHeight, contentHeight)
                 let h = liveCap ?? shownHeight
                 let key = capKey
                 dragStartHeight = nil
-                if h >= contentHeight - Self.fullSnap {
-                    settle(to: contentHeight) { state.panelCaps[key] = nil }
+                if h >= fullHeight - Self.fullSnap {
+                    settle(to: fullHeight) { state.panelCaps[key] = nil }
                 } else if h < floor {
                     settle(to: floor) { state.panelCaps[key] = floor }
                 } else {
@@ -433,10 +444,10 @@ struct BottomPanelView: View {
                     .opacity(state.pages.count >= CollageState.maxPages ? 0.5 : 1)
 
                 // Adds an editable text box rendered as an image.
-                ToolbarTile(sf: "character.textbox", title: "Text") { state.addTextImage() }
+                ToolbarTile(sf: "character.textbox", title: "Text Box") { state.addTextImage() }
 
                 // Adds a transparent placeholder — an intentional empty slot.
-                ToolbarTile(sf: "rectangle.dashed.badge.record", title: "Empty") { state.addEmptyImage() }
+                ToolbarTile(sf: "rectangle.dashed.badge.record", title: "Empty Box") { state.addEmptyImage() }
 
                 SpreadMenuButton(
                     onBurst: { showBurstConfirm = true },
@@ -472,19 +483,9 @@ struct BottomPanelView: View {
                 Text("This will put all images on a single page and remove the other pages, do you want to proceed?")
             }
 
-            // The page list hugs its content (one row for a single page) and
-            // only scrolls once it would exceed the cap — no empty space below.
-            ScrollView {
-                PageGroupsView()
-                    .background(
-                        GeometryReader { g in
-                            Color.clear
-                                .onAppear { pagesContentHeight = g.size.height }
-                                .onChange(of: g.size.height) { _, h in pagesContentHeight = h }
-                        }
-                    )
-            }
-            .frame(height: min(pagesContentHeight, 220))
+            // The page list at its full height: the panel can grow up to the
+            // pager to show it, and scrolls past that.
+            PageGroupsView()
         }
     }
 
