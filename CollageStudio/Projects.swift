@@ -649,6 +649,7 @@ extension CollageState {
             customWidth: file.customWidth, customHeight: file.customHeight,
             customUnit: CustomUnit(rawValue: file.customUnit) ?? .px)
         applyDocument(snapshot)
+        Diagnostics.log("opened collage \(diagnosticsSummary)")
         // The pictures already on disk aren't written again.
         savedImageFiles = [:]
         for page in pages {

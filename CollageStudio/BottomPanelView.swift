@@ -223,6 +223,7 @@ struct FloatingTabBar: View {
     }
 
     private func select(_ i: Int, toggles: Bool = true) {
+        Diagnostics.log("tab \(Self.tabs[i]) · \(state.diagnosticsSummary)")
         #if canImport(UIKit)
         UIImpactFeedbackGenerator(style: .light).impactOccurred()
         #endif

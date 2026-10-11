@@ -358,6 +358,25 @@ struct EmbossedKnobThumb: View {
     }
 }
 
+extension View {
+    /// A standard slider for VoiceOver in place of a custom one. SwiftUI's
+    /// Slider traps on a range with no width (Columns on a page with one
+    /// photo is 1...1), so then it's a plain value instead.
+    @ViewBuilder
+    func accessibleSlider(value: Binding<Double>, range: ClosedRange<Double>, step: Double,
+                          label: String) -> some View {
+        if range.upperBound > range.lowerBound {
+            accessibilityRepresentation {
+                Slider(value: value, in: range, step: step) { Text(label) }
+            }
+        } else {
+            accessibilityElement(children: .ignore)
+                .accessibilityLabel(label)
+                .accessibilityValue(String(format: "%g", value.wrappedValue))
+        }
+    }
+}
+
 /// Custom slider: rounded gradient track, knob thumb that grows while
 /// dragging, tap-anywhere to set, and light haptic ticks on step changes.
 struct ModernSlider: View {
@@ -594,9 +613,7 @@ struct LabeledSlider: View {
                          },
                          resetValue: resetValue, trackColors: trackColors)
                 // VoiceOver gets a standard slider (swipe up / down to adjust).
-                .accessibilityRepresentation {
-                    Slider(value: $value, in: range, step: step) { Text(label) }
-                }
+                .accessibleSlider(value: $value, range: range, step: step, label: label)
             Text(String(format: format, value))
                 .font(.system(size: 14, weight: resetArmed ? .bold : .medium, design: .monospaced))
                 .foregroundColor(resetArmed ? .accentColor : .primary.opacity(0.85))
@@ -786,9 +803,7 @@ struct BorderStyleRow: View {
                             }
                          },
                          resetValue: 0)
-                .accessibilityRepresentation {
-                    Slider(value: $state.borderThickness, in: range, step: 1) { Text("Border thickness") }
-                }
+                .accessibleSlider(value: $state.borderThickness, range: range, step: 1, label: "Border thickness")
             Text(String(format: "%.0f", state.borderThickness))
                 .font(.system(size: 14, weight: resetArmed ? .bold : .medium, design: .monospaced))
                 .foregroundColor(resetArmed ? .accentColor : .primary.opacity(0.85))

@@ -6,6 +6,8 @@ struct CollageApp: App {
     @Environment(\.scenePhase) private var scenePhase
 
     init() {
+        // First, so a crash anywhere after it leaves a trail.
+        Diagnostics.start()
         CollageTips.configure()
     }
 
@@ -34,10 +36,12 @@ struct CollageApp: App {
                     // Pick up images shared into the app via the Share Extension
                     // (e.g. from Photos) whenever the app becomes active.
                     if phase == .active {
+                        Diagnostics.log("ACTIVE \(state.diagnosticsSummary)")
                         importSharedImages()
                     } else if phase == .background {
                         // Leaving the app: save right away, not after the delay.
                         state.saveProjectNow()
+                        Diagnostics.markEnded()
                     }
                 }
                 .onOpenURL { _ in

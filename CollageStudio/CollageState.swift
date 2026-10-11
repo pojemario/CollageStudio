@@ -27,6 +27,7 @@ class CollageState: ObservableObject {
 
     @Published var currentPageIndex: Int = 0 {
         didSet {
+            if currentPageIndex != oldValue, !isExporting { Diagnostics.log("page \(currentPageIndex + 1)") }
             pageSlideEdge = currentPageIndex > oldValue ? .trailing : .leading
             // Highlight maps belong to the previous page's picture
             if currentPageIndex != oldValue { effectMaps.clear() }
@@ -286,12 +287,12 @@ class CollageState: ObservableObject {
     /// listing them here.
     static let framePacks: [FramePack] = [
         FramePack(name: "Polaroid", ratio: .portrait45, assets: [
-            "Polaroid45_Classic_m040044040190_r4x5",
-            "Polaroid45_Cream_m040044040190_r4x5",
-            "Polaroid45_Black_m040044040190_r4x5",
-            "Polaroid45_Taped_m040044040190_r4x5",
-            "Polaroid45_Blush_m040044040190_r4x5",
-            "Polaroid45_Mint_m040044040190_r4x5",
+            "Polaroid45_Classic_m080084080220_r4x5",
+            "Polaroid45_Cream_m080084080220_r4x5",
+            "Polaroid45_Black_m080084080220_r4x5",
+            "Polaroid45_Taped_m080084080220_r4x5",
+            "Polaroid45_Blush_m080084080220_r4x5",
+            "Polaroid45_Mint_m080084080220_r4x5",
         ]),
         FramePack(name: "Analog", ratio: .portrait916, assets: [
             "Analog916_Notch_m45454545_r9x16",
@@ -995,6 +996,7 @@ class CollageState: ObservableObject {
     func beginEditText(id: UUID) {
         lastTextTap = Date()
         guard textEditTargetId != id || !isPanelOpen else { return }
+        Diagnostics.log("edit text")
         closeRatio()
         withAnimation(.easeInOut(duration: 0.25)) {
             // From the full-screen preview, back to editing.
@@ -1023,6 +1025,7 @@ class CollageState: ObservableObject {
     let liveGesture = LiveGesture()
 
     func beginProtrusion(id: UUID) {
+        Diagnostics.log("protrude")
         closeRatio()
         textEditTargetId = nil
         withAnimation(.easeInOut(duration: 0.25)) {
@@ -2342,6 +2345,7 @@ class CollageState: ObservableObject {
     /// and format, numbered in order, then presents the share sheet.
     func exportPages(allPages: Bool, settings: ExportSettings = .saved) async {
         guard hasAnyImages else { return }
+        Diagnostics.log("export \(allPages ? "all pages" : "page") \(settings.size.rawValue) \(settings.format.rawValue)")
         isExporting = true
         isBusy = true
         isLoading = true

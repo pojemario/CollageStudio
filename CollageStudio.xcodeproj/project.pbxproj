@@ -33,6 +33,7 @@
 		CD1AEE73E469CECF122CC288 /* ExportOptions.swift in Sources */ = {isa = PBXBuildFile; fileRef = CC1AEE73E469CECF122CC288 /* ExportOptions.swift */; };
 		CD2E1D6C7C956F2B46F32590 /* Tips.swift in Sources */ = {isa = PBXBuildFile; fileRef = CC2E1D6C7C956F2B46F32590 /* Tips.swift */; };
 		CD886F2C9B64CCED83ABDF64 /* PageCopy.swift in Sources */ = {isa = PBXBuildFile; fileRef = CC886F2C9B64CCED83ABDF64 /* PageCopy.swift */; };
+		CD0766CC9992BA895524A383 /* Diagnostics.swift in Sources */ = {isa = PBXBuildFile; fileRef = CC0766CC9992BA895524A383 /* Diagnostics.swift */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXContainerItemProxy section */
@@ -89,6 +90,7 @@
 		CC1AEE73E469CECF122CC288 /* ExportOptions.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ExportOptions.swift; sourceTree = "<group>"; };
 		CC2E1D6C7C956F2B46F32590 /* Tips.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Tips.swift; sourceTree = "<group>"; };
 		CC886F2C9B64CCED83ABDF64 /* PageCopy.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PageCopy.swift; sourceTree = "<group>"; };
+		CC0766CC9992BA895524A383 /* Diagnostics.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Diagnostics.swift; sourceTree = "<group>"; };
 /* End PBXFileReference section */
 
 /* Begin PBXFileSystemSynchronizedBuildFileExceptionSet section */
@@ -154,6 +156,7 @@
 				AA0000F7 /* Effects.swift */,
 				22BA1EDC30028033000137C9 /* CollageGridView_Grid.swift */,
 				22CD51FB300B66E20026FB00 /* SharedInbox.swift */,
+				CC0766CC9992BA895524A383 /* Diagnostics.swift */,
 				CC886F2C9B64CCED83ABDF64 /* PageCopy.swift */,
 				CC2E1D6C7C956F2B46F32590 /* Tips.swift */,
 				CC1AEE73E469CECF122CC288 /* ExportOptions.swift */,
@@ -345,6 +348,7 @@
 				AA000007 /* ImageBoxView.swift in Sources */,
 				AA000008 /* SidebarView.swift in Sources */,
 				AA000009 /* BottomPanelView.swift in Sources */,
+				CD0766CC9992BA895524A383 /* Diagnostics.swift in Sources */,
 				CD886F2C9B64CCED83ABDF64 /* PageCopy.swift in Sources */,
 				CD2E1D6C7C956F2B46F32590 /* Tips.swift in Sources */,
 				CD1AEE73E469CECF122CC288 /* ExportOptions.swift in Sources */,
