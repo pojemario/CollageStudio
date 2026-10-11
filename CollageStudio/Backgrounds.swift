@@ -1,25 +1,29 @@
 import SwiftUI
-import CoreImage
-import CoreImage.CIFilterBuiltins
 
 /// What fills the collage behind (and between) the photos.
 enum BackgroundKind: String, CaseIterable, Identifiable {
     case color = "Color"
     /// From the background color at the top to the second color below.
     case gradient = "Gradient"
-    /// The page's first photo, blurred into a soft wash of its colors.
+    /// The page's first photo, blurred into a soft wash of its colors —
+    /// "Automatic" in the app (stored as "Photo").
     case photo = "Photo"
-    /// The background color with a fine paper grain.
-    case paper = "Paper"
 
     var id: String { rawValue }
+
+    var title: String {
+        switch self {
+        case .color: return "Color"
+        case .gradient: return "Gradient"
+        case .photo: return "Automatic"
+        }
+    }
 
     var symbol: String {
         switch self {
         case .color: return "square.fill"
         case .gradient: return "square.bottomhalf.filled"
-        case .photo: return "photo"
-        case .paper: return "doc.plaintext"
+        case .photo: return "wand.and.sparkles"
         }
     }
 }
@@ -49,15 +53,6 @@ struct CollageBackground: View {
         case .gradient:
             LinearGradient(colors: [color, ContentGrader.apply(grade, to: state.backgroundColor2)],
                            startPoint: .top, endPoint: .bottom)
-        case .paper:
-            color.overlay {
-                PaperTexture.image
-                    .resizable()
-                    .scaledToFill()
-                    .blendMode(.multiply)
-                    .opacity(0.55)
-            }
-            .clipped()
         case .photo:
             GeometryReader { geo in
                 if let img = state.images.first(where: { $0.canProtrude }) {
@@ -83,26 +78,6 @@ struct CollageBackground: View {
     }
 }
 
-/// A fine, soft paper grain (white with faint gray specks), made once.
-enum PaperTexture {
-    static let image: Image = {
-        let size = 1024
-        let noise = CIFilter.randomGenerator().outputImage?
-            .cropped(to: CGRect(x: 0, y: 0, width: size, height: size))
-        let gray = noise?.applyingFilter("CIColorControls", parameters: [
-            kCIInputSaturationKey: 0, kCIInputContrastKey: 0.35, kCIInputBrightnessKey: 0.38,
-        ])
-        .applyingGaussianBlur(sigma: 0.7)
-        .cropped(to: CGRect(x: 0, y: 0, width: size, height: size))
-        guard let gray, let cg = CIContext().createCGImage(gray, from: gray.extent) else { return Image(systemName: "square") }
-        #if canImport(UIKit)
-        return Image(uiImage: UIImage(cgImage: cg))
-        #else
-        return Image(nsImage: NSImage(cgImage: cg, size: NSSize(width: size, height: size)))
-        #endif
-    }()
-}
-
 /// Layout tab row: what kind of background, plus the gradient's second color.
 struct BackgroundKindRow: View {
     @EnvironmentObject var state: CollageState
@@ -125,14 +100,14 @@ struct BackgroundKindRow: View {
                     get: { state.backgroundKind },
                     set: { kind in withAnimation(.easeInOut(duration: 0.2)) { state.backgroundKind = kind } })) {
                     ForEach(BackgroundKind.allCases) { kind in
-                        Label(kind.rawValue, systemImage: kind.symbol).tag(kind)
+                        Label(kind.title, systemImage: kind.symbol).tag(kind)
                     }
                 }
             } label: {
                 HStack(spacing: 6) {
                     Image(systemName: state.backgroundKind.symbol)
                         .font(.system(size: 13, weight: .medium))
-                    Text(state.backgroundKind.rawValue)
+                    Text(state.backgroundKind.title)
                         .font(.subheadline)
                     Spacer(minLength: 4)
                     Image(systemName: "chevron.up.chevron.down")
@@ -145,7 +120,7 @@ struct BackgroundKindRow: View {
                 .background(RoundedRectangle(cornerRadius: 9, style: .continuous).fill(Color.primary.opacity(0.06)))
                 .contentShape(Rectangle())
             }
-            .accessibilityLabel("Background fill, \(state.backgroundKind.rawValue)")
+            .accessibilityLabel("Background fill, \(state.backgroundKind.title)")
             Color.clear.frame(width: LabeledSlider.twoDigitValueWidth, height: 24)
         }
         .panelChrome(state)

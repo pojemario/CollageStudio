@@ -285,6 +285,14 @@ class CollageState: ObservableObject {
     /// Add a pack by dropping its PNGs into Assets.xcassets/FramePacks/ and
     /// listing them here.
     static let framePacks: [FramePack] = [
+        FramePack(name: "Polaroid", ratio: .portrait45, assets: [
+            "Polaroid45_Classic_m040044040190_r4x5",
+            "Polaroid45_Cream_m040044040190_r4x5",
+            "Polaroid45_Black_m040044040190_r4x5",
+            "Polaroid45_Taped_m040044040190_r4x5",
+            "Polaroid45_Blush_m040044040190_r4x5",
+            "Polaroid45_Mint_m040044040190_r4x5",
+        ]),
         FramePack(name: "Analog", ratio: .portrait916, assets: [
             "Analog916_Notch_m45454545_r9x16",
             "Analog916_Amber400_m61436143_r9x16",

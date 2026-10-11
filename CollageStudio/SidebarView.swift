@@ -132,7 +132,8 @@ struct SidebarView: View {
     var layoutSection: some View {
         SidebarSection(title: "Layout") {
             VStack(spacing: 10) {
-                StylePresetsRow()
+                // Style presets — hidden for now.
+                // StylePresetsRow()
                 LabeledSlider(label: "Columns", value: Binding(
                     get: { Double(min(state.numCols, state.maxSelectableCols)) },
                     set: { v in state.numCols = Int(v); state.rebuildLayout(resetGrows: true) }

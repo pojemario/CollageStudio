@@ -45,7 +45,7 @@ struct StylePreset: Identifiable, Codable, Equatable {
     static let builtIns: [StylePreset] = [
         StylePreset(name: "Clean", style: style(background: .white, gap: 10, rounding: 20)),
         StylePreset(name: "Polaroid",
-                    style: style(background: color(0.97, 0.96, 0.93), gap: 28, rounding: 0, kind: .paper),
+                    style: style(background: color(0.97, 0.96, 0.93), gap: 28, rounding: 0),
                     effects: ["Fade": 20, "Grain": 25, "Vignette": 15],
                     filter: "brownie", filterStrength: 45),
         StylePreset(name: "Magazine", style: style(background: .white, gap: 4, rounding: 0),
@@ -250,7 +250,7 @@ struct StylePreview: View {
             case .photo:
                 LinearGradient(colors: [colors[0].opacity(0.8), colors[3].opacity(0.8)],
                                startPoint: .topLeading, endPoint: .bottomTrailing)
-            case .color, .paper:
+            case .color:
                 top
             }
         }

@@ -903,6 +903,15 @@ extension CollageState {
                 self.toolbarHidden = n >= 2
             }
         }
+        // `-frame <asset>`: a pack frame on the page.
+        if let t = args.firstIndex(of: "-frame"), t + 1 < args.count {
+            let name = args[t + 1]
+            DispatchQueue.main.asyncAfter(deadline: .now() + 2) {
+                if let f = Self.framePacks.flatMap(\.frames).first(where: { $0.variantAssets.contains(name) }) {
+                    self.canvasFrame = f
+                }
+            }
+        }
         // `-addText` adds a text box (opened in the panel) after the seed.
         if args.contains("-addText") {
             DispatchQueue.main.asyncAfter(deadline: .now() + 2.5) { self.addTextImage() }

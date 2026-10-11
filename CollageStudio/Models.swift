@@ -541,7 +541,8 @@ struct PageLook: Equatable {
 /// asset names encode metadata, e.g. "Medium_m26562656_r4x5":
 ///  - "Medium" — display name
 ///  - "m26562656" — minimum content margins: left/top/right/bottom,
-///    two digits each, in canvas pixels (may differ per ratio variant)
+///    two digits each (or three each, 12 digits), in canvas pixels (may
+///    differ per ratio variant)
 ///  - "r4x5" — the canvas ratio this PNG is drawn for
 struct CanvasFrameSet: Identifiable, Equatable {
     let baseName: String
@@ -563,13 +564,14 @@ struct CanvasFrameSet: Identifiable, Equatable {
     static func margins(fromAssetName name: String) -> (left: CGFloat, top: CGFloat, right: CGFloat, bottom: CGFloat) {
         for comp in name.split(separator: "_") {
             guard comp.first == "m" else { continue }
-            let digits = comp.dropFirst().prefix(8)
-            guard digits.count == 8, digits.allSatisfy(\.isNumber),
-                  let l = Int(digits.prefix(2)),
-                  let t = Int(digits.dropFirst(2).prefix(2)),
-                  let r = Int(digits.dropFirst(4).prefix(2)),
-                  let b = Int(digits.dropFirst(6).prefix(2)) else { continue }
-            return (CGFloat(l), CGFloat(t), CGFloat(r), CGFloat(b))
+            // Two digits per side ("m26562656"), or three for frames with
+            // deeper edges ("m040044040190").
+            let digits = Array(comp.dropFirst())
+            guard digits.count == 8 || digits.count == 12, digits.allSatisfy(\.isNumber) else { continue }
+            let n = digits.count / 4
+            let v = (0..<4).compactMap { Int(String(digits[($0 * n)..<($0 * n + n)])) }
+            guard v.count == 4 else { continue }
+            return (CGFloat(v[0]), CGFloat(v[1]), CGFloat(v[2]), CGFloat(v[3]))
         }
         return (0, 0, 0, 0)
     }

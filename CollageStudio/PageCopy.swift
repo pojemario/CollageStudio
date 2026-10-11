@@ -246,7 +246,7 @@ struct PastePageLookView: View {
             let lanes = s.isRows ? "row" : "column"
             return "\(s.numCols) \(lanes)\(s.numCols == 1 ? "" : "s") · spacing \(Int(s.gap)) · corners \(Int(s.cornerRadius))"
         case .background:
-            return s.backgroundKind.rawValue
+            return s.backgroundKind.title
         case .border:
             return s.borderThickness == 0 ? "None" : "\(s.borderStyle.rawValue) · \(Int(s.borderThickness))"
         case .canvas:
