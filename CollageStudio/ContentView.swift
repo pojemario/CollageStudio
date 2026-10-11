@@ -74,10 +74,16 @@ struct PageTabBar: View {
                     select(state.currentPageIndex - 1)
                 }
                 .accessibilityLabel("Previous page")
-                Text("\(state.currentPageIndex + 1) / \(state.pages.count)")
-                    .accessibilityLabel("Page \(state.currentPageIndex + 1) of \(state.pages.count)")
-                    .font(.subheadline.weight(.semibold).monospacedDigit())
-                    .foregroundColor(.primary)
+                // Tap the page number for the page menu.
+                Menu { pageMenu } label: {
+                    Text("\(state.currentPageIndex + 1) / \(state.pages.count)")
+                        .font(.subheadline.weight(.semibold).monospacedDigit())
+                        .foregroundColor(.primary)
+                        .padding(.vertical, 4)
+                        .contentShape(Rectangle())
+                }
+                .accessibilityLabel("Page \(state.currentPageIndex + 1) of \(state.pages.count)")
+                .accessibilityHint("Opens the page menu")
                 stepButton(system: "chevron.right", enabled: state.currentPageIndex < state.pages.count - 1) {
                     select(state.currentPageIndex + 1)
                 }
@@ -91,14 +97,38 @@ struct PageTabBar: View {
                     .overlay(Capsule(style: .continuous).strokeBorder(ColorManager.glassStroke, lineWidth: 1))
                     .shadow(color: .black.opacity(0.15), radius: 8, y: 2)
             )
-            // Long-press to delete the current page.
-            .contextMenu {
-                Button(role: .destructive) {
-                    state.deletePage(at: state.currentPageIndex)
-                } label: {
-                    Label("Remove Page \(state.currentPageIndex + 1)", systemImage: "trash")
-                }
+            // Long-press works too.
+            .contextMenu { pageMenu }
+        }
+    }
+
+    /// Copy / paste the page's settings, and remove the page.
+    @ViewBuilder private var pageMenu: some View {
+        let page = state.currentPageIndex + 1
+        Section("Page \(page) Settings") {
+            Button { state.copyPageLook() } label: {
+                Label("Copy Settings", systemImage: "doc.on.doc")
             }
+            Button {
+                state.pasteToAllOthers = false
+                state.showPastePageLook = true
+            } label: {
+                Label(state.copiedPageNumber.map { "Paste Settings from Page \($0)…" } ?? "Paste Settings…",
+                      systemImage: "doc.on.clipboard")
+            }
+            .disabled(state.copiedPageLook == nil)
+            Button {
+                state.copyPageLook()
+                state.pasteToAllOthers = true
+                state.showPastePageLook = true
+            } label: {
+                Label("Copy to Other Pages…", systemImage: "square.on.square")
+            }
+        }
+        Button(role: .destructive) {
+            state.deletePage(at: state.currentPageIndex)
+        } label: {
+            Label("Remove Page \(page)", systemImage: "trash")
         }
     }
 

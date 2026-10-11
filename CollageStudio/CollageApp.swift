@@ -50,6 +50,11 @@ struct CollageApp: App {
                         .environmentObject(state)
                         .presentationDetents([.medium, .large])
                 }
+                .sheet(isPresented: $state.showPastePageLook) {
+                    PastePageLookView(allOtherPages: state.pasteToAllOthers)
+                        .environmentObject(state)
+                        .presentationDetents([.medium, .large])
+                }
                 .alert("Add Shared Photos", isPresented: $state.showSharedImportChoice) {
                     Button("Start New Collage", role: .destructive) {
                         state.importPendingShared(replacingCurrent: true)

@@ -26,9 +26,6 @@ struct ImageBoxView: View {
     }
 
     @State private var livePanOffset: CGSize = .zero
-    /// Set once a touch on this box has moved (pan or swap drag), so the tap
-    /// that SwiftUI still reports when the finger lifts isn't taken as a tap.
-    @State private var touchMoved = false
     // Live pinch/rotate deltas. @GestureState is GUARANTEED to reset to its
     // initial value when the gesture ends or is cancelled, so the manipulation
     // can never leave the input layer stuck.
@@ -210,14 +207,6 @@ struct ImageBoxView: View {
                                 toggleSubject(at: tap.location, boxSize: boxSize)
                                 return
                             }
-                            guard imgData?.isText == true else { return }
-                            // SwiftUI reports a tap even after a drag, as long
-                            // as the finger lifts inside the box. Wait a beat
-                            // for the drag's end to land, and only open the
-                            // editor if the finger never moved.
-                            DispatchQueue.main.asyncAfter(deadline: .now() + 0.05) {
-                                if !touchMoved { state.beginEditText(id: imageId) }
-                            }
                         })
                 )
                 // Drive the global "an image is being pinched" flag from the
@@ -266,7 +255,40 @@ struct ImageBoxView: View {
                     }
                     Button("Remove") { state.removeImage(id: imageId) }
                 }
+                // Text boxes open for editing from their own small button
+                // (a tap on the box itself is left to the box's gestures).
+                .overlay(alignment: .topTrailing) {
+                    if imgData?.isText == true, !state.isRenderingOffscreen, !isPreviewing {
+                        TextEditButton(active: state.textEditTargetId == imageId) {
+                            state.beginEditText(id: imageId)
+                        }
+                        .padding(6)
+                    }
+                }
                 .id(imgData?.gestureEpoch ?? 0)
+        }
+    }
+
+    /// The pencil over a text box's corner.
+    private struct TextEditButton: View {
+        let active: Bool
+        let action: () -> Void
+
+        var body: some View {
+            Button(action: action) {
+                Image(systemName: "pencil")
+                    .font(.system(size: 13, weight: .semibold))
+                    .foregroundColor(active ? .white : .primary)
+                    .frame(width: 30, height: 30)
+                    .background(Circle().fill(active ? AnyShapeStyle(Color.accentColor) : AnyShapeStyle(.ultraThinMaterial)))
+                    .overlay(Circle().strokeBorder(ColorManager.glassStroke, lineWidth: 0.8))
+                    .shadow(color: .black.opacity(0.15), radius: 4, y: 1)
+                    // A slightly larger target than it looks.
+                    .padding(4)
+                    .contentShape(Circle())
+            }
+            .buttonStyle(.plain)
+            .accessibilityLabel("Edit text")
         }
     }
 
@@ -375,7 +397,6 @@ struct ImageBoxView: View {
         // Slightly higher minimumDistance to avoid accidental swap trigger
         DragGesture(minimumDistance: 4, coordinateSpace: .named("collageCanvas"))
             .onChanged { value in
-                touchMoved = true
                 // Ignore the stray single-finger drag a two-finger pinch/rotate
                 // produces from its moving centroid.
                 guard !pinching,
@@ -420,8 +441,6 @@ struct ImageBoxView: View {
                 livePanOffset = value.translation
             }
             .onEnded { value in
-                // Outlive the tap check above, then arm for the next touch.
-                DispatchQueue.main.asyncAfter(deadline: .now() + 0.2) { touchMoved = false }
                 // A two-finger pinch/rotate can spawn a stray single-finger
                 // drag from the moving centroid — don't commit it as a pan.
                 if pinching || state.imageZoomingId != nil {

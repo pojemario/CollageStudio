@@ -517,6 +517,22 @@ struct CollagePage: Identifiable {
     var order: [UUID] = []
     var layout: CollageLayout = CollageLayout()
     var style: PageStyle = PageStyle()
+    var look: PageLook = PageLook()
+}
+
+/// How a page is finished: canvas margin and rotation, frame, overlays,
+/// edits and filter. Each page has its own (new pages start from the page
+/// they were made from).
+struct PageLook: Equatable {
+    var canvasMargin: Double = 0
+    var canvasRotation: Double = 0
+    var canvasFrame: CanvasFrameSet? = nil
+    var overlayLayers: [OverlayLayer] = []
+    var effects: [CollageEffect: Double] = [:]
+    var hsl = HSLAdjustments()
+    var calibration = CameraCalibration()
+    var colorFilter: ColorFilter = .none
+    var filterStrength: Double = 100
 }
 
 // MARK: - Canvas frame set

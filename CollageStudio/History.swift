@@ -12,15 +12,6 @@ struct CollageSnapshot {
     var customWidth: String
     var customHeight: String
     var customUnit: CustomUnit
-    var canvasMargin: Double
-    var canvasRotation: Double
-    var canvasFrame: CanvasFrameSet?
-    var overlayLayers: [OverlayLayer]
-    var effects: [CollageEffect: Double]
-    var hsl: HSLAdjustments
-    var calibration: CameraCalibration
-    var colorFilter: ColorFilter
-    var filterStrength: Double
 
     /// Same document, ignoring bookkeeping that changes on its own: box
     /// sizes, gesture epochs, text bitmaps re-rendered for a new box shape,
@@ -28,10 +19,6 @@ struct CollageSnapshot {
     func sameDocument(as o: CollageSnapshot) -> Bool {
         ratio == o.ratio && canvasSize == o.canvasSize
             && customWidth == o.customWidth && customHeight == o.customHeight && customUnit == o.customUnit
-            && canvasMargin == o.canvasMargin && canvasRotation == o.canvasRotation
-            && canvasFrame == o.canvasFrame && overlayLayers == o.overlayLayers
-            && effects == o.effects && hsl == o.hsl && calibration == o.calibration
-            && colorFilter == o.colorFilter && filterStrength == o.filterStrength
             && pages.count == o.pages.count
             && zip(pages, o.pages).allSatisfy { $0.sameContent(as: $1) }
     }
@@ -47,7 +34,7 @@ struct CollageSnapshot {
 
 extension CollagePage {
     func sameContent(as o: CollagePage) -> Bool {
-        id == o.id && order == o.order && style == o.style
+        id == o.id && order == o.order && style == o.style && look == o.look
             && images.count == o.images.count
             && zip(images, o.images).allSatisfy { $0.sameContent(as: $1) }
             && layout.sameContent(as: o.layout)
@@ -81,11 +68,7 @@ extension CollageState {
     var documentSnapshot: CollageSnapshot {
         CollageSnapshot(pages: pages, currentPageIndex: currentPageIndex,
                         ratio: ratio, canvasSize: canvasSize,
-                        customWidth: customWidth, customHeight: customHeight, customUnit: customUnit,
-                        canvasMargin: canvasMargin, canvasRotation: canvasRotation,
-                        canvasFrame: canvasFrame, overlayLayers: overlayLayers,
-                        effects: effects, hsl: hsl, calibration: calibration,
-                        colorFilter: colorFilter, filterStrength: filterStrength)
+                        customWidth: customWidth, customHeight: customHeight, customUnit: customUnit)
     }
 
     /// Puts a document in place as is (no re-layout, no reset positions).
@@ -97,18 +80,10 @@ extension CollageState {
         customWidth = s.customWidth
         customHeight = s.customHeight
         customUnit = s.customUnit
-        canvasMargin = s.canvasMargin
-        canvasRotation = s.canvasRotation
-        canvasFrame = s.canvasFrame
-        overlayLayers = s.overlayLayers
         if let sel = selectedOverlayId, !overlayLayers.contains(where: { $0.id == sel }) {
             selectedOverlayId = overlayLayers.last?.id
         }
-        effects = s.effects
-        hsl = s.hsl
-        calibration = s.calibration
-        colorFilter = s.colorFilter
-        filterStrength = s.filterStrength
+        dropGradesIfIdentity()
     }
 
     /// Watches for edits: once changes settle (and no finger is still on a

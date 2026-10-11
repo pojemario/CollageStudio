@@ -44,6 +44,22 @@ extension PageStyle: Codable {
     }
 }
 
+extension TextBoxStyle {
+    private static let lastUsedKey = "lastTextStyle"
+
+    /// The look of the text box edited last (font, size, alignment, colors),
+    /// for new text boxes to start from — with fresh starting text.
+    static var lastUsed: TextBoxStyle {
+        get {
+            guard let data = UserDefaults.standard.data(forKey: lastUsedKey),
+                  var style = try? JSONDecoder().decode(TextBoxStyle.self, from: data) else { return TextBoxStyle() }
+            style.text = TextBoxStyle().text
+            return style
+        }
+        set { UserDefaults.standard.set(try? JSONEncoder().encode(newValue), forKey: lastUsedKey) }
+    }
+}
+
 extension TextBoxStyle: Codable {
     private enum CodingKeys: String, CodingKey {
         case text, fontChoice, fontSize, hAlignment, vAlignment, textColor, backgroundColor
@@ -155,6 +171,8 @@ struct ProjectFile: Codable {
     var customWidth: String
     var customHeight: String
     var customUnit: String
+    // The page on screen's look, at the top level too: files from before
+    // per-page looks had only these, and older app versions still read them.
     var canvasMargin: Double
     var canvasRotation: Double
     var frame: String?
@@ -172,6 +190,27 @@ struct ProjectFile: Codable {
         var colGrows: [Double]
         var boxGrows: [[Double]]
         var style: PageStyle
+        /// Missing in files from before per-page looks.
+        var look: Look?
+    }
+
+    /// A page's margin, rotation, frame, overlays, edits and filter.
+    struct Look: Codable {
+        var canvasMargin: Double
+        var canvasRotation: Double
+        var frame: String?
+        var overlays: [Overlay]
+        var effects: [String: Double]
+        var hsl: [String: [Double]]
+        var calibration: [Double]
+        var filter: String
+        var filterStrength: Double
+    }
+
+    /// The top-level look (older files: the whole collage's).
+    var collageLook: Look {
+        Look(canvasMargin: canvasMargin, canvasRotation: canvasRotation, frame: frame, overlays: overlays,
+             effects: effects, hsl: hsl, calibration: calibration, filter: filter, filterStrength: filterStrength)
     }
 
     struct Image: Codable {
@@ -202,6 +241,42 @@ struct ProjectFile: Codable {
     }
 
     var imageCount: Int { pages.reduce(0) { $0 + $1.images.count } }
+}
+
+extension PageLook {
+    var file: ProjectFile.Look {
+        ProjectFile.Look(
+            canvasMargin: canvasMargin, canvasRotation: canvasRotation, frame: canvasFrame?.baseName,
+            overlays: overlayLayers.map {
+                ProjectFile.Overlay(asset: $0.asset, kind: $0.kind.rawValue, opacity: $0.opacity, blur: $0.blur,
+                                    aboveFrame: $0.aboveFrame, scale: Double($0.scale), rotation: Double($0.rotation),
+                                    offset: [Double($0.offset.width), Double($0.offset.height)])
+            },
+            effects: effects.storage, hsl: hsl.storage, calibration: calibration.storage,
+            filter: colorFilter.storageKey, filterStrength: filterStrength)
+    }
+
+    @MainActor
+    init(file f: ProjectFile.Look) {
+        let frames = CollageState.availableFrames + CollageState.framePacks.flatMap(\.frames)
+        self.init(
+            canvasMargin: f.canvasMargin, canvasRotation: f.canvasRotation,
+            canvasFrame: f.frame.flatMap { name in frames.first { $0.baseName == name } },
+            overlayLayers: f.overlays.compactMap { o in
+                guard let kind = OverlayKind(rawValue: o.kind) else { return nil }
+                var layer = OverlayLayer(asset: o.asset, kind: kind)
+                layer.opacity = o.opacity
+                layer.blur = o.blur
+                layer.aboveFrame = o.aboveFrame
+                layer.scale = CGFloat(o.scale)
+                layer.rotation = CGFloat(o.rotation)
+                if o.offset.count == 2 { layer.offset = CGSize(width: o.offset[0], height: o.offset[1]) }
+                return layer
+            },
+            effects: effectsFromStorage(f.effects), hsl: HSLAdjustments(storage: f.hsl),
+            calibration: CameraCalibration(storage: f.calibration),
+            colorFilter: ColorFilter(storageKey: f.filter), filterStrength: f.filterStrength)
+    }
 }
 
 /// A saved collage in the Collages list.
@@ -412,25 +487,21 @@ extension CollageState {
                 columns: page.layout.columns.map { $0.map(\.imageId) },
                 colGrows: page.layout.colGrows.map(Double.init),
                 boxGrows: page.layout.boxGrows.map { $0.map(Double.init) },
-                style: page.style)
+                style: page.style, look: page.look.file)
         }
         // Forget pictures no longer in the collage (their files go too).
         savedImageFiles = savedImageFiles.filter { used.contains($0.key) }
 
         let existing = onDisk ? ProjectStore.readFile(currentProjectId) : nil
+        let look = currentPage.look.file
         let file = ProjectFile(
             id: currentProjectId, name: existing?.name, created: existing?.created ?? Date(), modified: Date(),
             currentPageIndex: currentPageIndex, pages: pagesOut,
             ratio: ratio.rawValue, canvasWidth: Double(canvasSize.width), canvasHeight: Double(canvasSize.height),
             customWidth: customWidth, customHeight: customHeight, customUnit: customUnit.rawValue,
-            canvasMargin: canvasMargin, canvasRotation: canvasRotation, frame: canvasFrame?.baseName,
-            overlays: overlayLayers.map {
-                ProjectFile.Overlay(asset: $0.asset, kind: $0.kind.rawValue, opacity: $0.opacity, blur: $0.blur,
-                                    aboveFrame: $0.aboveFrame, scale: Double($0.scale), rotation: Double($0.rotation),
-                                    offset: [Double($0.offset.width), Double($0.offset.height)])
-            },
-            effects: effects.storage, hsl: hsl.storage, calibration: calibration.storage,
-            filter: colorFilter.storageKey, filterStrength: filterStrength)
+            canvasMargin: look.canvasMargin, canvasRotation: look.canvasRotation, frame: look.frame,
+            overlays: look.overlays, effects: look.effects, hsl: look.hsl, calibration: look.calibration,
+            filter: look.filter, filterStrength: look.filterStrength)
         let thumb = hasAnyImages ? renderThumbnail() : nil
         UserDefaults.standard.set(currentProjectId.uuidString, forKey: Self.lastProjectKey)
         projectStore.save(file, newImages: newImages, thumbnail: thumb) { [weak self] in
@@ -546,8 +617,9 @@ extension CollageState {
     }
 
     private func finishLoading(_ file: ProjectFile, images: [UUID: CollageImage], files: [UUID: String]) {
+        let collageLook = PageLook(file: file.collageLook)
         let restoredPages: [CollagePage] = file.pages.map { p in
-            var page = CollagePage(style: p.style)
+            var page = CollagePage(style: p.style, look: p.look.map { PageLook(file: $0) } ?? collageLook)
             page.images = p.images.compactMap { images[$0.id] }
             let present = Set(page.images.map(\.id))
             page.order = p.order.filter { present.contains($0) }
@@ -570,29 +642,12 @@ extension CollageState {
             }
             return page
         }
-        let frames = Self.availableFrames + Self.framePacks.flatMap(\.frames)
         let snapshot = CollageSnapshot(
             pages: restoredPages, currentPageIndex: file.currentPageIndex,
             ratio: CanvasRatio(rawValue: file.ratio) ?? .square,
             canvasSize: CGSize(width: file.canvasWidth, height: file.canvasHeight),
             customWidth: file.customWidth, customHeight: file.customHeight,
-            customUnit: CustomUnit(rawValue: file.customUnit) ?? .px,
-            canvasMargin: file.canvasMargin, canvasRotation: file.canvasRotation,
-            canvasFrame: file.frame.flatMap { name in frames.first { $0.baseName == name } },
-            overlayLayers: file.overlays.compactMap { o in
-                guard let kind = OverlayKind(rawValue: o.kind) else { return nil }
-                var layer = OverlayLayer(asset: o.asset, kind: kind)
-                layer.opacity = o.opacity
-                layer.blur = o.blur
-                layer.aboveFrame = o.aboveFrame
-                layer.scale = CGFloat(o.scale)
-                layer.rotation = CGFloat(o.rotation)
-                if o.offset.count == 2 { layer.offset = CGSize(width: o.offset[0], height: o.offset[1]) }
-                return layer
-            },
-            effects: effectsFromStorage(file.effects), hsl: HSLAdjustments(storage: file.hsl),
-            calibration: CameraCalibration(storage: file.calibration),
-            colorFilter: ColorFilter(storageKey: file.filter), filterStrength: file.filterStrength)
+            customUnit: CustomUnit(rawValue: file.customUnit) ?? .px)
         applyDocument(snapshot)
         // The pictures already on disk aren't written again.
         savedImageFiles = [:]
@@ -813,6 +868,36 @@ extension CollageState {
         }
                 if args.contains("-compare") {
             DispatchQueue.main.asyncAfter(deadline: .now() + 3) { self.compareOriginal = true }
+        }
+        // `-pageLookDemo`: two pages with different settings, page 1's copied
+        // and the paste sheet open (`-pageLookDemo paste` pastes it all onto page 2).
+        if let t = args.firstIndex(of: "-pageLookDemo") {
+            let pasteNow = t + 1 < args.count && args[t + 1] == "paste"
+            DispatchQueue.main.asyncAfter(deadline: .now() + 2.5) {
+                self.colorFilter = .classicNegative
+                self.canvasMargin = 60
+                self.canvasRotation = 4
+                if let last = self.images.last { self.moveImageToNewPage(id: last.id) }
+                if self.pages.count > 1 {
+                    self.pages[1].look.colorFilter = .amber
+                    self.pages[1].look.canvasMargin = 0
+                    self.pages[1].look.canvasRotation = 0
+                }
+                DispatchQueue.main.asyncAfter(deadline: .now() + 0.6) {
+                    self.copyPageLook()
+                    if pasteNow {
+                        self.pastePageLook(Set(PageLookPart.allCases), to: [1])
+                        self.goToPage(1)
+                    } else {
+                        self.pasteToAllOthers = true
+                        self.showPastePageLook = true
+                    }
+                }
+            }
+        }
+        // `-addText` adds a text box (opened in the panel) after the seed.
+        if args.contains("-addText") {
+            DispatchQueue.main.asyncAfter(deadline: .now() + 2.5) { self.addTextImage() }
         }
                 if args.contains("-showProjects") {
             DispatchQueue.main.asyncAfter(deadline: .now() + 2.5) { self.showProjects = true }

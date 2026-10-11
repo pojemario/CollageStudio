@@ -45,6 +45,12 @@ class CollageState: ObservableObject {
                 refreshTrackedGeometry(after: 0.45)
             }
             clearSwapDrag()
+            // Each page has its own overlays: keep the panel on one of them.
+            if let sel = selectedOverlayId, !overlayLayers.contains(where: { $0.id == sel }) {
+                selectedOverlayId = overlayLayers.last?.id
+            } else if selectedOverlayId == nil {
+                selectedOverlayId = overlayLayers.last?.id
+            }
         }
     }
     /// The page whose boxes `imageFrames` / `emptySlotFrames` describe.
@@ -239,11 +245,20 @@ class CollageState: ObservableObject {
     // MARK: - Canvas margin & frame
     /// Extra inset (in canvas pixels) the user adds on top of the frame's
     /// built-in minimum margins. 0 means "just the frame's own margins".
-    @Published var canvasMargin: Double = 0
+    var canvasMargin: Double {
+        get { currentPage.look.canvasMargin }
+        set { currentPage.look.canvasMargin = newValue }
+    }
     /// Rotation of the collage grid within the canvas, in degrees.
-    @Published var canvasRotation: Double = 0
+    var canvasRotation: Double {
+        get { currentPage.look.canvasRotation }
+        set { currentPage.look.canvasRotation = newValue }
+    }
     /// The selected decorative frame set, or nil for no frame.
-    @Published var canvasFrame: CanvasFrameSet? = nil
+    var canvasFrame: CanvasFrameSet? {
+        get { currentPage.look.canvasFrame }
+        set { currentPage.look.canvasFrame = newValue }
+    }
 
     /// Bundled frame sets with their per-ratio variants. Asset names encode
     /// margins and ratio — see CanvasFrameSet. The r1x1 variant doubles as
@@ -334,9 +349,11 @@ class CollageState: ObservableObject {
 
     // MARK: - Overlays (dust, scratches, light leaks)
 
-    /// Overlay layers on the canvas, bottom to top. Like the frame, they
-    /// apply to every page.
-    @Published var overlayLayers: [OverlayLayer] = []
+    /// Overlay layers on the current page, bottom to top.
+    var overlayLayers: [OverlayLayer] {
+        get { currentPage.look.overlayLayers }
+        set { currentPage.look.overlayLayers = newValue }
+    }
     /// Layer being edited in the Overlay panel.
     @Published var selectedOverlayId: UUID? = nil
     /// Every layer is a full-canvas bitmap, so keep the stack bounded.
@@ -476,10 +493,13 @@ class CollageState: ObservableObject {
 
     // MARK: - Effects (exposure, contrast, fade, glow, …)
 
-    /// Intensity per effect, 0...100; absent or 0 means off. Like the frame
-    /// and overlays, effects apply to every page.
-    @Published var effects: [CollageEffect: Double] = [:] {
-        didSet { dropGradesIfIdentity() }
+    /// Intensity per effect on the current page, 0...100; absent or 0 means off.
+    var effects: [CollageEffect: Double] {
+        get { currentPage.look.effects }
+        set {
+            currentPage.look.effects = newValue
+            dropGradesIfIdentity()
+        }
     }
 
     /// Strength of an effect, 0...1 (fade: −1...1).
@@ -523,29 +543,45 @@ class CollageState: ObservableObject {
 
     // MARK: - HSL
 
-    /// Per-color hue / saturation / luminance, applied to every page.
-    @Published var hsl = HSLAdjustments() {
-        didSet { dropGradesIfIdentity() }
+    /// Per-color hue / saturation / luminance of the current page.
+    var hsl: HSLAdjustments {
+        get { currentPage.look.hsl }
+        set {
+            currentPage.look.hsl = newValue
+            dropGradesIfIdentity()
+        }
     }
 
     func resetHSL() { hsl = HSLAdjustments() }
 
     // MARK: - Camera calibration
 
-    /// Edit tab → CC, applied to every page.
-    @Published var calibration = CameraCalibration() {
-        didSet { dropGradesIfIdentity() }
+    /// Edit tab → CC, for the current page.
+    var calibration: CameraCalibration {
+        get { currentPage.look.calibration }
+        set {
+            currentPage.look.calibration = newValue
+            dropGradesIfIdentity()
+        }
     }
 
     // MARK: - Filter
 
-    /// Preset look (Edit tab → Filter), applied to every page.
-    @Published var colorFilter: ColorFilter = .none {
-        didSet { dropGradesIfIdentity() }
+    /// Preset look (Edit tab → Filter) of the current page.
+    var colorFilter: ColorFilter {
+        get { currentPage.look.colorFilter }
+        set {
+            currentPage.look.colorFilter = newValue
+            dropGradesIfIdentity()
+        }
     }
     /// Percent, 0...200 (100 = the filter as designed).
-    @Published var filterStrength: Double = 100 {
-        didSet { dropGradesIfIdentity() }
+    var filterStrength: Double {
+        get { currentPage.look.filterStrength }
+        set {
+            currentPage.look.filterStrength = newValue
+            dropGradesIfIdentity()
+        }
     }
     /// True while a filter tile is held: the pictures show without the
     /// filter (a before / after peek); everything else stays applied.
@@ -592,7 +628,7 @@ class CollageState: ObservableObject {
     /// while it renders; dropped when it ends).
     private var gradeExportCache: [UUID: Graded] = [:]
 
-    private func dropGradesIfIdentity() {
+    func dropGradesIfIdentity() {
         if fullGrade.isIdentity, !gradedProxies.isEmpty { gradedProxies = [:] }
     }
 
@@ -901,6 +937,11 @@ class CollageState: ObservableObject {
     @Published var showExportSheet: Bool = false
     /// Asks the user whether to export the current page or all pages.
     @Published var showExportOptions: Bool = false
+    /// A page's settings, copied from the page menu to paste onto others.
+    @Published var copiedPageLook: CopiedPageLook? = nil
+    /// The Paste Settings sheet; `pasteToAllOthers` starts it on every other page.
+    @Published var showPastePageLook: Bool = false
+    var pasteToAllOthers = false
 
     /// True when any page has at least one image.
     var hasAnyImages: Bool {
@@ -929,16 +970,17 @@ class CollageState: ObservableObject {
     /// Text box being edited in the panel (nil = not editing text).
     @Published var textEditTargetId: UUID? = nil
 
-    /// Adds a text box rendered as an image and opens it for editing.
+    /// Adds a text box rendered as an image (in the last used look) and
+    /// opens it for editing.
     func addTextImage() {
-        let image = CollageImage.textImage(style: TextBoxStyle())
+        let image = CollageImage.textImage(style: .lastUsed)
         addPreparedImages([image])
         if currentPage.images.contains(where: { $0.id == image.id }) {
             beginEditText(id: image.id)
         }
     }
 
-    /// Tapping a text box edits it live: the panel swaps to the text
+    /// The edit button on a text box edits it live: the panel swaps to the text
     /// properties while the text itself updates on the collage.
     func beginEditText(id: UUID) {
         lastTextTap = Date()
@@ -1214,7 +1256,7 @@ class CollageState: ObservableObject {
             guard !remaining.isEmpty else { break }
             guard pages.count < Self.maxPages else { break }
             // Spill pages inherit the style of the page being filled
-            pages.append(CollagePage(style: pages[pi].style))
+            pages.append(CollagePage(style: pages[pi].style, look: pages[pi].look))
             pi = pages.count - 1
         }
 
@@ -1245,7 +1287,7 @@ class CollageState: ObservableObject {
         let shared = pendingSharedImages
         pendingSharedImages = []
         guard !shared.isEmpty, pages.count < Self.maxPages else { return }
-        pages.append(CollagePage(style: currentPage.style))
+        pages.append(CollagePage(style: currentPage.style, look: currentPage.look))
         currentPageIndex = pages.count - 1
         addImages(shared)
     }
@@ -1315,7 +1357,7 @@ class CollageState: ObservableObject {
     func addPage() {
         guard pages.count < Self.maxPages else { return }
         // New pages start with the current page's style
-        pages.append(CollagePage(style: currentPage.style))
+        pages.append(CollagePage(style: currentPage.style, look: currentPage.look))
         currentPageIndex = pages.count - 1
     }
 
@@ -1371,7 +1413,7 @@ class CollageState: ObservableObject {
 
     func moveImageToNewPage(id: UUID) {
         guard pages.count < Self.maxPages else { return }
-        pages.append(CollagePage(style: currentPage.style))
+        pages.append(CollagePage(style: currentPage.style, look: currentPage.look))
         moveImage(id: id, toPage: pages.count - 1)
     }
 
@@ -1385,7 +1427,7 @@ class CollageState: ObservableObject {
             i.lastBoxSize = .zero
             return i
         }
-        var page = CollagePage(style: currentPage.style)
+        var page = CollagePage(style: currentPage.style, look: currentPage.look)
         page.images = Array(allImages)
         page.order = allImages.map(\.id)
         page.style.numCols = max(1, min(allImages.count, 6))
@@ -1445,14 +1487,14 @@ class CollageState: ObservableObject {
                                   columnsFor: ((Int) -> Int)? = nil) {
         guard !images.isEmpty else { return }
         let pageCount = min(Self.maxPages, max(1, requestedPages))
-        let styleTemplate = currentPage.style
+        let styleTemplate = currentPage.style, lookTemplate = currentPage.look
         let perPage = min(Self.maxImagesPerPage,
                           Int((Double(images.count) / Double(pageCount)).rounded(.up)))
 
         var newPages: [CollagePage] = []
         var idx = 0
         for _ in 0..<pageCount {
-            var page = CollagePage(style: styleTemplate)
+            var page = CollagePage(style: styleTemplate, look: lookTemplate)
             var chunk: [CollageImage] = []
             while chunk.count < perPage && idx < images.count {
                 var img = images[idx]
@@ -1490,7 +1532,7 @@ class CollageState: ObservableObject {
     func distributeOneImagePerPage() {
         let allImages = pages.flatMap { $0.images }
         guard !allImages.isEmpty else { return }
-        let styleTemplate = currentPage.style
+        let styleTemplate = currentPage.style, lookTemplate = currentPage.look
 
         var newPages: [CollagePage] = []
         for var img in allImages.prefix(Self.maxPages) {
@@ -1498,7 +1540,7 @@ class CollageState: ObservableObject {
             img.framedByUser = false
             img.zoom = 1.0
             img.lastBoxSize = .zero
-            var page = CollagePage(style: styleTemplate)
+            var page = CollagePage(style: styleTemplate, look: lookTemplate)
             page.style.numCols = 1
             page.images = [img]
             page.order = [img.id]
@@ -1617,7 +1659,7 @@ class CollageState: ObservableObject {
     }
 
     func clear() {
-        pages = [CollagePage(style: currentPage.style)]
+        pages = [CollagePage(style: currentPage.style, look: currentPage.look)]
         currentPageIndex = 0
         imageFrames.removeAll()
         clearSwapDrag()

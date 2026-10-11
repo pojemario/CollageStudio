@@ -2,8 +2,9 @@ import SwiftUI
 
 /// Live editor for a "Text image", shown in the panel (or sidebar) while its
 /// box is selected on the collage: every change re-renders the text right
-/// where it lives, so there is no separate preview. While the keyboard is up
-/// only the text row stays, keeping the collage in view above it.
+/// where it lives, so there is no separate preview. It opens with every
+/// option showing; while the keyboard is up only the text row stays,
+/// keeping the collage in view above it.
 struct TextEditPanel: View {
     @EnvironmentObject var state: CollageState
     let imageId: UUID
@@ -14,7 +15,11 @@ struct TextEditPanel: View {
     private var style: Binding<TextBoxStyle> {
         Binding(
             get: { state.textStyle(for: imageId) ?? TextBoxStyle() },
-            set: { state.applyTextStyle($0, to: imageId) }
+            set: {
+                state.applyTextStyle($0, to: imageId)
+                // The next new text box starts from this look.
+                TextBoxStyle.lastUsed = $0
+            }
         )
     }
 
@@ -36,15 +41,15 @@ struct TextEditPanel: View {
         .onChange(of: state.textStyle(for: imageId) == nil, initial: true) { _, gone in
             if gone { state.endTextEditing() }
         }
-        // Opening a text box goes straight to typing: focus the field and
-        // select all, so new text simply replaces the old.
-        .task(id: imageId) {
-            // Let the panel finish rising first.
-            try? await Task.sleep(nanoseconds: 350_000_000)
-            guard !Task.isCancelled else { return }
-            typing = true
-            try? await Task.sleep(nanoseconds: 150_000_000)
-            selectAllInFocusedField()
+        // Another text box opened in the same panel: start without the keyboard.
+        .onChange(of: imageId) { _, _ in typing = false }
+        // The starting text is meant to be replaced: select it all as typing begins.
+        .onChange(of: typing) { _, now in
+            guard now, style.wrappedValue.text == TextBoxStyle().text else { return }
+            Task {
+                try? await Task.sleep(nanoseconds: 150_000_000)
+                selectAllInFocusedField()
+            }
         }
     }
 
@@ -69,18 +74,19 @@ struct TextEditPanel: View {
                 .padding(.vertical, 8)
                 .appButtonBackground(prominent: false)
 
-            Button {
-                // First put the keyboard away, then leave text editing.
-                if typing { typing = false } else { state.endTextEditing() }
-            } label: {
-                Label("Done", systemImage: "checkmark")
-                    .font(.system(size: 14, weight: .semibold))
-                    .foregroundColor(.white)
-                    .padding(.horizontal, 12)
-                    .padding(.vertical, 9)
-                    .appButtonBackground(prominent: true)
+            // Puts the keyboard away, bringing the other options back.
+            if typing {
+                Button { typing = false } label: {
+                    Image(systemName: "keyboard.chevron.compact.down")
+                        .font(.system(size: 15, weight: .medium))
+                        .foregroundColor(.primary)
+                        .frame(width: 38, height: 38)
+                        .appButtonBackground(prominent: false)
+                }
+                .buttonStyle(.plain)
+                .accessibilityLabel("Hide keyboard")
+                .transition(.opacity)
             }
-            .buttonStyle(.plain)
         }
     }
 
