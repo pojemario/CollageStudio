@@ -17,10 +17,11 @@ names=$(xcrun devicectl device info files --device "$DEV" --domain-type systemCr
   | awk '{print $1}' | grep -E '(^|/)CollageStudio-.*\.ips$')
 new=()
 for n in ${(f)names}; do
-  grep -qxF "$n" "$OUT/seen.txt" && continue
+  # By file name: iOS later moves reports into Retired/, which isn't new.
+  grep -qxF "${n:t}" "$OUT/seen.txt" && continue
   xcrun devicectl device copy from --device "$DEV" --domain-type systemCrashLogs \
     --source "$n" --destination "$OUT/ips/${n:t}" >/dev/null 2>&1 && new+=("$OUT/ips/${n:t}")
-  echo "$n" >> "$OUT/seen.txt"
+  echo "${n:t}" >> "$OUT/seen.txt"
 done
 
 # (devicectl wants a destination that doesn't exist yet; the folder's files land in it)
