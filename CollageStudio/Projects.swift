@@ -837,8 +837,10 @@ struct RecentCollagesButton: View {
     var body: some View {
         if !store.summaries.isEmpty {
             Button { state.showProjects = true } label: {
-                Label("Your collages (\(store.summaries.count))", systemImage: "square.stack")
-                    .font(.subheadline.weight(.semibold))
+                // Lettered like "ADD PHOTOS" above it, at button size.
+                Label("SAVED COLLAGES (\(store.summaries.count))", systemImage: "square.stack")
+                    .font(.system(size: 17, weight: .ultraLight))
+                    .tracking(3)
                     .foregroundColor(.accentColor)
                     .padding(.horizontal, 16)
                     .padding(.vertical, 10)
@@ -935,6 +937,10 @@ extension CollageState {
         // `-editsOn`: one edit, so the compare button shows.
         if args.contains("-editsOn") {
             DispatchQueue.main.asyncAfter(deadline: .now() + 2) { self.effects[.contrast] = 20 }
+        }
+        // `-newCollage`: the empty start screen (saved collages kept).
+        if args.contains("-newCollage") {
+            DispatchQueue.main.asyncAfter(deadline: .now() + 1.5) { self.startNewCollage() }
         }
         // `-addText` adds a text box (opened in the panel) after the seed;
         // `-textAt N` puts it at position N (and closes the panel).

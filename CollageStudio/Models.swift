@@ -942,9 +942,10 @@ struct FilterGroup: Identifiable {
     var id: String { name }
 }
 
-/// The .cube LUTs bundled into the app (copied from the project's luts/
-/// folder at build time — that folder stays out of git, as LUT packs are
-/// usually licensed for use, not redistribution). Parsed on first use.
+/// The .cube LUTs bundled into the app (a LUTs/ folder in the bundle),
+/// parsed on first use. None ship at the moment: third-party LUT packs are
+/// usually licensed for use, not redistribution, so the Lutify pack was
+/// taken out; only LUTs we may give away belong here.
 final class LUTLibrary: @unchecked Sendable {
     static let shared = LUTLibrary()
 
