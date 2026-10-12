@@ -413,9 +413,6 @@ struct ContentView: View {
                     .grayscale(state.hasAnyImages ? 0 : 1)
                     .animation(.easeInOut(duration: 0.4), value: state.hasAnyImages)
                     .shimmering(state.isBusy)
-                // Build version, to tell installed builds apart.
-                VersionLabel()
-                    .padding(.bottom, 6)
             }
             .padding(.leading, 10)
             .offset(y: 2)

@@ -142,7 +142,8 @@ enum AppVersion {
     }
 }
 
-/// The version next to the logo: two small, faint lines.
+/// The version next to the logo: two small, faint lines. Not shown at the
+/// moment (builds go to testers); the diagnostics log records the build.
 struct VersionLabel: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 1) {
