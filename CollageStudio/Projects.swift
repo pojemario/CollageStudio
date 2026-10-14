@@ -104,6 +104,7 @@ extension ColorFilter {
         case .none: return "none"
         case .amber: return "amber"
         case .tealSplit: return "tealSplit"
+        case .heritage: return "heritage"
         case .brownie: return "brownie"
         case .melancholy: return "melancholy"
         case .classicNegative: return "classicNegative"
@@ -117,6 +118,7 @@ extension ColorFilter {
         switch key {
         case "amber": self = .amber
         case "tealSplit": self = .tealSplit
+        case "heritage": self = .heritage
         case "brownie": self = .brownie
         case "melancholy": self = .melancholy
         case "classicNegative": self = .classicNegative

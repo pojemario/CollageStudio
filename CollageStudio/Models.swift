@@ -1086,6 +1086,9 @@ enum ColorFilter: Hashable, Identifiable {
     /// Warm, even skin against complementary split toning: olive-green
     /// shadows and teal highlights.
     case tealSplit
+    /// Heritage Americana editorial on film: amber skin, rust and brick
+    /// reds, deep muted forest greens, soft contrast over warm brown blacks.
+    case heritage
     /// Port of the pojemario.com/brownie web filter at its default settings
     /// (intensity 60, warmth 55, lift 30, saturation 50, contrast /
     /// highlights / brightness 50); its random grain is left to the Grain
@@ -1112,7 +1115,7 @@ enum ColorFilter: Hashable, Identifiable {
     case lut(String)
 
     /// The built-in looks, in tile order.
-    static let builtIns: [ColorFilter] = [.none, .amber, .tealSplit, .brownie, .melancholy, .classicNegative,
+    static let builtIns: [ColorFilter] = [.none, .amber, .heritage, .tealSplit, .brownie, .melancholy, .classicNegative,
                                           .classicNegative2, .portra400]
     /// Every filter offered: built-ins, then the bundled LUTs.
     static var allCases: [ColorFilter] { groups.flatMap(\.filters) }
@@ -1130,6 +1133,7 @@ enum ColorFilter: Hashable, Identifiable {
         case .none: return "None"
         case .amber: return "Amber"
         case .tealSplit: return "Teal Split"
+        case .heritage: return "Heritage"
         case .brownie: return "Brownie"
         case .melancholy: return "Melancholy"
         case .classicNegative: return "Classic Neg"
@@ -1150,6 +1154,8 @@ enum ColorFilter: Hashable, Identifiable {
             return Self.amber(r, g, b)
         case .tealSplit:
             return Self.tealSplit(r, g, b)
+        case .heritage:
+            return Self.heritage(r, g, b)
         case .brownie:
             return Self.brownie(r, g, b)
         case .classicNegative:
@@ -1248,6 +1254,82 @@ enum ColorFilter: Hashable, Identifiable {
         let mid = [-0.010, 0.010, -0.004]       // faint green
         let high = [-0.016, 0.006, 0.008]       // mint-gray
         let out = (0..<3).map { min(max(c[$0] + wm * mid[$0] + wh * high[$0], 0), 1) }
+        return (out[0], out[1], out[2])
+    }
+
+    /// Matched to the amberStyle references (heritage Americana editorial on
+    /// film): amber skin and rich rust / brick reds, deep muted forest
+    /// greens, muted yellows, blues held to a dusty slate, soft contrast over
+    /// warm brown lifted blacks, highlights rolled off to a near-neutral
+    /// cream well under white.
+    private static func heritage(_ r: Double, _ g: Double, _ b: Double) -> (r: Double, g: Double, b: Double) {
+        func bump(_ h: Double, _ center: Double, _ width: Double) -> Double {
+            var d = (h - center + 180).truncatingRemainder(dividingBy: 360)
+            if d < 0 { d += 360 }
+            d -= 180
+            let w = min(max(1 - abs(d) / width, 0), 1)
+            return w * w * (3 - 2 * w)
+        }
+        /// `h` moved `amount` of the short way round toward `target`.
+        func toward(_ h: Double, _ target: Double, _ amount: Double) -> Double {
+            var d = (target - h).truncatingRemainder(dividingBy: 360)
+            if d > 180 { d -= 360 } else if d < -180 { d += 360 }
+            return h + d * amount
+        }
+        var (h, s, v) = hsv(r, g, b)
+        let chroma = min(s / 0.25, 1)          // grays have no hue to darken by
+        // Reds: deep brick, rich but a little darker.
+        let wr = bump(h, 5, 22)
+        h = toward(h, 6, wr * 0.3)
+        s = min(s * (1 + 0.10 * wr), 1)
+        v *= 1 - 0.06 * wr * chroma
+        // Skin / oranges / browns: warm amber-rust.
+        let wo = bump(h, 26, 20)
+        h = toward(h, 23, wo * 0.4)
+        s = min(s * (1 + 0.05 * wo), 1)
+        // Yellows toward amber and muted.
+        let wy = bump(h, 58, 24)
+        h = toward(h, 44, wy * 0.4)
+        s *= 1 - 0.35 * wy
+        // Greens: deep, muted forest green, a touch toward olive.
+        let wg = bump(h, 112, 55)
+        h = toward(h, 104, wg * 0.4)
+        s *= 1 - 0.45 * wg
+        v *= 1 - 0.12 * wg * chroma
+        // Aqua: a quiet teal.
+        let wa = bump(h, 182, 22)
+        s *= 1 - 0.15 * wa
+        // Blues: dusty slate, a touch toward cyan.
+        let wb = bump(h, 222, 45)
+        h = toward(h, 212, wb * 0.4)
+        s *= 1 - 0.30 * wb
+        s *= 0.90
+        h = h.truncatingRemainder(dividingBy: 360)
+        if h < 0 { h += 360 }
+        var c = rgb(h, s, v)
+        // Soft contrast: lifted blacks, a slightly deeper lower mid, highlights
+        // rolled off well under 1 — mostly on luminance, so color holds.
+        func tone(_ x: Double) -> Double {
+            let sc = x * x * (3 - 2 * x)
+            let y = pow(x * 0.7 + sc * 0.3, 1.06)
+            let top = y > 0.7 ? 0.7 + (y - 0.7) * 0.7 : y
+            return 0.055 + (0.97 - 0.055) * top
+        }
+        let l0 = 0.299 * c[0] + 0.587 * c[1] + 0.114 * c[2]
+        let k = l0 > 1e-4 ? tone(l0) / l0 : 1
+        c = c.map { x in tone(x) * 0.35 + min(x * k, 1) * 0.65 }
+        // Warm brown shadows and amber mids; highlights near-neutral cream.
+        // Lighter on already-warm colors so skin doesn't go orange.
+        let l = 0.299 * c[0] + 0.587 * c[1] + 0.114 * c[2]
+        let warm = bump(hsv(c[0], c[1], c[2]).0, 25, 30) * min(hsv(c[0], c[1], c[2]).1 / 0.3, 1)
+        let keep = 1 - 0.6 * warm
+        let ws = pow(min(max(1 - l / 0.4, 0), 1), 1.1) * keep
+        let wm = min(max(1 - abs(l - 0.45) / 0.3, 0), 1) * keep
+        let wh = pow(min(max((l - 0.7) / 0.3, 0), 1), 1.2)
+        let shadow = [0.022, 0.006, -0.020]     // warm brown
+        let mid = [0.020, 0.008, -0.022]        // amber
+        let high = [0.006, 0.002, -0.006]       // faint cream
+        let out = (0..<3).map { min(max(c[$0] + ws * shadow[$0] + wm * mid[$0] + wh * high[$0], 0), 1) }
         return (out[0], out[1], out[2])
     }
 
