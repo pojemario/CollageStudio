@@ -898,23 +898,24 @@ struct CollagesHome: View {
     }
 }
 
-/// A saved collage's thumbnail, read off the main thread once and then
-/// kept in memory, so coming back to the Collages screen shows every
-/// thumbnail at once (no reload that may not happen again).
+/// A saved collage's thumbnail. Read from disk as its tile appears (a
+/// small JPEG, a few milliseconds) and kept in memory for the session, so
+/// coming back to the Collages screen shows every thumbnail at once.
+/// (Loading it in the background lost out to the photo analysis a just
+/// opened collage starts, and an evictable cache could come back empty.)
 private struct ProjectThumb: View {
     let url: URL
     let version: Date
-    @State private var loaded: PlatformImage?
+    @State private var image: PlatformImage?
 
     /// Thumbnails by file and save time (a re-saved collage gets a new one).
-    private static let cache = NSCache<NSString, PlatformImage>()
-    private var key: NSString { "\(url.path)#\(version.timeIntervalSinceReferenceDate)" as NSString }
-    private var image: PlatformImage? { Self.cache.object(forKey: key) ?? loaded }
+    @MainActor private static var cache: [String: PlatformImage] = [:]
+    private var key: String { "\(url.path)#\(version.timeIntervalSinceReferenceDate)" }
 
     var body: some View {
         ZStack {
             Color.primary.opacity(0.06)
-            if let image {
+            if let image = image ?? Self.cache[key] {
                 // The whole collage, fitted (its shape shows on the tile).
                 Group {
                     #if canImport(UIKit)
@@ -927,23 +928,25 @@ private struct ProjectThumb: View {
                 .padding(10)
             }
         }
-        .onAppear {
-            Diagnostics.log("thumb shown \(url.deletingLastPathComponent().lastPathComponent.prefix(8)) cached \(Self.cache.object(forKey: key) != nil) state \(loaded != nil)")
+        .onAppear(perform: load)
+        .onChange(of: key) { load() }
+    }
+
+    private func load() {
+        if let hit = Self.cache[key] {
+            image = hit
+            return
         }
-        .task(id: key) {
-            guard Self.cache.object(forKey: key) == nil else { return }
-            let url = url, key = key
-            guard let img = await Task.detached(priority: .utility, operation: {
-                PlatformImage(contentsOfFile: url.path)
-            }).value else {
-                let exists = FileManager.default.fileExists(atPath: url.path)
-                Diagnostics.log("thumb load failed \(url.deletingLastPathComponent().lastPathComponent.prefix(8)) file \(exists ? "there" : "missing")")
-                return
-            }
-            Self.cache.setObject(img, forKey: key)
-            loaded = img
-            Diagnostics.log("thumb loaded \(url.deletingLastPathComponent().lastPathComponent.prefix(8))")
+        guard let img = PlatformImage(contentsOfFile: url.path) else {
+            let exists = FileManager.default.fileExists(atPath: url.path)
+            Diagnostics.log("thumb load failed \(url.deletingLastPathComponent().lastPathComponent.prefix(8)) file \(exists ? "there" : "missing")")
+            return
         }
+        // Drop the collage's older thumbnails (other save times).
+        let prefix = url.path + "#"
+        for k in Self.cache.keys where k.hasPrefix(prefix) { Self.cache[k] = nil }
+        Self.cache[key] = img
+        image = img
     }
 }
 
