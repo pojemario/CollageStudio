@@ -888,11 +888,18 @@ struct CollagesHome: View {
     }
 }
 
-/// A saved collage's thumbnail, read off the main thread.
+/// A saved collage's thumbnail, read off the main thread once and then
+/// kept in memory, so coming back to the Collages screen shows every
+/// thumbnail at once (no reload that may not happen again).
 private struct ProjectThumb: View {
     let url: URL
     let version: Date
-    @State private var image: PlatformImage?
+    @State private var loaded: PlatformImage?
+
+    /// Thumbnails by file and save time (a re-saved collage gets a new one).
+    private static let cache = NSCache<NSString, PlatformImage>()
+    private var key: NSString { "\(url.path)#\(version.timeIntervalSinceReferenceDate)" as NSString }
+    private var image: PlatformImage? { Self.cache.object(forKey: key) ?? loaded }
 
     var body: some View {
         ZStack {
@@ -910,9 +917,14 @@ private struct ProjectThumb: View {
                 .padding(10)
             }
         }
-        .task(id: version) {
-            let url = url
-            image = await Task.detached(priority: .utility) { PlatformImage(contentsOfFile: url.path) }.value
+        .task(id: key) {
+            guard Self.cache.object(forKey: key) == nil else { return }
+            let url = url, key = key
+            guard let img = await Task.detached(priority: .utility, operation: {
+                PlatformImage(contentsOfFile: url.path)
+            }).value else { return }
+            Self.cache.setObject(img, forKey: key)
+            loaded = img
         }
     }
 }
