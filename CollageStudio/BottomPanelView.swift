@@ -313,7 +313,7 @@ struct BottomPanelView: View {
                     panelContent
                         .onGeometryChange(for: CGFloat.self) { $0.size.height } action: { contentHeight = $0 }
                 }
-                .scrollDisabled(!scrolls || state.activeAdjustment != nil)
+                .scrollDisabled(!scrolls || state.activeAdjustment != nil || state.isMovingThumb)
                 .scrollBounceBehavior(.basedOnSize)
                 .scrollIndicators(scrolls ? .automatic : .hidden)
                 // Full size: nothing is clipped (row highlights and shadows
@@ -434,6 +434,15 @@ struct BottomPanelView: View {
         VStack(spacing: 10) {
             // Fixed button bar — does not scroll with the page list
             HStack(spacing: 8) {
+                // Back to the Collages screen (the open one is saved).
+                ToolbarTile(sf: "square.stack", title: "Collages", prominent: false) { state.goToCollages() }
+                SpreadMenuButton(
+                    // No confirmation: Undo puts the pages back.
+                    onBurst: { state.burstAcrossPages() },
+                    onOnePerPage: { state.distributeOneImagePerPage() },
+                    onAllOnOne: { state.mergeAllOntoOnePage() },
+                    onBurstAll: { state.burstBalanced() })
+
                 AddPageTile { state.addPage() }
                     .disabled(state.pages.count >= CollageState.maxPages)
                     .opacity(state.pages.count >= CollageState.maxPages ? 0.5 : 1)
@@ -443,16 +452,6 @@ struct BottomPanelView: View {
 
                 // Adds a transparent placeholder — an intentional empty slot.
                 ToolbarTile(sf: "rectangle.dashed.badge.record", title: "Empty Box") { state.addEmptyImage() }
-
-                SpreadMenuButton(
-                    // No confirmation: Undo puts the pages back.
-                    onBurst: { state.burstAcrossPages() },
-                    onOnePerPage: { state.distributeOneImagePerPage() },
-                    onAllOnOne: { state.mergeAllOntoOnePage() },
-                    onBurstAll: { state.burstBalanced() })
-
-                // Saved collages and "New Collage" (the open one is kept).
-                ToolbarTile(sf: "square.stack", title: "Collages", prominent: false) { state.goToCollages() }
             }
 
             // The page list at its full height: the panel can grow up to the
@@ -494,15 +493,13 @@ struct BottomPanelView: View {
             .swipeNumbersToReset(canReset: state.hasStyleChanges) { state.resetStyle() }
             .popoverTip(ResetSwipeTip(), arrowEdge: .bottom)
 
-            HStack(spacing: 8) {
-                // Shuffle stays visible in shuffle-focus mode; the others fade.
-                ShuffleButton().panelChrome(state, keep: "Shuffle")
-                // Only meaningful with more than one page — hidden visually on a
-                // single page but keeps its slot so the other buttons don't move.
+            // Shuffle is hidden for now:
+            // ShuffleButton().panelChrome(state, keep: "Shuffle")
+            // Apply to All only means something with more than one page.
+            if state.pages.count > 1 {
                 ActionButton(label: "Apply to All", sf: "square.on.square") { state.applyStyleToAllPages() }
-                    .disabled(!state.canApplyToAll || state.pages.count <= 1)
-                    .opacity(state.pages.count <= 1 ? 0 : (state.canApplyToAll ? 1 : 0.5))
-                    .allowsHitTesting(state.pages.count > 1)
+                    .disabled(!state.canApplyToAll)
+                    .opacity(state.canApplyToAll ? 1 : 0.5)
                     .panelChrome(state)
             }
         }

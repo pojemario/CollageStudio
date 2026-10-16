@@ -199,11 +199,51 @@ extension UIWindow {
 struct UndoRedoButtons: View {
     @EnvironmentObject var state: CollageState
     var size: CGFloat = 40
+    /// One button (the phone toolbar): Undo only, with Redo dropping down
+    /// below it in a small glass bubble while there is something to redo.
+    var compact = false
+    /// Where the Undo button sits on screen (compact), to keep the Redo
+    /// bubble clear of the page switcher just below the toolbar.
+    @State private var undoFrame: CGRect = .zero
+
+    /// How far below the Undo button the Redo bubble drops: just under it,
+    /// or under the page switcher when the two would overlap.
+    private var redoDrop: CGFloat {
+        let below = size + 6
+        let pager = state.pagerFrame
+        guard !pager.isEmpty, !undoFrame.isEmpty,
+              undoFrame.maxX + 8 > pager.minX, undoFrame.minX - 8 < pager.maxX else { return below }
+        return max(below, pager.maxY - undoFrame.minY + 6)
+    }
 
     var body: some View {
-        HStack(spacing: 0) {
+        if compact {
             button("arrow.uturn.backward", label: "Undo", enabled: state.canUndo) { state.undo() }
-            button("arrow.uturn.forward", label: "Redo", enabled: state.canRedo) { state.redo() }
+                .onGeometryChange(for: CGRect.self) { $0.frame(in: .global) } action: { undoFrame = $0 }
+                .overlay(alignment: .top) {
+                    if state.canRedo {
+                        Button { state.redo() } label: {
+                            Image(systemName: "arrow.uturn.forward")
+                                .font(.system(size: 15, weight: .medium))
+                                .foregroundColor(.primary)
+                                .frame(width: size, height: size)
+                                .background(Circle().fill(.ultraThinMaterial))
+                                .overlay(Circle().strokeBorder(ColorManager.glassStroke, lineWidth: 0.8))
+                                .shadow(color: .black.opacity(0.18), radius: 6, y: 2)
+                                .contentShape(Circle())
+                        }
+                        .buttonStyle(.plain)
+                        .accessibilityLabel("Redo")
+                        .offset(y: redoDrop)
+                        .transition(.scale(scale: 0.6, anchor: .top).combined(with: .opacity))
+                    }
+                }
+                .animation(.spring(response: 0.3, dampingFraction: 0.75), value: state.canRedo)
+        } else {
+            HStack(spacing: 0) {
+                button("arrow.uturn.backward", label: "Undo", enabled: state.canUndo) { state.undo() }
+                button("arrow.uturn.forward", label: "Redo", enabled: state.canRedo) { state.redo() }
+            }
         }
     }
 

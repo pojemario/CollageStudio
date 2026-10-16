@@ -144,6 +144,9 @@ class CollageState: ObservableObject {
     /// Label of the slider currently being dragged. While set, the panel
     /// fades everything except that slider so the canvas stays visible.
     @Published var activeAdjustment: String? = nil
+    /// A thumbnail in the Images page list is being dragged to another page
+    /// (the panel holds still meanwhile).
+    @Published var isMovingThumb = false
 
     /// True right after Shuffle is pressed — the panel fades to just the
     /// Shuffle button so new layouts are visible; resets 2s after the last tap.

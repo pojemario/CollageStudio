@@ -314,7 +314,7 @@ struct ContentView: View {
             Color.clear.frame(width: 54, height: 1)
             Spacer()
 
-            HStack(spacing: 2) {
+            HStack(spacing: 0) {
                 // Ratio selector — always available, even before images exist.
                 Button {
                     if state.isRatioOpen { state.closeRatio() } else { state.openRatio() }
@@ -329,7 +329,7 @@ struct ContentView: View {
                     // Plain like the other toolbar icons; accent-colored
                     // while its popup is open.
                     .foregroundColor(state.isRatioOpen ? .accentColor : .primary)
-                    .padding(.horizontal, 8)
+                    .padding(.horizontal, 6)
                     .frame(height: 40)
                     .contentShape(Rectangle())
                 }
@@ -346,7 +346,7 @@ struct ContentView: View {
                 // Undo / redo, full-screen preview and Share — only once
                 // there's a collage (or something to undo back to).
                 if state.hasAnyImages || state.canUndo {
-                    UndoRedoButtons()
+                    UndoRedoButtons(size: 34, compact: true)
                 }
                 if state.hasAnyImages {
                     ResetSettingsButton()
@@ -371,7 +371,7 @@ struct ContentView: View {
                               : "arrow.up.left.and.arrow.down.right")
                             .font(.system(size: 16, weight: .medium))
                             .foregroundColor(state.chromeHidden ? .accentColor : .primary)
-                            .frame(width: 40, height: 40)
+                            .frame(width: 34, height: 40)
                             .contentShape(Rectangle())
                             .contentTransition(.symbolEffect(.replace))
                     }
@@ -384,7 +384,7 @@ struct ContentView: View {
                         Image(systemName: "square.and.arrow.up")
                             .font(.system(size: 17, weight: .medium))
                             .foregroundColor(.primary)
-                            .frame(width: 40, height: 40)
+                            .frame(width: 34, height: 40)
                             .contentShape(Rectangle())
                     }
                     .buttonStyle(.plain)
@@ -408,15 +408,22 @@ struct ContentView: View {
                     .resizable()
                     .scaledToFit()
                     .frame(height: 36)
-                    // Monochrome on the empty start screen; color arrives
-                    // with the first photos.
-                    .grayscale(state.hasAnyImages ? 0 : 1)
+                    // In color on the Collages screen; black and white while
+                    // working on a collage, so it doesn't compete with it.
+                    .grayscale(state.hasAnyImages ? 1 : 0)
                     .animation(.easeInOut(duration: 0.4), value: state.hasAnyImages)
                     .shimmering(state.isBusy)
+                    // Tap: back to the Collages screen.
+                    .contentShape(Rectangle())
+                    .onTapGesture {
+                        guard state.hasAnyImages else { return }
+                        withAnimation(.easeInOut(duration: 0.25)) { state.goToCollages() }
+                    }
+                    .accessibilityAddTraits(state.hasAnyImages ? .isButton : [])
+                    .accessibilityLabel(state.hasAnyImages ? "Collages" : "das Kolaž")
             }
             .padding(.leading, 10)
             .offset(y: -8)
-            .allowsHitTesting(false)
         }
         // Keep the toolbar (and its spilling logo) above the canvas below
         .zIndex(1)
@@ -623,11 +630,22 @@ struct ResetSettingsButton: View {
         .accessibilityLabel("Reset all settings")
     }
 
+    /// Sliders with a turn-back arrow: settings back to default (iOS 18+;
+    /// plain sliders before that).
+    private static let symbol: String = {
+        let name = "slider.horizontal.2.arrow.trianglehead.counterclockwise"
+        #if canImport(UIKit)
+        return UIImage(systemName: name) != nil ? name : "slider.horizontal.3"
+        #else
+        return name
+        #endif
+    }()
+
     private func icon(_ enabled: Bool) -> some View {
-        Image(systemName: "arrow.counterclockwise.circle")
+        Image(systemName: Self.symbol)
             .font(.system(size: 15, weight: .medium))
             .foregroundColor(enabled ? .primary : .secondary.opacity(0.35))
-            .frame(width: 36, height: 40)
+            .frame(width: 34, height: 40)
             .contentShape(Rectangle())
     }
 

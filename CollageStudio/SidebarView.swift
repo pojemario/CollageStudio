@@ -30,6 +30,8 @@ struct SidebarView: View {
                 looksSection
             }
         }
+        // Holds still while a photo is dragged to another page.
+        .scrollDisabled(state.isMovingThumb)
     }
 
     // MARK: - Logo
@@ -40,9 +42,13 @@ struct SidebarView: View {
                 .resizable()
                 .scaledToFit()
                 .frame(height: 80)
-                .grayscale(state.hasAnyImages ? 0 : 1)
+                .grayscale(state.hasAnyImages ? 1 : 0)   // color only on the Collages screen
                 .animation(.easeInOut(duration: 0.4), value: state.hasAnyImages)
                 .shimmering(state.isBusy)
+                // Tap: back to the Collages screen.
+                .onTapGesture { if state.hasAnyImages { state.goToCollages() } }
+                .accessibilityAddTraits(state.hasAnyImages ? .isButton : [])
+                .accessibilityLabel(state.hasAnyImages ? "Collages" : "das Kolaž")
             Spacer()
             UndoRedoButtons(size: 34)
             // Export / share the collage as PNG
@@ -64,6 +70,15 @@ struct SidebarView: View {
     var imagesSection: some View {
         SidebarSection(title: "Images") {
             HStack(spacing: 8) {
+                // Back to the Collages screen (the open one is saved).
+                ToolbarTile(sf: "square.stack", title: "Collages", prominent: false) { state.goToCollages() }
+                SpreadMenuButton(
+                    // No confirmation: Undo puts the pages back.
+                    onBurst: { state.burstAcrossPages() },
+                    onOnePerPage: { state.distributeOneImagePerPage() },
+                    onAllOnOne: { state.mergeAllOntoOnePage() },
+                    onBurstAll: { state.burstBalanced() })
+
                 AddPageTile { state.addPage() }
                     .disabled(state.pages.count >= CollageState.maxPages)
                     .opacity(state.pages.count >= CollageState.maxPages ? 0.5 : 1)
@@ -73,16 +88,6 @@ struct SidebarView: View {
 
                 // Adds a transparent placeholder — an intentional empty slot.
                 ToolbarTile(sf: "rectangle.dashed.badge.record", title: "Empty Box") { state.addEmptyImage() }
-
-                SpreadMenuButton(
-                    // No confirmation: Undo puts the pages back.
-                    onBurst: { state.burstAcrossPages() },
-                    onOnePerPage: { state.distributeOneImagePerPage() },
-                    onAllOnOne: { state.mergeAllOntoOnePage() },
-                    onBurstAll: { state.burstBalanced() })
-
-                // Saved collages and "New Collage" (the open one is kept).
-                ToolbarTile(sf: "square.stack", title: "Collages", prominent: false) { state.goToCollages() }
             }
 
             PageGroupsView()
@@ -137,12 +142,12 @@ struct SidebarView: View {
             }
             .swipeNumbersToReset(canReset: state.hasStyleChanges) { state.resetStyle() }
 
-            HStack(spacing: 8) {
-                ShuffleButton()
+            // Shuffle is hidden for now: ShuffleButton()
+            // Apply to All only means something with more than one page.
+            if state.pages.count > 1 {
                 ActionButton(label: "Apply to All", sf: "square.on.square") { state.applyStyleToAllPages() }
-                    .disabled(!state.canApplyToAll || state.pages.count <= 1)
-                    .opacity(state.pages.count <= 1 ? 0 : (state.canApplyToAll ? 1 : 0.5))
-                    .allowsHitTesting(state.pages.count > 1)
+                    .disabled(!state.canApplyToAll)
+                    .opacity(state.canApplyToAll ? 1 : 0.5)
             }
         }
     }
@@ -360,6 +365,11 @@ struct ModernSlider: View {
     /// In a scrolling panel: whether this touch went sideways (the slider's)
     /// or up/down (the scroll view's); nil until it has moved.
     @State private var claimed: Bool?
+    /// This touch started on the knob: a tap there doesn't move the value,
+    /// and two in a row reset it (see knobTapped).
+    @State private var touchOnKnob = false
+    @State private var touchStartX: CGFloat = 0
+    @State private var lastKnobTap: Date = .distantPast
 
     private var isDark: Bool { colorScheme == .dark }
 
@@ -431,16 +441,24 @@ struct ModernSlider: View {
             .frame(maxHeight: .infinity, alignment: .leading)
             .contentShape(Rectangle())
             // Drag starts instantly (no double-tap gesture competing for the
-            // touch — double-tap-to-reset lives on the value number instead).
+            // touch). Double-tapping the knob resets it: worked out by hand
+            // from two quick taps on the knob, so dragging never waits.
             .gesture(
                 DragGesture(minimumDistance: 0)
                     .onChanged { g in
-                        if !isDragging { onEditingChanged?(true) }
+                        if !isDragging {
+                            onEditingChanged?(true)
+                            touchOnKnob = abs(g.startLocation.x - thumbX) <= thumbBase / 2 + 8
+                            touchStartX = g.startLocation.x
+                        }
                         isDragging = true
+                        // A touch on the knob only moves it once it moves.
+                        if touchOnKnob && abs(g.location.x - touchStartX) < 3 { return }
                         setValue(atX: g.location.x, usable: usable, span: span)
                     }
-                    .onEnded { _ in
+                    .onEnded { g in
                         isDragging = false
+                        if touchOnKnob && abs(g.location.x - touchStartX) < 3 { knobTapped() }
                         onEditingChanged?(false)
                     },
                 including: panelScrolls ? .subviews : .all
@@ -470,12 +488,33 @@ struct ModernSlider: View {
             )
             .simultaneousGesture(
                 SpatialTapGesture()
-                    .onEnded { t in setValue(atX: t.location.x, usable: usable, span: span) },
+                    .onEnded { t in
+                        if abs(t.location.x - thumbX) <= thumbBase / 2 + 8 {
+                            knobTapped()
+                        } else {
+                            setValue(atX: t.location.x, usable: usable, span: span)
+                        }
+                    },
                 including: panelScrolls ? .all : .subviews
             )
         }
         .frame(height: 32)
         .animation(.easeOut(duration: 0.12), value: isDragging)
+    }
+
+    /// A tap on the knob; the second within a moment resets the value to
+    /// its default (like double-tapping the label or the number).
+    private func knobTapped() {
+        let now = Date()
+        defer { lastKnobTap = now }
+        guard now.timeIntervalSince(lastKnobTap) < 0.35 else { return }
+        lastKnobTap = .distantPast
+        let target = min(max(resetValue ?? 0, range.lowerBound), range.upperBound)
+        guard target != value else { return }
+        value = target
+        #if canImport(UIKit)
+        UIImpactFeedbackGenerator(style: .light).impactOccurred()
+        #endif
     }
 
     private func setValue(atX x: CGFloat, usable: CGFloat, span: Double) {
@@ -1290,6 +1329,13 @@ struct PageGroupsView: View {
     // Custom page reordering (no system drag badge)
     @State private var dragPageIndex: Int? = nil
     @State private var dragPageLocation: CGPoint = .zero
+    // Moving a photo to another page: picked up as soon as the finger moves
+    // up or down (sideways still scrolls the row of thumbnails).
+    @State private var dragThumb: CollageImage? = nil
+    @State private var dragThumbLocation: CGPoint = .zero
+    /// Decided on the first movement of each touch: true = moving the photo,
+    /// false = a sideways swipe (scrolling), nil = not decided yet.
+    @State private var thumbDragIsMove: Bool? = nil
 
     var body: some View {
         VStack(spacing: 8) {
@@ -1298,6 +1344,15 @@ struct PageGroupsView: View {
             }
         }
         .coordinateSpace(name: "pageGroups")
+        // The photo being moved follows the finger.
+        .overlay {
+            if let img = dragThumb {
+                thumbDragPreview(img.thumb)
+                    .scaleEffect(0.85)
+                    .position(dragThumbLocation)
+                    .allowsHitTesting(false)
+            }
+        }
         // Floating "rearrange" chip while dragging a page grip
         .overlay {
             if dragPageIndex != nil {
@@ -1331,6 +1386,44 @@ struct PageGroupsView: View {
                       let target = rowFrames.first(where: { $0.value.contains(value.location) })?.key,
                       from != target else { return }
                 withAnimation { state.swapPages(from, target) }
+            }
+    }
+
+    /// Moves a thumbnail to another page row. Starts at once on a mostly
+    /// vertical movement (no press-and-hold); a sideways swipe is left to
+    /// the strip's scrolling.
+    private func thumbDragGesture(_ img: CollageImage) -> some Gesture {
+        DragGesture(minimumDistance: 8, coordinateSpace: .named("pageGroups"))
+            .onChanged { value in
+                if thumbDragIsMove == nil {
+                    let t = value.translation
+                    thumbDragIsMove = abs(t.height) > abs(t.width)
+                    if thumbDragIsMove == true {
+                        dragThumb = img
+                        state.isMovingThumb = true
+                        #if canImport(UIKit)
+                        UIImpactFeedbackGenerator(style: .light).impactOccurred()
+                        #endif
+                    }
+                }
+                guard thumbDragIsMove == true else { return }
+                dragThumbLocation = value.location
+                let over = rowFrames.first { $0.value.contains(value.location) }?.key
+                dropTargetPage = over == state.pageIndex(containing: img.id) ? nil : over
+            }
+            .onEnded { value in
+                defer {
+                    dragThumb = nil
+                    thumbDragIsMove = nil
+                    dropTargetPage = nil
+                    state.isMovingThumb = false
+                }
+                guard thumbDragIsMove == true,
+                      let target = rowFrames.first(where: { $0.value.contains(value.location) })?.key,
+                      state.pageIndex(containing: img.id) != target,
+                      state.pages.indices.contains(target),
+                      state.pages[target].images.count < CollageState.maxImagesPerPage else { return }
+                withAnimation { state.moveImage(id: img.id, toPage: target) }
             }
     }
 
@@ -1402,16 +1495,15 @@ struct PageGroupsView: View {
                     HStack(spacing: 6) {
                         ForEach(page.images) { img in
                             ImageThumb(img: img)
-                                // System drag: a swipe scrolls the strip, a
-                                // press-and-hold lifts the thumb (shown larger)
-                                // to drop on another page row.
-                                .draggable(img.id.uuidString) {
-                                    thumbDragPreview(img.thumb)
-                                }
+                                // Drag up or down onto another page row to
+                                // move it there; a sideways swipe scrolls.
+                                .opacity(dragThumb?.id == img.id ? 0.3 : 1)
+                                .simultaneousGesture(thumbDragGesture(img))
                         }
                     }
                     .padding(.vertical, 2)
                 }
+                .scrollDisabled(dragThumb != nil)
             }
 
             if state.pages.count > 1 {

@@ -995,6 +995,10 @@ extension CollageState {
         if args.contains("-onePerPage") {
             DispatchQueue.main.asyncAfter(deadline: .now() + 2) { self.distributeOneImagePerPage() }
         }
+        // `-undoOnce`: undoes the first edit (with -editsOn), so Redo shows.
+        if args.contains("-undoOnce") {
+            DispatchQueue.main.asyncAfter(deadline: .now() + 3.5) { self.undo() }
+        }
         // `-editsOn`: one edit, so the compare button shows.
         if args.contains("-editsOn") {
             DispatchQueue.main.asyncAfter(deadline: .now() + 2) { self.effects[.contrast] = 20 }
