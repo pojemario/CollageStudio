@@ -24,7 +24,6 @@ struct SidebarView: View {
                 imagesSection
                 ratioSection
                 layoutSection
-                borderSection
                 framesSection
                 overlaySection
                 looksSection
@@ -74,7 +73,6 @@ struct SidebarView: View {
                 ToolbarTile(sf: "square.stack", title: "Collages", prominent: false) { state.goToCollages() }
                 SpreadMenuButton(
                     // No confirmation: Undo puts the pages back.
-                    onBurst: { state.burstAcrossPages() },
                     onOnePerPage: { state.distributeOneImagePerPage() },
                     onAllOnOne: { state.mergeAllOntoOnePage() },
                     onBurstAll: { state.burstBalanced() })
@@ -83,11 +81,11 @@ struct SidebarView: View {
                     .disabled(state.pages.count >= CollageState.maxPages)
                     .opacity(state.pages.count >= CollageState.maxPages ? 0.5 : 1)
 
-                // Adds an editable text box rendered as an image.
-                ToolbarTile(sf: "character.textbox", title: "Text Box") { state.addTextImage() }
-
                 // Adds a transparent placeholder — an intentional empty slot.
                 ToolbarTile(sf: "rectangle.dashed.badge.record", title: "Empty Box") { state.addEmptyImage() }
+
+                // Adds an editable text box rendered as an image.
+                ToolbarTile(sf: "character.textbox", title: "Text Box") { state.addTextImage() }
             }
 
             PageGroupsView()
@@ -107,59 +105,7 @@ struct SidebarView: View {
 
     var layoutSection: some View {
         SidebarSection(title: "Layout") {
-            VStack(spacing: 10) {
-                // Style presets — hidden for now.
-                // StylePresetsRow()
-                LabeledSlider(label: "Columns", value: Binding(
-                    get: { Double(min(state.numCols, state.maxSelectableCols)) },
-                    set: { v in state.numCols = Int(v); state.rebuildLayout(resetGrows: true) }
-                ), range: 1...Double(state.maxSelectableCols), step: 1, format: "%.0f", resetValue: 2,
-                   reservesSwatchSlot: true, customLabel: AnyView(LanesSwitch()),
-                   compactValue: true)
-                    .disabled(state.maxSelectableCols <= 1)
-                    .opacity(state.maxSelectableCols <= 1 ? 0.4 : 1)
-            
-                /*
-                struct LabeledSlider: View {
-                    let label: String
-                    @Binding var value: Double
-                    let range: ClosedRange<Double>
-                    let step: Double
-                    let format: String
-                 */
-
-                LabeledSlider(label: "Spacing", value: $state.gap, range: 0...40, step: 1, format: "%.0f",
-                              resetValue: 10, swatchColor: $state.backgroundColor,
-                              compactValue: true)
-
-                LabeledSlider(label: "Rounding", value: $state.cornerRadius, range: 0...100, step: 1, format: "%.0f",
-                              resetValue: 20, reservesSwatchSlot: true,
-                              compactValue: true)
-
-                BorderStyleRow()
-
-                BorderPlacementRow()
-            }
-            .swipeNumbersToReset(canReset: state.hasStyleChanges) { state.resetStyle() }
-
-            // Shuffle is hidden for now: ShuffleButton()
-            // Apply to All only means something with more than one page.
-            if state.pages.count > 1 {
-                ActionButton(label: "Apply to All", sf: "square.on.square") { state.applyStyleToAllPages() }
-                    .disabled(!state.canApplyToAll)
-                    .opacity(state.canApplyToAll ? 1 : 0.5)
-            }
-        }
-    }
-
-    // MARK: - Canvas (margin + rotation)
-
-    var borderSection: some View {
-        SidebarSection(title: "Canvas") {
-            LabeledSlider(label: "Margin", value: $state.canvasMargin, range: -100...100, step: 1, format: "%.0f",
-                          resetValue: 0)
-            LabeledSlider(label: "Rotation", value: $state.canvasRotation, range: -15...15, step: 0.1, format: "%.1f°",
-                          resetValue: 0)
+            LayoutPanel(spacingRange: 0...40)
         }
     }
 
@@ -727,6 +673,8 @@ struct BorderPatternPreview: View {
 /// a sample; tapping opens a popover listing every pattern, drawn.
 struct BorderStylePicker: View {
     @EnvironmentObject var state: CollageState
+    /// Roomier, for the Border page.
+    var large = false
     @State private var showChooser = false
 
     var body: some View {
@@ -735,13 +683,13 @@ struct BorderStylePicker: View {
         } label: {
             HStack(spacing: 4) {
                 BorderPatternPreview(style: state.borderStyle)
-                    .frame(width: 50, height: 16)
+                    .frame(width: large ? 120 : 50, height: large ? 20 : 16)
                 Image(systemName: "chevron.up.chevron.down")
-                    .font(.system(size: 9, weight: .semibold))
+                    .font(.system(size: large ? 11 : 9, weight: .semibold))
                     .foregroundColor(.secondary)
             }
-            .padding(.horizontal, 7)
-            .padding(.vertical, 7)
+            .padding(.horizontal, large ? 12 : 7)
+            .padding(.vertical, large ? 9 : 7)
             .appButtonBackground(prominent: false)
         }
         .buttonStyle(.plain)
@@ -776,55 +724,127 @@ struct BorderStylePicker: View {
     }
 }
 
-/// Border row: color and pattern first, then the thickness slider, so the
-/// value number docks to the right edge like the other slider rows.
-struct BorderStyleRow: View {
+/// The Layout tab: "Layout" (columns, spacing, rounding), "Border" (size,
+/// color, style, position) and "Canvas" (margin, rotation).
+struct LayoutPanel: View {
     @EnvironmentObject var state: CollageState
-    @Environment(\.resetArmed) private var resetArmed
-    var range: ClosedRange<Double> = 0...40
+    enum Page: String, CaseIterable { case layout = "Layout", border = "Border", canvas = "Canvas" }
+    /// Spacing's range (the iPad sidebar keeps a shorter one).
+    var spacingRange: ClosedRange<Double> = 0...70
 
     var body: some View {
+        VStack(spacing: 12) {
+            Picker("Layout", selection: $state.layoutPage) {
+                ForEach(Page.allCases, id: \.self) { Text($0.rawValue).tag($0) }
+            }
+            .pickerStyle(.segmented)
+            .panelChrome(state)
+            switch state.layoutPage {
+            case .layout: layoutPage
+            case .border: BorderPanel()
+            case .canvas: canvasPage
+            }
+        }
+    }
+
+    private var layoutPage: some View {
+        VStack(spacing: 10) {
+            VStack(spacing: 10) {
+                LabeledSlider(label: "Columns", value: Binding(
+                    get: { Double(min(state.numCols, state.maxSelectableCols)) },
+                    set: { v in state.numCols = Int(v); state.rebuildLayout(resetGrows: true) }
+                ), range: 1...Double(state.maxSelectableCols), step: 1, format: "%.0f", resetValue: 2,
+                   reservesSwatchSlot: true, customLabel: AnyView(LanesSwitch()),
+                   compactValue: true)
+                    .disabled(state.maxSelectableCols <= 1)
+                    .opacity(state.maxSelectableCols <= 1 ? 0.4 : 1)
+                LabeledSlider(label: "Spacing", value: $state.gap, range: spacingRange, step: 1, format: "%.0f",
+                              resetValue: 10, swatchColor: $state.backgroundColor,
+                              compactValue: true)
+                LabeledSlider(label: "Rounding", value: $state.cornerRadius, range: 0...100, step: 1, format: "%.0f",
+                              resetValue: 20, reservesSwatchSlot: true,
+                              compactValue: true)
+            }
+            // No Reset button: swipe up or down on the labels or numbers.
+            .swipeNumbersToReset(canReset: state.gap != 10 || state.cornerRadius != 20 || state.backgroundColor != .white) {
+                state.gap = 10
+                state.cornerRadius = 20
+                state.backgroundColor = .white
+            }
+            .popoverTip(ResetSwipeTip(), arrowEdge: .bottom)
+
+            // Shuffle is hidden for now: ShuffleButton().panelChrome(state, keep: "Shuffle")
+            // Apply to All only means something with more than one page.
+            if state.pages.count > 1 {
+                ActionButton(label: "Apply to All", sf: "square.on.square") { state.applyStyleToAllPages() }
+                    .disabled(!state.canApplyToAll)
+                    .opacity(state.canApplyToAll ? 1 : 0.5)
+                    .panelChrome(state)
+            }
+        }
+    }
+
+    private var canvasPage: some View {
+        VStack(spacing: 12) {
+            LabeledSlider(label: "Margin", value: $state.canvasMargin, range: -100...100, step: 1, format: "%.0f",
+                          resetValue: 0)
+            LabeledSlider(label: "Rotation", value: $state.canvasRotation, range: -15...15, step: 0.1, format: "%.1f°",
+                          resetValue: 0)
+        }
+        .swipeNumbersToReset(canReset: state.canvasMargin != 0 || state.canvasRotation != 0) {
+            state.canvasMargin = 0
+            state.canvasRotation = 0
+        }
+    }
+}
+
+/// The Border page: a full-width size slider, then roomy rows for color,
+/// line style and where the line sits.
+struct BorderPanel: View {
+    @EnvironmentObject var state: CollageState
+
+    var body: some View {
+        let off = state.borderThickness <= 0
+        VStack(spacing: 14) {
+            LabeledSlider(label: "Size", value: $state.borderThickness, range: 0...40, step: 1, format: "%.0f",
+                          resetValue: 0)
+            row("Color") {
+                ColorSwatchButton(color: $state.borderColor,
+                                  size: 32,
+                                  presetTitle: "Same as Background color",
+                                  presetColor: { state.backgroundColor },
+                                  depth: 0.55, accessibilityTitle: "Border color")
+                Spacer()
+            }
+            row("Style") {
+                BorderStylePicker(large: true)
+                Spacer()
+            }
+            .disabled(off)
+            .opacity(off ? 0.4 : 1)
+            row("Position") {
+                Picker("Position", selection: $state.borderPlacement) {
+                    ForEach(BorderPlacement.allCases) { p in Text(p.rawValue).tag(p) }
+                }
+                .pickerStyle(.segmented)
+                .labelsHidden()
+            }
+            .disabled(off)
+            .opacity(off ? 0.4 : 1)
+        }
+        .swipeNumbersToReset(canReset: state.hasBorderChanges) { state.resetBorder() }
+    }
+
+    private func row<Content: View>(_ label: String, @ViewBuilder _ content: () -> Content) -> some View {
         HStack(spacing: 8) {
-            Text("Border")
+            Text(label)
                 .font(.subheadline)
                 .foregroundColor(.primary)
                 .frame(width: 92, alignment: .leading)
-            ColorSwatchButton(color: $state.borderColor,
-                              presetTitle: "Same as Background color",
-                              presetColor: { state.backgroundColor },
-                              depth: 0.55, accessibilityTitle: "Border color")
-                .panelChrome(state)
-            BorderStylePicker()
-                .fixedSize()
-                .disabled(state.borderThickness <= 0)
-                .opacity(state.activeAdjustment != nil ? 0 : (state.borderThickness <= 0 ? 0.4 : 1))
-            ModernSlider(value: $state.borderThickness, range: range, step: 1,
-                         onEditingChanged: { editing in
-                            withAnimation(.easeInOut(duration: 0.2)) {
-                                state.activeAdjustment = editing ? "Border" : nil
-                            }
-                         },
-                         resetValue: 0)
-                .accessibleSlider(value: $state.borderThickness, range: range, step: 1, label: "Border thickness")
-            Text(String(format: "%.0f", state.borderThickness))
-                .font(.system(size: 14, weight: resetArmed ? .bold : .medium, design: .monospaced))
-                .foregroundColor(resetArmed ? .accentColor : .primary.opacity(0.85))
-                .lineLimit(1)
-                .fixedSize()
-                // Two digits (at most 40), like the other Layout rows.
-                .frame(width: LabeledSlider.twoDigitValueWidth, alignment: .leading)
-                // Double-tapping the value resets border thickness to zero.
-                .contentShape(Rectangle())
-                .onTapGesture(count: 2) {
-                    state.borderThickness = 0
-                    #if canImport(UIKit)
-                    UIImpactFeedbackGenerator(style: .light).impactOccurred()
-                    #endif
-                }
+            content()
         }
-        .background { focusGlass(active: state.activeAdjustment == "Border") }
-        .opacity(state.chromeVisible(for: "Border") ? 1 : 0)
-        .animation(.easeInOut(duration: 0.2), value: state.activeAdjustment)
+        .frame(minHeight: 36)
+        .panelChrome(state)
     }
 }
 
@@ -837,37 +857,6 @@ extension View {
             .opacity(state.chromeVisible(for: label) ? 1 : 0)
             .animation(.easeInOut(duration: 0.2), value: state.activeAdjustment)
             .animation(.easeInOut(duration: 0.55), value: state.shuffleFocusActive)
-    }
-}
-
-/// Segmented chooser for where the border line sits relative to the
-/// image box edge: inside it, centered on it, or outside it.
-struct BorderPlacementRow: View {
-    @EnvironmentObject var state: CollageState
-
-    var body: some View {
-        let disabled = state.borderThickness <= 0
-        HStack(spacing: 8) {
-            Text("Position")
-                .font(.subheadline)
-                .foregroundColor(.primary)
-                .opacity(disabled ? 0.35 : 1)
-                .frame(width: 92, alignment: .leading)
-            // The color-swatch column of the rows above
-            Color.clear.frame(width: 24, height: 24)
-            Picker("", selection: $state.borderPlacement) {
-                ForEach(BorderPlacement.allCases) { p in
-                    Text(p.rawValue).tag(p)
-                }
-            }
-            .pickerStyle(.segmented)
-            .labelsHidden()
-            .disabled(disabled)
-            .opacity(disabled ? 0.4 : 1)
-            // Match the sliders' value column
-            Color.clear.frame(width: LabeledSlider.twoDigitValueWidth, height: 24)
-        }
-        .panelChrome(state)
     }
 }
 
@@ -1132,7 +1121,6 @@ struct ShuffleButton: View {
 /// a fixed top-down order regardless of which way it opens.
 struct SpreadMenuButton: View {
     @EnvironmentObject var state: CollageState
-    let onBurst: () -> Void
     let onOnePerPage: () -> Void
     let onAllOnOne: () -> Void
     var onBurstAll: () -> Void = {}
@@ -1155,10 +1143,9 @@ struct SpreadMenuButton: View {
         .help("Requires more than 1 image")
         .popover(isPresented: $show, arrowEdge: .bottom) {
             VStack(alignment: .leading, spacing: 2) {
-                item("Burst! (\(state.burstPageCount) page\(state.burstPageCount == 1 ? "" : "s"))", "sparkles", onBurstAll)
-                item("Spread across open pages", "square.grid.3x3", onBurst)
-                item("1 image per page", "doc.on.doc", onOnePerPage)
-                item("All images on 1 page", "rectangle.stack", onAllOnOne)
+                item("Spread across \(state.burstPageCount) page\(state.burstPageCount == 1 ? "" : "s")", "sparkles", onBurstAll)
+                item("One image per page", "photo.stack", onOnePerPage)
+                item("All images on one page", "rectangle.stack", onAllOnOne)
             }
             .padding(.vertical, 6)
             .frame(width: 270)
@@ -1204,14 +1191,14 @@ struct ToolbarTile: View {
     }
 }
 
-/// "Page" toolbar tile: a page with a large plus badge (the system
+/// "Add Page" toolbar tile: a page with a large plus badge (the system
 /// doc.badge.plus badge is too small to read at toolbar size).
 struct AddPageTile: View {
     let action: () -> Void
 
     var body: some View {
         Button(action: action) {
-            ToolbarTileLabel(prominent: true, title: "Page") {
+            ToolbarTileLabel(prominent: true, title: "Add Page") {
                 Image(systemName: "doc")
                     .overlay(alignment: .bottomTrailing) {
                         Image(systemName: "plus.circle.fill")
@@ -1329,13 +1316,16 @@ struct PageGroupsView: View {
     // Custom page reordering (no system drag badge)
     @State private var dragPageIndex: Int? = nil
     @State private var dragPageLocation: CGPoint = .zero
-    // Moving a photo to another page: picked up as soon as the finger moves
-    // up or down (sideways still scrolls the row of thumbnails).
+    // Moving a photo (to another spot or page): picked up as soon as the
+    // finger moves, in any direction.
     @State private var dragThumb: CollageImage? = nil
     @State private var dragThumbLocation: CGPoint = .zero
-    /// Decided on the first movement of each touch: true = moving the photo,
-    /// false = a sideways swipe (scrolling), nil = not decided yet.
+    /// Set once a touch on a thumbnail has moved far enough to pick it up.
     @State private var thumbDragIsMove: Bool? = nil
+    /// Where each thumbnail sits (for dropping one photo onto another to
+    /// swap them), and the one under the finger.
+    @State private var thumbFrames: [UUID: CGRect] = [:]
+    @State private var dropTargetThumb: UUID? = nil
 
     var body: some View {
         VStack(spacing: 8) {
@@ -1389,42 +1379,67 @@ struct PageGroupsView: View {
             }
     }
 
-    /// Moves a thumbnail to another page row. Starts at once on a mostly
-    /// vertical movement (no press-and-hold); a sideways swipe is left to
-    /// the strip's scrolling.
+    /// Picks up a thumbnail as soon as it's dragged, in any direction (the
+    /// rows wrap, so there's no sideways scrolling to tell apart). Dropped
+    /// on another photo of its page, the two swap places in the collage;
+    /// dropped on another page row, it moves there.
     private func thumbDragGesture(_ img: CollageImage) -> some Gesture {
-        DragGesture(minimumDistance: 8, coordinateSpace: .named("pageGroups"))
+        DragGesture(minimumDistance: 6, coordinateSpace: .named("pageGroups"))
             .onChanged { value in
                 if thumbDragIsMove == nil {
-                    let t = value.translation
-                    thumbDragIsMove = abs(t.height) > abs(t.width)
-                    if thumbDragIsMove == true {
-                        dragThumb = img
-                        state.isMovingThumb = true
-                        #if canImport(UIKit)
-                        UIImpactFeedbackGenerator(style: .light).impactOccurred()
-                        #endif
-                    }
+                    thumbDragIsMove = true
+                    dragThumb = img
+                    state.isMovingThumb = true
+                    #if canImport(UIKit)
+                    UIImpactFeedbackGenerator(style: .light).impactOccurred()
+                    #endif
                 }
-                guard thumbDragIsMove == true else { return }
                 dragThumbLocation = value.location
+                let home = state.pageIndex(containing: img.id)
+                let swapWith = thumbUnder(value.location, samePageAs: img)
+                if swapWith != dropTargetThumb {
+                    dropTargetThumb = swapWith
+                    #if canImport(UIKit)
+                    if swapWith != nil { UISelectionFeedbackGenerator().selectionChanged() }
+                    #endif
+                }
                 let over = rowFrames.first { $0.value.contains(value.location) }?.key
-                dropTargetPage = over == state.pageIndex(containing: img.id) ? nil : over
+                dropTargetPage = over == home ? nil : over
             }
             .onEnded { value in
                 defer {
                     dragThumb = nil
                     thumbDragIsMove = nil
                     dropTargetPage = nil
+                    dropTargetThumb = nil
                     state.isMovingThumb = false
                 }
-                guard thumbDragIsMove == true,
-                      let target = rowFrames.first(where: { $0.value.contains(value.location) })?.key,
+                guard thumbDragIsMove == true else { return }
+                // Onto another photo of the same page: swap the two.
+                if let other = thumbUnder(value.location, samePageAs: img),
+                   let pi = state.pageIndex(containing: img.id) {
+                    withAnimation(.easeInOut(duration: 0.25)) { state.swapImages(onPage: pi, img.id, other) }
+                    return
+                }
+                guard let target = rowFrames.first(where: { $0.value.contains(value.location) })?.key,
                       state.pageIndex(containing: img.id) != target,
                       state.pages.indices.contains(target),
                       state.pages[target].images.count < CollageState.maxImagesPerPage else { return }
                 withAnimation { state.moveImage(id: img.id, toPage: target) }
             }
+    }
+
+    /// Another thumbnail of `img`'s page under `point`, if any.
+    private func thumbUnder(_ point: CGPoint, samePageAs img: CollageImage) -> UUID? {
+        guard let pi = state.pageIndex(containing: img.id) else { return nil }
+        return state.pages[pi].images.first { $0.id != img.id && thumbFrames[$0.id]?.contains(point) == true }?.id
+    }
+
+    /// A page's photos in collage order (the order swaps change).
+    private func orderedImages(_ page: CollagePage) -> [CollageImage] {
+        let byId = Dictionary(page.images.map { ($0.id, $0) }, uniquingKeysWith: { a, _ in a })
+        let ordered = page.order.compactMap { byId[$0] }
+        return ordered + page.images.filter { !page.order.contains($0.id) }
     }
 
     /// Enlarged preview shown while a thumbnail is being dragged.
@@ -1491,19 +1506,29 @@ struct PageGroupsView: View {
                     .frame(maxWidth: .infinity, alignment: .center)
                     .padding(.vertical, 10)
             } else {
-                ScrollView(.horizontal, showsIndicators: false) {
-                    HStack(spacing: 6) {
-                        ForEach(page.images) { img in
-                            ImageThumb(img: img)
-                                // Drag up or down onto another page row to
-                                // move it there; a sideways swipe scrolls.
-                                .opacity(dragThumb?.id == img.id ? 0.3 : 1)
-                                .simultaneousGesture(thumbDragGesture(img))
-                        }
+                // Wraps onto more lines instead of scrolling sideways, so a
+                // drag in any direction picks a photo up.
+                LazyVGrid(columns: [GridItem(.adaptive(minimum: 58, maximum: 58), spacing: 6)],
+                          alignment: .leading, spacing: 6) {
+                    ForEach(orderedImages(page)) { img in
+                        ImageThumb(img: img)
+                            // Drag onto another photo to swap them, or
+                            // onto another page row to move it there.
+                            .opacity(dragThumb?.id == img.id ? 0.3 : 1)
+                            .overlay {
+                                if dropTargetThumb == img.id {
+                                    RoundedRectangle(cornerRadius: 8)
+                                        .strokeBorder(Color.accentColor, lineWidth: 3)
+                                }
+                            }
+                            .onGeometryChange(for: CGRect.self) { $0.frame(in: .named("pageGroups")) } action: {
+                                thumbFrames[img.id] = $0
+                            }
+                            .simultaneousGesture(thumbDragGesture(img))
                     }
-                    .padding(.vertical, 2)
                 }
-                .scrollDisabled(dragThumb != nil)
+                .padding(.vertical, 2)
+                .frame(maxWidth: .infinity, alignment: .leading)
             }
 
             if state.pages.count > 1 {

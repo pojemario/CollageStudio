@@ -237,7 +237,9 @@ struct CanvasContainerView: View {
                 images.map { CollageImage(image: $0) }
             }.value
             await MainActor.run {
+                let isNew = !state.hasAnyImages
                 state.addPreparedImages(prepared)
+                if isNew && state.hasAnyImages { state.openImagesPanel() }
                 photoItems = []
                 state.isBusy = false
                 state.isLoading = false

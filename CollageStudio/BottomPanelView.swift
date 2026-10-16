@@ -23,8 +23,8 @@ struct FloatingTabBar: View {
     /// Tab under the finger while scrubbing, for the haptic tick.
     @State private var hoverTab: Int?
 
-    static let tabs = ["Images", "Layout", "Canvas", "Frames", "Overlay", "Looks"]
-    static let icons = ["photo.on.rectangle.angled", "square.grid.2x2", "rectangle.inset.filled",
+    static let tabs = ["Images", "Layout", "Frames", "Overlay", "Looks"]
+    static let icons = ["photo.on.rectangle.angled", "square.grid.2x2",
                         "photo.artframe", "sparkles", "camera.filters"]
     /// Vertical room the pill takes at the bottom of the screen (pill +
     /// its margins) — what the panel card and the canvas leave free.
@@ -84,7 +84,7 @@ struct FloatingTabBar: View {
     private func tabLabel(_ i: Int) -> some View {
         // Idle: the active tab is white on the accent lens. Scrubbing: the
         // lens turns clear and the tab under it takes the accent color.
-        let onChip = !scrubbing && activeTab == i
+        let onChip = !scrubbing && activeTab == i && state.panelTabShown
         let hovered = scrubbing && hoverTab == i
         return VStack(spacing: 3) {
             Image(systemName: Self.icons[i])
@@ -114,7 +114,7 @@ struct FloatingTabBar: View {
         .frame(height: Self.tabHeight)
         .accessibilityElement(children: .combine)
         .accessibilityValue(hasChanges(i) ? "Changed" : "")
-        .accessibilityAddTraits(activeTab == i ? [.isButton, .isSelected] : .isButton)
+        .accessibilityAddTraits(activeTab == i && state.panelTabShown ? [.isButton, .isSelected] : .isButton)
         .accessibilityAction { select(i) }
     }
 
@@ -131,7 +131,7 @@ struct FloatingTabBar: View {
                                      startPoint: .top, endPoint: .bottom))
                 .overlay(shape.strokeBorder(Color.white.opacity(0.35), lineWidth: 0.8))
                 .shadow(color: Color.accentColor.opacity(0.45), radius: 6, y: 2)
-                .opacity(scrubbing ? 0 : 1)
+                .opacity(scrubbing || !state.panelTabShown ? 0 : 1)
             clearGlass(shape)
                 .opacity(scrubbing ? 1 : 0)
         }
@@ -207,10 +207,10 @@ struct FloatingTabBar: View {
     private func hasChanges(_ i: Int) -> Bool {
         switch i {
         case 1: return state.hasStyleChanges || state.isRows
-        case 2: return state.canvasMargin != 0 || state.canvasRotation != 0
-        case 3: return state.canvasFrame != nil
-        case 4: return !state.overlayLayers.isEmpty
-        case 5: return state.colorFilter != .none || state.hasEditChanges
+            || state.canvasMargin != 0 || state.canvasRotation != 0
+        case 2: return state.canvasFrame != nil
+        case 3: return !state.overlayLayers.isEmpty
+        case 4: return state.colorFilter != .none || state.hasEditChanges
         default: return false
         }
     }
@@ -226,12 +226,15 @@ struct FloatingTabBar: View {
         UIImpactFeedbackGenerator(style: .light).impactOccurred()
         #endif
         state.closeRatio()
+        // Nothing chosen yet (a saved collage just opened): open this tab.
+        let wasShown = state.panelTabShown
+        state.panelTabShown = true
         if state.textEditTargetId != nil || state.protrusionTargetId != nil {
             // Any tab leaves text / protrusion editing and shows that tab.
             state.endTextEditing()
             state.endProtrusionEditing()
             state.selectedPanelTab = i
-        } else if toggles && state.selectedPanelTab == i && state.isPanelOpen {
+        } else if toggles && wasShown && state.selectedPanelTab == i && state.isPanelOpen {
             withAnimation(.easeInOut(duration: 0.25)) { state.isPanelOpen = false }
         } else {
             state.selectedPanelTab = i
@@ -266,8 +269,11 @@ struct BottomPanelView: View {
     private var capKey: Int {
         if state.textEditTargetId != nil { return -1 }
         if state.protrusionTargetId != nil { return -2 }
-        // Looks: Filter and Edit each keep their own size.
-        if state.selectedPanelTab == 5 && state.looksPage == .edit { return 6 }
+        // Layout's and Looks' pages each keep their own size.
+        if state.selectedPanelTab == 1 && state.layoutPage != .layout {
+            return state.layoutPage == .border ? 11 : 12
+        }
+        if state.selectedPanelTab == 4 && state.looksPage == .edit { return 14 }
         return state.selectedPanelTab
     }
 
@@ -371,10 +377,9 @@ struct BottomPanelView: View {
             } else {
                 switch state.selectedPanelTab {
                 case 0: imagesTab
-                case 1: layoutTab
-                case 2: borderTab
-                case 3: framesTab
-                case 4: overlayTab
+                case 1: LayoutPanel()
+                case 2: framesTab
+                case 3: overlayTab
                 default: LooksPanel()
                 }
             }
@@ -438,7 +443,6 @@ struct BottomPanelView: View {
                 ToolbarTile(sf: "square.stack", title: "Collages", prominent: false) { state.goToCollages() }
                 SpreadMenuButton(
                     // No confirmation: Undo puts the pages back.
-                    onBurst: { state.burstAcrossPages() },
                     onOnePerPage: { state.distributeOneImagePerPage() },
                     onAllOnOne: { state.mergeAllOntoOnePage() },
                     onBurstAll: { state.burstBalanced() })
@@ -447,76 +451,16 @@ struct BottomPanelView: View {
                     .disabled(state.pages.count >= CollageState.maxPages)
                     .opacity(state.pages.count >= CollageState.maxPages ? 0.5 : 1)
 
-                // Adds an editable text box rendered as an image.
-                ToolbarTile(sf: "character.textbox", title: "Text Box") { state.addTextImage() }
-
                 // Adds a transparent placeholder — an intentional empty slot.
                 ToolbarTile(sf: "rectangle.dashed.badge.record", title: "Empty Box") { state.addEmptyImage() }
+
+                // Adds an editable text box rendered as an image.
+                ToolbarTile(sf: "character.textbox", title: "Text Box") { state.addTextImage() }
             }
 
             // The page list at its full height: the panel can grow up to the
             // pager to show it, and scrolls past that.
             PageGroupsView()
-        }
-    }
-
-    // MARK: - Layout tab
-
-    var layoutTab: some View {
-        VStack(spacing: 10) {
-            // Whole looks in one tap, and the user's saved ones — hidden for now.
-            // StylePresetsRow()
-
-            VStack(spacing: 10) {
-                LabeledSlider(label: "Columns", value: Binding(
-                    get: { Double(min(state.numCols, state.maxSelectableCols)) },
-                    set: { v in state.numCols = Int(v); state.rebuildLayout(resetGrows: true) }
-                ), range: 1...Double(state.maxSelectableCols), step: 1, format: "%.0f", resetValue: 2,
-                   reservesSwatchSlot: true, customLabel: AnyView(LanesSwitch()),
-                   compactValue: true)
-                    .disabled(state.maxSelectableCols <= 1)
-                    .opacity(state.maxSelectableCols <= 1 ? 0.4 : 1)
-
-                LabeledSlider(label: "Spacing", value: $state.gap, range: 0...70, step: 1, format: "%.0f",
-                              resetValue: 10, swatchColor: $state.backgroundColor,
-                              compactValue: true)
-
-                LabeledSlider(label: "Rounding", value: $state.cornerRadius, range: 0...100, step: 1, format: "%.0f",
-                              resetValue: 20, reservesSwatchSlot: true,
-                              compactValue: true)
-
-                BorderStyleRow()
-
-                BorderPlacementRow()
-            }
-            // No Reset button: swipe up or down on the labels or numbers.
-            .swipeNumbersToReset(canReset: state.hasStyleChanges) { state.resetStyle() }
-            .popoverTip(ResetSwipeTip(), arrowEdge: .bottom)
-
-            // Shuffle is hidden for now:
-            // ShuffleButton().panelChrome(state, keep: "Shuffle")
-            // Apply to All only means something with more than one page.
-            if state.pages.count > 1 {
-                ActionButton(label: "Apply to All", sf: "square.on.square") { state.applyStyleToAllPages() }
-                    .disabled(!state.canApplyToAll)
-                    .opacity(state.canApplyToAll ? 1 : 0.5)
-                    .panelChrome(state)
-            }
-        }
-    }
-
-    // MARK: - Canvas tab (margin, rotation)
-
-    var borderTab: some View {
-        VStack(spacing: 12) {
-            LabeledSlider(label: "Margin", value: $state.canvasMargin, range: -100...100, step: 1, format: "%.0f",
-                          resetValue: 0)
-            LabeledSlider(label: "Rotation", value: $state.canvasRotation, range: -15...15, step: 0.1, format: "%.1f°",
-                          resetValue: 0)
-        }
-        .swipeNumbersToReset(canReset: state.canvasMargin != 0 || state.canvasRotation != 0) {
-            state.canvasMargin = 0
-            state.canvasRotation = 0
         }
     }
 

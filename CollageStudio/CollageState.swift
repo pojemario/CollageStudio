@@ -878,8 +878,20 @@ class CollageState: ObservableObject {
     /// The bottom panel's selected tab. Lives here (not as local view state)
     /// so it's remembered when the panel collapses and reopens.
     @Published var selectedPanelTab: Int = 0
+    /// Whether the tab bar shows a tab as chosen. Off when a saved collage
+    /// opens (nothing chosen, panel down) until a tab is tapped.
+    @Published var panelTabShown = true
+
+    /// A new collage: Images chosen and its panel up.
+    func openImagesPanel() {
+        selectedPanelTab = 0
+        panelTabShown = true
+        withAnimation(.easeInOut(duration: 0.25)) { isPanelOpen = true }
+    }
     /// Which half of the Looks tab shows: the filters or the Edit sliders.
     @Published var looksPage: LooksPanel.Page = .filter
+    /// Which part of the Layout tab shows: layout, border or canvas.
+    @Published var layoutPage: LayoutPanel.Page = .layout
 
     /// Whether the top ratio panel is showing. In state (not local view state)
     /// so a canvas tap/drag can dismiss it the same way it does the bottom panel.
@@ -1702,9 +1714,19 @@ class CollageState: ObservableObject {
         backgroundColor = .white
         backgroundKind = .color
         cornerRadius = 20
+        resetBorder()
+    }
+
+    /// The border back to none (the Border page's reset).
+    func resetBorder() {
         borderStyle = .solid
         borderThickness = 0
         borderColor = .white
+        borderPlacement = .center
+    }
+
+    var hasBorderChanges: Bool {
+        borderThickness != 0 || borderStyle != .solid || borderColor != .white || borderPlacement != .center
     }
 
     /// Empties the canvas for a new collage, which starts from the default
@@ -2124,6 +2146,33 @@ class CollageState: ObservableObject {
         resetPan(id: id2)
         clearSwapDrag()
         objectWillChange.send()
+    }
+
+    /// Swaps two photos on any page (the Images tab's page rows): their
+    /// places in the order and their boxes in the layout, like a swap on
+    /// the canvas.
+    func swapImages(onPage pi: Int, _ id1: UUID, _ id2: UUID) {
+        guard pages.indices.contains(pi), id1 != id2,
+              let i1 = pages[pi].order.firstIndex(of: id1),
+              let i2 = pages[pi].order.firstIndex(of: id2) else { return }
+        var page = pages[pi]
+        page.order.swapAt(i1, i2)
+        if let a = page.layout.position(of: id1), let b = page.layout.position(of: id2) {
+            let itemA = page.layout.columns[a.col][a.row]
+            page.layout.columns[a.col][a.row] = page.layout.columns[b.col][b.row]
+            page.layout.columns[b.col][b.row] = itemA
+        } else {
+            page.layout.rebuild(images: page.images, order: page.order, numCols: page.style.numCols)
+        }
+        // As on the canvas: zoom and rotation stay, the pan starts over.
+        for id in [id1, id2] {
+            if let k = page.images.firstIndex(where: { $0.id == id }) {
+                page.images[k].panOffset = .zero
+                page.images[k].framedByUser = false
+                page.images[k].lastBoxSize = .zero
+            }
+        }
+        pages[pi] = page
     }
 
     /// Clears just the pan composition, preserving zoom and rotation.

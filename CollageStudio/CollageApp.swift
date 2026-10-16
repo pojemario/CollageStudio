@@ -103,8 +103,10 @@ struct CollageApp: App {
         guard !shared.isEmpty else { return }
 
         if state.images.isEmpty {
-            // Empty collage — no conflict, import straight away.
+            // Empty collage — no conflict, import straight away (a new
+            // collage: Images panel up).
             state.addImages(shared)
+            state.openImagesPanel()
         } else {
             // Images already present: let the user decide whether to start
             // a fresh collage or append the shared photos to it.

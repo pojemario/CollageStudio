@@ -546,6 +546,9 @@ extension CollageState {
         prepareForOtherCollage()
         currentProjectId = id
         UserDefaults.standard.set(id.uuidString, forKey: Self.lastProjectKey)
+        // A saved collage opens with no tab chosen and the panel down.
+        panelTabShown = false
+        isPanelOpen = false
         load(file)
     }
 
@@ -862,13 +865,14 @@ struct CollagesHome: View {
                                 .padding(8)
                         }
                     }
+                // Toned down, so the thumbnails lead.
                 Text(p.name)
                     .font(.subheadline.weight(.semibold))
-                    .foregroundColor(.primary)
+                    .foregroundColor(.primary.opacity(0.6))
                     .lineLimit(1)
                 Text("\(p.imageCount) photo\(p.imageCount == 1 ? "" : "s") · \(p.modified.formatted(.relative(presentation: .named)))")
                     .font(.caption)
-                    .foregroundColor(.secondary)
+                    .foregroundColor(.secondary.opacity(0.7))
                     .lineLimit(1)
             }
         }
@@ -924,7 +928,11 @@ extension CollageState {
         let args = ProcessInfo.processInfo.arguments
         // `-tab N` opens a panel tab; `-showProjects` goes back to the Collages screen.
         if let t = args.firstIndex(of: "-tab"), t + 1 < args.count, let tab = Int(args[t + 1]) {
-            DispatchQueue.main.asyncAfter(deadline: .now() + 1.5) {
+            // After -openNewest has opened its collage (which lowers the panel).
+            DispatchQueue.main.asyncAfter(deadline: .now() + 3) {
+                self.panelTabShown = true
+                if let p = args.firstIndex(of: "-layoutPage"), p + 1 < args.count,
+                   let page = LayoutPanel.Page(rawValue: args[p + 1]) { self.layoutPage = page }
                 self.selectedPanelTab = tab
                 self.isPanelOpen = true
             }
