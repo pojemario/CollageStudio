@@ -537,15 +537,6 @@ extension CollageState {
         #endif
     }
 
-    /// At launch: the collage that was open last time, as it was left.
-    func restoreLastProject() {
-        guard let raw = UserDefaults.standard.string(forKey: Self.lastProjectKey),
-              let id = UUID(uuidString: raw),
-              let file = ProjectStore.readFile(id), file.imageCount > 0 else { return }
-        currentProjectId = id
-        load(file)
-    }
-
     /// Opens a saved collage (the open one is saved first).
     func openProject(_ id: UUID) {
         guard id != currentProjectId || !hasAnyImages else { return }
@@ -556,6 +547,12 @@ extension CollageState {
         currentProjectId = id
         UserDefaults.standard.set(id.uuidString, forKey: Self.lastProjectKey)
         load(file)
+    }
+
+    /// Back to the start screen (the Collages list): the open collage is
+    /// saved and a blank one takes its place.
+    func goToCollages() {
+        startNewCollage()
     }
 
     /// A blank collage (the open one is saved and stays in the list).
@@ -687,11 +684,14 @@ extension CollageState {
 
 // MARK: - Collages screen
 
-/// Every saved collage, newest first, with a big "New Collage" tile.
-struct ProjectsView: View {
+/// The start screen: a "New Collage" tile (straight to the photo picker)
+/// and every saved collage, newest first. Shown whenever the open collage
+/// has no photos — at launch, and after "Collages" in the editor.
+struct CollagesHome: View {
     @EnvironmentObject var state: CollageState
     @ObservedObject var store: ProjectStore
-    @Environment(\.dismiss) private var dismiss
+    /// Opens the photo picker for a new collage.
+    var onNewCollage: () -> Void
     @State private var renaming: ProjectSummary?
     @State private var newName = ""
     @State private var removing: ProjectSummary?
@@ -699,55 +699,38 @@ struct ProjectsView: View {
     private let columns = [GridItem(.adaptive(minimum: 150), spacing: 14)]
 
     var body: some View {
-        NavigationStack {
-            ScrollView {
-                LazyVGrid(columns: columns, spacing: 18) {
-                    newTile
-                    ForEach(store.summaries) { p in
-                        tile(p)
-                    }
-                }
-                .padding(16)
-            }
-            .background(ColorManager.canvasAreaBackground.ignoresSafeArea())
-            .navigationTitle("Collages")
-            .navigationBarTitleDisplayMode(.inline)
-            .toolbar {
-                ToolbarItem(placement: .confirmationAction) {
-                    Button("Done") { dismiss() }
+        ScrollView {
+            LazyVGrid(columns: columns, spacing: 18) {
+                newTile
+                ForEach(store.summaries) { p in
+                    tile(p)
                 }
             }
-            .alert("Rename", isPresented: Binding(get: { renaming != nil }, set: { if !$0 { renaming = nil } })) {
-                TextField("Name", text: $newName)
-                Button("Save") {
-                    if let p = renaming { store.rename(p.id, to: newName) }
-                    renaming = nil
-                }
-                Button("Cancel", role: .cancel) { renaming = nil }
-            }
-            .confirmationDialog("Remove this collage?",
-                                isPresented: Binding(get: { removing != nil }, set: { if !$0 { removing = nil } }),
-                                titleVisibility: .visible) {
-                Button("Remove", role: .destructive) {
-                    if let p = removing { state.removeProject(p.id) }
-                    removing = nil
-                }
-                Button("Cancel", role: .cancel) { removing = nil }
-            } message: {
-                Text("It can't be brought back.")
-            }
+            .padding(16)
         }
-        .onAppear {
-            // The open collage shows up to date in the list.
-            state.saveProjectNow()
+        .alert("Rename", isPresented: Binding(get: { renaming != nil }, set: { if !$0 { renaming = nil } })) {
+            TextField("Name", text: $newName)
+            Button("Save") {
+                if let p = renaming { store.rename(p.id, to: newName) }
+                renaming = nil
+            }
+            Button("Cancel", role: .cancel) { renaming = nil }
+        }
+        .confirmationDialog("Remove this collage?",
+                            isPresented: Binding(get: { removing != nil }, set: { if !$0 { removing = nil } }),
+                            titleVisibility: .visible) {
+            Button("Remove", role: .destructive) {
+                if let p = removing { state.removeProject(p.id) }
+                removing = nil
+            }
+            Button("Cancel", role: .cancel) { removing = nil }
+        } message: {
+            Text("It can't be brought back.")
         }
     }
 
     private var newTile: some View {
-        Button {
-            state.startNewCollage()
-            dismiss()
-        } label: {
+        Button(action: onNewCollage) {
             VStack(spacing: 8) {
                 RoundedRectangle(cornerRadius: 14, style: .continuous)
                     .strokeBorder(Color.accentColor.opacity(0.5), style: StrokeStyle(lineWidth: 1.5, dash: [6, 5]))
@@ -765,13 +748,12 @@ struct ProjectsView: View {
         }
         .buttonStyle(.plain)
         .accessibilityLabel("New collage")
+        .accessibilityHint("Choose photos for a new collage")
     }
 
     private func tile(_ p: ProjectSummary) -> some View {
-        let isOpen = p.id == state.currentProjectId && state.hasAnyImages
-        return Button {
+        Button {
             state.openProject(p.id)
-            dismiss()
         } label: {
             VStack(spacing: 8) {
                 // A square tile; the thumbnail fills it.
@@ -780,7 +762,7 @@ struct ProjectsView: View {
                     .overlay { ProjectThumb(url: p.thumbURL, version: p.modified) }
                     .clipShape(RoundedRectangle(cornerRadius: 14, style: .continuous))
                     .overlay(RoundedRectangle(cornerRadius: 14, style: .continuous)
-                        .strokeBorder(isOpen ? Color.accentColor : Color.primary.opacity(0.1), lineWidth: isOpen ? 2.5 : 1))
+                        .strokeBorder(Color.primary.opacity(0.1), lineWidth: 1))
                     .shadow(color: .black.opacity(0.12), radius: 6, y: 3)
                 Text(p.name)
                     .font(.subheadline.weight(.semibold))
@@ -798,7 +780,7 @@ struct ProjectsView: View {
             Button { store.duplicate(p.id) } label: { Label("Duplicate", systemImage: "plus.square.on.square") }
             Button(role: .destructive) { removing = p } label: { Label("Remove", systemImage: "trash") }
         }
-        .accessibilityLabel("\(p.name), \(p.imageCount) photos\(isOpen ? ", open" : "")")
+        .accessibilityLabel("\(p.name), \(p.imageCount) photos")
     }
 }
 
@@ -831,29 +813,6 @@ private struct ProjectThumb: View {
     }
 }
 
-/// On the empty start screen: the way back to saved collages.
-struct RecentCollagesButton: View {
-    @EnvironmentObject var state: CollageState
-    @ObservedObject var store: ProjectStore
-
-    var body: some View {
-        if !store.summaries.isEmpty {
-            Button { state.showProjects = true } label: {
-                // Lettered like "ADD PHOTOS" above it, at button size.
-                Label("SAVED COLLAGES (\(store.summaries.count))", systemImage: "square.stack")
-                    .font(.system(size: 17, weight: .ultraLight))
-                    .tracking(3)
-                    .foregroundColor(.accentColor)
-                    .padding(.horizontal, 16)
-                    .padding(.vertical, 10)
-                    .background(Capsule().fill(.ultraThinMaterial))
-                    .overlay(Capsule().strokeBorder(Color.accentColor.opacity(0.35), lineWidth: 1))
-            }
-            .buttonStyle(.plain)
-        }
-    }
-}
-
 #if DEBUG && canImport(UIKit)
 // MARK: - Debug seeding (Simulator checks)
 
@@ -863,7 +822,7 @@ extension CollageState {
     /// the Simulator without the photo picker.
     func seedDemoImagesIfRequested() {
         let args = ProcessInfo.processInfo.arguments
-        // `-tab N` opens a panel tab; `-showProjects` the Collages screen.
+        // `-tab N` opens a panel tab; `-showProjects` goes back to the Collages screen.
         if let t = args.firstIndex(of: "-tab"), t + 1 < args.count, let tab = Int(args[t + 1]) {
             DispatchQueue.main.asyncAfter(deadline: .now() + 1.5) {
                 self.selectedPanelTab = tab
@@ -960,8 +919,8 @@ extension CollageState {
                 }
             }
         }
-                if args.contains("-showProjects") {
-            DispatchQueue.main.asyncAfter(deadline: .now() + 2.5) { self.showProjects = true }
+        if args.contains("-showProjects") {
+            DispatchQueue.main.asyncAfter(deadline: .now() + 2.5) { self.goToCollages() }
         }
         guard let i = args.firstIndex(of: "-demoSeed"), !hasAnyImages else { return }
         let count = (i + 1 < args.count ? Int(args[i + 1]) : nil) ?? 4

@@ -249,9 +249,6 @@ struct ContentView: View {
         .onChange(of: state.showBoxActionMenu) { _, open in
             if open { PhotoMenuTip().invalidate(reason: .actionPerformed) }
         }
-        .sheet(isPresented: $state.showProjects) {
-            ProjectsView(store: state.projectStore).environmentObject(state)
-        }
         // "Undo" / "Redo" after a shake.
         .overlay(alignment: .top) {
             HistoryToast().padding(.top, 70)
@@ -350,6 +347,9 @@ struct ContentView: View {
                 // there's a collage (or something to undo back to).
                 if state.hasAnyImages || state.canUndo {
                     UndoRedoButtons()
+                }
+                if state.hasAnyImages {
+                    ResetSettingsButton()
                 }
                 if state.hasAnyImages {
                     // One button, three states: editing → full-screen preview
@@ -595,6 +595,40 @@ struct ContentView: View {
                     .cornerRadius(14)
                  */
             }
+        }
+    }
+}
+
+/// Clears every setting of the open collage back to its default (after a
+/// confirmation); the photos stay. Dimmed while nothing differs.
+struct ResetSettingsButton: View {
+    @EnvironmentObject var state: CollageState
+    @State private var confirming = false
+
+    var body: some View {
+        let enabled = state.hasSettingsChanges
+        Button { confirming = true } label: {
+            Image(systemName: "eraser")
+                .font(.system(size: 15, weight: .medium))
+                .foregroundColor(enabled ? .primary : .secondary.opacity(0.35))
+                .frame(width: 36, height: 40)
+                .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
+        .disabled(!enabled)
+        .accessibilityLabel("Reset all settings")
+        .confirmationDialog("Reset all settings?", isPresented: $confirming, titleVisibility: .visible) {
+            Button(state.pages.count > 1 ? "Reset All Pages" : "Reset Settings", role: .destructive) {
+                withAnimation(.easeInOut(duration: 0.25)) { state.resetAllSettings() }
+            }
+            if state.pages.count > 1 {
+                Button("Reset Page \(state.currentPageIndex + 1) Only", role: .destructive) {
+                    withAnimation(.easeInOut(duration: 0.25)) { state.resetAllSettings(currentPageOnly: true) }
+                }
+            }
+            Button("Cancel", role: .cancel) {}
+        } message: {
+            Text("Layout, canvas, frame, overlays, edits, filter and ratio go back to their defaults. Your photos stay, and Undo brings the settings back.")
         }
     }
 }

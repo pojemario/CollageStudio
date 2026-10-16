@@ -945,7 +945,6 @@ class CollageState: ObservableObject {
     /// True while a saved collage loads (at launch or from the list).
     @Published var isRestoringProject = false
     var isRenderingThumbnail = false
-    @Published var showProjects = false
 
     /// Photos whose subject has been looked for (see SmartLayout.swift).
     var focusChecked: Set<UUID> = []
@@ -1697,11 +1696,39 @@ class CollageState: ObservableObject {
         borderColor = .white
     }
 
+    /// Empties the canvas for a new collage, which starts from the default
+    /// settings (nothing carries over from the last collage).
     func clear() {
-        pages = [CollagePage(style: currentPage.style, look: currentPage.look)]
+        pages = [CollagePage()]
         currentPageIndex = 0
+        selectedOverlayId = nil
+        ratio = .square
+        canvasSize = CanvasRatio.square.canvasSize(base: 1024)
         imageFrames.removeAll()
         clearSwapDrag()
+    }
+
+    /// Whether any setting of the open collage differs from its default:
+    /// ratio, or any page's Layout, canvas, frame, overlays, edits, filter.
+    var hasSettingsChanges: Bool {
+        ratio != .square || pages.contains { $0.style != PageStyle() || $0.look != PageLook() }
+    }
+
+    /// Puts every setting back to its default — on every page, or only the
+    /// one on screen. The photos (and how they are framed) stay; undo
+    /// brings the settings back.
+    func resetAllSettings(currentPageOnly: Bool = false) {
+        for i in pages.indices where !currentPageOnly || i == currentPageIndex {
+            pages[i].style = PageStyle()
+            pages[i].look = PageLook()
+        }
+        selectedOverlayId = nil
+        overlayPreview = nil
+        if !currentPageOnly && ratio != .square {
+            setRatio(.square)
+        } else {
+            rebuildAllPages()
+        }
     }
 
     // MARK: - Layout
@@ -1737,49 +1764,26 @@ class CollageState: ObservableObject {
     // MARK: - Persistence (ratio + shuffle options)
 
     private enum DefaultsKey {
-        static let ratio = "ratioRaw"
         static let customWidth = "customWidth"
         static let customHeight = "customHeight"
         static let customUnit = "customUnit"
         static let shuffle = "shuffleOptions"
-        static let pageStyle = "lastPageStyle"
     }
 
     init() {
         restoreSettings()
         observeEffectSources()
-        observePageStyle()
         observeHistory()
-        restoreLastProject()
         #if DEBUG && canImport(UIKit)
         seedDemoImagesIfRequested()
         #endif
     }
 
-    /// The Layout settings last used — new collages start with them, so a
-    /// look (say, no border) sticks across launches.
-    private var rememberedPageStyle: PageStyle {
-        guard let d = UserDefaults.standard.dictionary(forKey: DefaultsKey.pageStyle) else { return PageStyle() }
-        return PageStyle(defaultsValue: d)
-    }
-    private var pageStyleSaver: AnyCancellable?
-
-    /// Saves the current page's style shortly after it settles.
-    private func observePageStyle() {
-        pageStyleSaver = $pages.combineLatest($currentPageIndex)
-            .map { pages, index in pages[min(max(index, 0), pages.count - 1)].style }
-            .removeDuplicates()
-            .debounce(for: .milliseconds(500), scheduler: RunLoop.main)
-            .sink { style in
-                UserDefaults.standard.set(style.defaultsValue, forKey: DefaultsKey.pageStyle)
-            }
-    }
-
     private func restoreSettings() {
         let d = UserDefaults.standard
-
-        // Layout settings from last time
-        pages[0].style = rememberedPageStyle
+        // (A new collage starts from the default Layout settings and ratio;
+        // a saved one brings its own.)
+        d.removeObject(forKey: "lastPageStyle")
 
         // Shuffle options
         if let raw = d.array(forKey: DefaultsKey.shuffle) as? [Bool], raw.count == 7 {
@@ -1795,22 +1799,10 @@ class CollageState: ObservableObject {
         }
         if let w = d.string(forKey: DefaultsKey.customWidth) { customWidth = w }
         if let h = d.string(forKey: DefaultsKey.customHeight) { customHeight = h }
-        if let raw = d.string(forKey: DefaultsKey.ratio), let r = CanvasRatio(rawValue: raw) {
-            ratio = r
-            if r == .custom {
-                let wpx = customUnit.toPx(CGFloat(Double(customWidth) ?? 1200))
-                let hpx = customUnit.toPx(CGFloat(Double(customHeight) ?? 900))
-                canvasSize = CGSize(width: max(100, min(6000, wpx)),
-                                    height: max(100, min(6000, hpx)))
-            } else {
-                canvasSize = r.canvasSize(base: 1024)
-            }
-        }
     }
 
     private func saveRatio() {
         let d = UserDefaults.standard
-        d.set(ratio.rawValue, forKey: DefaultsKey.ratio)
         d.set(customWidth, forKey: DefaultsKey.customWidth)
         d.set(customHeight, forKey: DefaultsKey.customHeight)
         d.set(customUnit.rawValue, forKey: DefaultsKey.customUnit)

@@ -80,23 +80,6 @@ struct CanvasContainerView: View {
                         // (visible in the gaps) instead of just the outer edge.
                         .compositingGroup()
                         .shadow(color: state.images.isEmpty ? .clear : .black.opacity(0.25), radius: 20, x: 0, y: 8)
-                        // When the canvas is empty, the whole canvas acts as an
-                        // "Add Images" button. Once at least one image exists,
-                        // this overlay disappears and tapping does nothing.
-                        .overlay {
-                            if state.images.isEmpty {
-                                Button {
-                                    showAddPicker = true
-                                } label: {
-                                    EmptyCanvasContent(canvasSize: CGSize(width: displayW, height: displayH))
-                                }
-                                .buttonStyle(PressBounceStyle())
-                                .photosPicker(isPresented: $showAddPicker,
-                                              selection: $photoItems,
-                                              maxSelectionCount: 30,
-                                              matching: .images)
-                            }
-                        }
                         .coordinateSpace(name: "collageCanvas")
                         // A small anchor near the top of the collage for the
                         // touch-and-hold tip.
@@ -153,11 +136,10 @@ struct CanvasContainerView: View {
             // The canvas is static: user interaction never pans it
             .scrollDisabled(true)
             .scrollIndicators(.hidden, axes: [.horizontal, .vertical])
-            // While images load: on the empty start page the plus in the
-            // ring spins instead (see EmptyCanvasContent); once there is a
-            // collage, a subtle gray spinner over it.
+            // While images load, a subtle gray spinner (over the start
+            // screen too, after photos are picked or a collage is opened).
             .overlay {
-                if state.isLoading && !state.images.isEmpty {
+                if state.isLoading || state.isRestoringProject {
                     ProgressView()
                         .progressViewStyle(.circular)
                         .controlSize(.large)
@@ -167,13 +149,18 @@ struct CanvasContainerView: View {
                 }
             }
             .animation(.easeInOut(duration: 0.2), value: state.isLoading)
-            // Start screen: saved collages are one tap away.
-            .overlay(alignment: .bottom) {
-                if !state.hasAnyImages && !state.isRestoringProject {
-                    RecentCollagesButton(store: state.projectStore)
-                        .padding(.bottom, 24)
+            // No photos yet: the start screen — New Collage and the saved ones.
+            .overlay {
+                if !state.hasAnyImages && !state.isRestoringProject && !state.isLoading {
+                    CollagesHome(store: state.projectStore) { showAddPicker = true }
+                        .background(ColorManager.canvasAreaBackground.ignoresSafeArea())
+                        .transition(.opacity)
                 }
             }
+            .photosPicker(isPresented: $showAddPicker,
+                          selection: $photoItems,
+                          maxSelectionCount: 30,
+                          matching: .images)
             // Before / after peek (holding a filter tile). Only the badge
             // fades — the pictures themselves switch instantly (animating
             // the whole canvas made the swap flash).
@@ -230,7 +217,7 @@ struct CanvasContainerView: View {
             }
         }
     }
-    // MARK: - Load photos (empty-canvas add button)
+    // MARK: - Load photos (New Collage on the start screen)
 
     func loadPhotos(_ items: [PhotosPickerItem]) {
         guard !items.isEmpty else { return }
@@ -277,77 +264,6 @@ struct CanvasContainerView: View {
 
 }
 
-
-/// What an empty canvas shows: a big thin plus in a hairline ring, gently
-/// breathing, with a one-line hint. The whole canvas is the button.
-private struct EmptyCanvasContent: View {
-    @EnvironmentObject var state: CollageState
-    let canvasSize: CGSize
-    @State private var breathing = false
-    /// Keeps turning while photos load — the start page's own spinner.
-    @State private var spinning = false
-
-    /// Natural size of the plus ring + "ADD PHOTOS" stack.
-    private static let promptSize = CGSize(width: 330, height: 220)
-
-    var body: some View {
-        // Dashed outline in the canvas ratio, so the chosen format is visible
-        // before any photos are in. Centered, with the prompt inside it.
-        let aspect = max(state.canvasSize.width, 1) / max(state.canvasSize.height, 1)
-        let box = CGSize(width: canvasSize.width * 0.84, height: canvasSize.height * 0.84)
-        let rect = aspect > box.width / box.height
-            ? CGSize(width: box.width, height: box.width / aspect)
-            : CGSize(width: box.height * aspect, height: box.height)
-        // Wide formats leave little height: shrink the prompt to fit inside.
-        let promptScale = min(1, (rect.width - 32) / Self.promptSize.width,
-                              (rect.height - 32) / Self.promptSize.height)
-
-        ZStack {
-            RoundedRectangle(cornerRadius: ButtonStyleGuide.cornerRadius, style: .continuous)
-                .strokeBorder(Color.accentColor.opacity(0.3),
-                              style: StrokeStyle(lineWidth: 1.5, dash: [7, 6]))
-                .frame(width: rect.width, height: rect.height)
-
-            prompt
-                .scaleEffect(max(promptScale, 0.3))
-        }
-        .frame(maxWidth: .infinity, maxHeight: .infinity)
-        .contentShape(Rectangle())
-        .onAppear {
-            withAnimation(.easeInOut(duration: 2.2).repeatForever(autoreverses: true)) {
-                breathing = true
-            }
-        }
-    }
-
-    private var prompt: some View {
-        VStack(spacing: 24) {
-            ZStack {
-                Circle()
-                    .strokeBorder(Color.accentColor.opacity(0.55), lineWidth: 1.5)
-                    .frame(width: 148, height: 148)
-                    .scaleEffect(breathing ? 1.05 : 1)
-                    .opacity(breathing ? 0.7 : 1)
-                Image(systemName: "plus")
-                    .font(.system(size: 64, weight: .thin))
-                    .foregroundColor(.accentColor)
-                    .rotationEffect(.degrees(spinning ? 360 : 0))
-                    .animation(spinning
-                               ? .linear(duration: 1.2).repeatForever(autoreverses: false)
-                               : .easeOut(duration: 0.4),
-                               value: spinning)
-            }
-            .onChange(of: state.isLoading, initial: true) { _, loading in
-                spinning = loading
-            }
-            Text("ADD PHOTOS")
-                .font(.system(size: 38, weight: .ultraLight))
-                .tracking(6)
-                .foregroundColor(.accentColor)
-                .fixedSize()
-        }
-    }
-}
 
 /// Press and hold: the collage without its edits, effects and filter.
 private struct CompareButton: View {
