@@ -243,6 +243,8 @@ struct ContentView: View {
         }
         // Topmost: the long-press image menu floats above every panel.
         .overlay { BoxActionMenuLayer() }
+        // Redo, dropped down below the toolbar's Undo button.
+        .overlay { RedoBubbleLayer() }
         // First-run tips (see Tips.swift).
         .task { await CollageTips.follow() }
         .onChange(of: state.hasAnyImages, initial: true) { _, has in CollageTips.hasImages = has }

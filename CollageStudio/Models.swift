@@ -451,8 +451,8 @@ struct PageStyle: Equatable {
     var numCols: Int = 2
     /// The lanes run across as rows instead of down as columns.
     var isRows: Bool = false
-    var gap: Double = 10
-    var cornerRadius: Double = 20
+    var gap: Double = 5
+    var cornerRadius: Double = 8
     var backgroundColor: Color = .white
     var backgroundKind: BackgroundKind = .color
     /// Bottom color of a gradient background.

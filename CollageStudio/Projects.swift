@@ -1003,6 +1003,15 @@ extension CollageState {
         if args.contains("-onePerPage") {
             DispatchQueue.main.asyncAfter(deadline: .now() + 2) { self.distributeOneImagePerPage() }
         }
+        // `-historyTest`: two edits, two undos, one redo — logs canRedo after.
+        if args.contains("-historyTest") {
+            let steps: [(Double, () -> Void)] = [
+                (3.0, { self.effects[.contrast] = 20 }), (4.0, { self.effects[.contrast] = 40 }),
+                (5.0, { self.undo() }), (6.0, { self.undo() }), (7.0, { self.redo() }),
+                (9.0, { Diagnostics.log("historyTest canRedo \(self.canRedo) canUndo \(self.canUndo)") }),
+            ]
+            for (t, step) in steps { DispatchQueue.main.asyncAfter(deadline: .now() + t, execute: step) }
+        }
         // `-undoOnce`: undoes the first edit (with -editsOn), so Redo shows.
         if args.contains("-undoOnce") {
             DispatchQueue.main.asyncAfter(deadline: .now() + 3.5) { self.undo() }

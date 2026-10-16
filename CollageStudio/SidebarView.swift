@@ -673,8 +673,6 @@ struct BorderPatternPreview: View {
 /// a sample; tapping opens a popover listing every pattern, drawn.
 struct BorderStylePicker: View {
     @EnvironmentObject var state: CollageState
-    /// Roomier, for the Border page.
-    var large = false
     @State private var showChooser = false
 
     var body: some View {
@@ -683,13 +681,13 @@ struct BorderStylePicker: View {
         } label: {
             HStack(spacing: 4) {
                 BorderPatternPreview(style: state.borderStyle)
-                    .frame(width: large ? 120 : 50, height: large ? 20 : 16)
+                    .frame(width: 50, height: 16)
                 Image(systemName: "chevron.up.chevron.down")
-                    .font(.system(size: large ? 11 : 9, weight: .semibold))
+                    .font(.system(size: 9, weight: .semibold))
                     .foregroundColor(.secondary)
             }
-            .padding(.horizontal, large ? 12 : 7)
-            .padding(.vertical, large ? 9 : 7)
+            .padding(.horizontal, 7)
+            .padding(.vertical, 7)
             .appButtonBackground(prominent: false)
         }
         .buttonStyle(.plain)
@@ -759,16 +757,17 @@ struct LayoutPanel: View {
                     .disabled(state.maxSelectableCols <= 1)
                     .opacity(state.maxSelectableCols <= 1 ? 0.4 : 1)
                 LabeledSlider(label: "Spacing", value: $state.gap, range: spacingRange, step: 1, format: "%.0f",
-                              resetValue: 10, swatchColor: $state.backgroundColor,
+                              resetValue: PageStyle().gap, swatchColor: $state.backgroundColor,
                               compactValue: true)
                 LabeledSlider(label: "Rounding", value: $state.cornerRadius, range: 0...100, step: 1, format: "%.0f",
-                              resetValue: 20, reservesSwatchSlot: true,
+                              resetValue: PageStyle().cornerRadius, reservesSwatchSlot: true,
                               compactValue: true)
             }
             // No Reset button: swipe up or down on the labels or numbers.
-            .swipeNumbersToReset(canReset: state.gap != 10 || state.cornerRadius != 20 || state.backgroundColor != .white) {
-                state.gap = 10
-                state.cornerRadius = 20
+            .swipeNumbersToReset(canReset: state.gap != PageStyle().gap || state.cornerRadius != PageStyle().cornerRadius
+                                 || state.backgroundColor != .white) {
+                state.gap = PageStyle().gap
+                state.cornerRadius = PageStyle().cornerRadius
                 state.backgroundColor = .white
             }
             .popoverTip(ResetSwipeTip(), arrowEdge: .bottom)
@@ -798,39 +797,38 @@ struct LayoutPanel: View {
     }
 }
 
-/// The Border page: a full-width size slider, then roomy rows for color,
-/// line style and where the line sits.
+/// The Border page, as compact as the Layout page: size slider, then
+/// color and line style, then where the line sits — same columns.
 struct BorderPanel: View {
     @EnvironmentObject var state: CollageState
 
     var body: some View {
         let off = state.borderThickness <= 0
-        VStack(spacing: 14) {
+        VStack(spacing: 10) {
             LabeledSlider(label: "Size", value: $state.borderThickness, range: 0...40, step: 1, format: "%.0f",
-                          resetValue: 0)
-            row("Color") {
+                          resetValue: 0, reservesSwatchSlot: true, compactValue: true)
+            // Color first, then the line style.
+            row("Style") {
                 ColorSwatchButton(color: $state.borderColor,
-                                  size: 32,
                                   presetTitle: "Same as Background color",
                                   presetColor: { state.backgroundColor },
                                   depth: 0.55, accessibilityTitle: "Border color")
+                BorderStylePicker()
+                    .disabled(off)
+                    .opacity(off ? 0.4 : 1)
                 Spacer()
             }
-            row("Style") {
-                BorderStylePicker(large: true)
-                Spacer()
-            }
-            .disabled(off)
-            .opacity(off ? 0.4 : 1)
             row("Position") {
+                Color.clear.frame(width: 24, height: 24)   // the swatch column
                 Picker("Position", selection: $state.borderPlacement) {
                     ForEach(BorderPlacement.allCases) { p in Text(p.rawValue).tag(p) }
                 }
                 .pickerStyle(.segmented)
                 .labelsHidden()
+                .disabled(off)
+                .opacity(off ? 0.4 : 1)
+                Color.clear.frame(width: LabeledSlider.twoDigitValueWidth, height: 24)
             }
-            .disabled(off)
-            .opacity(off ? 0.4 : 1)
         }
         .swipeNumbersToReset(canReset: state.hasBorderChanges) { state.resetBorder() }
     }
@@ -843,7 +841,6 @@ struct BorderPanel: View {
                 .frame(width: 92, alignment: .leading)
             content()
         }
-        .frame(minHeight: 36)
         .panelChrome(state)
     }
 }
@@ -1482,7 +1479,8 @@ struct PageGroupsView: View {
 
         HStack(spacing: 8) {
             // Full-height grip rail: drag it onto another row to swap
-            // page positions
+            // page positions (only with more than one page)
+            if state.pages.count > 1 {
             Image(systemName: "line.3.horizontal")
                 .font(.system(size: 12, weight: .semibold))
                 .foregroundColor(.secondary.opacity(0.7))
@@ -1495,6 +1493,7 @@ struct PageGroupsView: View {
                 .opacity(dragPageIndex == pi ? 0.4 : 1)
                 .contentShape(Rectangle())
                 .gesture(pageDragGesture(pageIndex: pi))
+            }
 
             // Add photos straight into this page.
             PageAddPhotosButton(pageIndex: pi)

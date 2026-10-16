@@ -813,6 +813,8 @@ class CollageState: ObservableObject {
     /// moves to a corner none of them cover.
     @Published var canvasVisibleRect: CGRect = .zero
     @Published var pagerFrame: CGRect = .zero
+    /// The phone toolbar's Undo button, for the Redo bubble below it.
+    @Published var undoButtonFrame: CGRect = .zero
     @Published var compareButtonFrame: CGRect = .zero
 
     /// The part of the screen where a control on the collage can be seen
@@ -1274,8 +1276,40 @@ class CollageState: ObservableObject {
     /// Adds images whose proxies were already generated off the main thread.
     /// Fills the current page up to the per-page limit, then spills into new
     /// pages (up to the page limit; any excess beyond that is dropped).
-    /// Target images per page when auto-distributing a fresh batch.
-    static let defaultImagesPerPage = 5
+    /// A fresh batch: up to this many photos stay on one page (10 still
+    /// fits one balanced page); more are spread over pages of about
+    /// `imagesPerPage`, as evenly as possible.
+    static let onePageLimit = 10
+    static let imagesPerPage = 9
+
+    /// Pages a fresh batch of `n` photos starts on: one up to 10, then
+    /// enough for about 9 each (12 → 2×6, 19 → 7+6+6, 27 → 3×9).
+    static func initialPageCount(for n: Int) -> Int {
+        guard n > onePageLimit else { return 1 }
+        return min(maxPages, Int((Double(n) / Double(imagesPerPage)).rounded(.up)))
+    }
+
+    /// The most balanced grid for `photos` on a canvas of `canvas`: the
+    /// column count whose cells come closest to the photos' typical shape,
+    /// preferring counts that fill every column evenly (9 → 3×3, 6 → 3×2
+    /// on a square, 2×3 on a tall story canvas).
+    /// `shapeOf` is the set of photos whose typical shape counts (the whole
+    /// batch, so pages with as many photos get the same grid).
+    static func balancedColumns(for n: Int, shapeOf photos: [CollageImage], canvas: CGSize) -> Int {
+        guard n > 1, !photos.isEmpty else { return 1 }
+        let shapes = photos.map { $0.naturalSize.width / max($0.naturalSize.height, 1) }.sorted()
+        let photoAspect = max(shapes[shapes.count / 2], 0.2)
+        var best = 1, bestCost = Double.infinity
+        for k in 1...min(n, 6) {
+            let rows = Int((Double(n) / Double(k)).rounded(.up))
+            let cell = (Double(canvas.width) / Double(k)) / (Double(canvas.height) / Double(rows))
+            var cost = abs(log(cell / Double(photoAspect)))
+            if n % k != 0 { cost += 0.35 }          // uneven columns
+            // A tie goes to more columns (6 on a square → 3×2, not 2×3).
+            if cost <= bestCost + 1e-9 { best = k; bestCost = cost }
+        }
+        return best
+    }
 
     /// Adds images to page `target` (default: the current page), spilling
     /// onto new pages once it's full.
@@ -1283,11 +1317,10 @@ class CollageState: ObservableObject {
         defer { detectFocusPoints() }
         let wasEmpty = pages.allSatisfy { $0.images.isEmpty }
 
-        // Fresh collage: spread the batch across auto-created pages at
-        // ~5 images per page, each laid out as a balanced grid.
+        // Fresh collage: one page up to 10 photos, else pages of about 9,
+        // evened out, each laid out as the most balanced grid.
         if wasEmpty {
-            let neededPages = Int((Double(prepared.count) / Double(Self.defaultImagesPerPage)).rounded(.up))
-            let target = max(pages.count, max(1, neededPages))
+            let target = max(pages.count, Self.initialPageCount(for: prepared.count))
             distributeEvenly(prepared, intoPages: target)
             withAnimation(.easeInOut(duration: 0.25)) { isPanelOpen = true }
             return
@@ -1549,12 +1582,14 @@ class CollageState: ObservableObject {
         guard !images.isEmpty else { return }
         let pageCount = min(Self.maxPages, max(1, requestedPages))
         let styleTemplate = currentPage.style, lookTemplate = currentPage.look
-        let perPage = min(Self.maxImagesPerPage,
-                          Int((Double(images.count) / Double(pageCount)).rounded(.up)))
+        // As even as possible: page sizes differ by one at most (19 over 3
+        // pages → 7, 6, 6 — never 7, 7, 5).
+        let base = images.count / pageCount, extra = images.count % pageCount
 
         var newPages: [CollagePage] = []
         var idx = 0
-        for _ in 0..<pageCount {
+        for p in 0..<pageCount {
+            let perPage = min(Self.maxImagesPerPage, base + (p < extra ? 1 : 0))
             var page = CollagePage(style: styleTemplate, look: lookTemplate)
             var chunk: [CollageImage] = []
             while chunk.count < perPage && idx < images.count {
@@ -1567,11 +1602,11 @@ class CollageState: ObservableObject {
                 idx += 1
             }
             page.images = chunk
-            // Columns ≈ √count so rows and columns stay balanced — a square-ish
-            // grid (4 → 2×2, 6 → 3×2, 9 → 3×3, 12 → 4×3). Callers may override
-            // with a different strategy (e.g. Burst!'s landscape bias).
+            // The most balanced grid for these photos on this canvas (9 → 3×3).
+            // Callers may override with a different strategy (e.g. Burst!'s
+            // landscape bias).
             page.style.numCols = columnsFor?(chunk.count)
-                ?? max(1, min(6, Int(Double(chunk.count).squareRoot().rounded())))
+                ?? Self.balancedColumns(for: chunk.count, shapeOf: images, canvas: canvasSize)
             // Tall photos into the tall boxes, wide ones into the wide.
             page.order = Self.fittingOrder(chunk, numCols: page.style.numCols,
                                            canvas: canvasSize, rows: page.style.isRows)
@@ -1705,15 +1740,15 @@ class CollageState: ObservableObject {
     /// Resets the visual style to a plain default look.
     /// Whether the Layout settings differ from their defaults.
     var hasStyleChanges: Bool {
-        gap != 10 || cornerRadius != 20 || borderThickness != 0 || borderStyle != .solid
+        gap != PageStyle().gap || cornerRadius != PageStyle().cornerRadius || borderThickness != 0 || borderStyle != .solid
             || backgroundColor != .white || borderColor != .white || backgroundKind != .color
     }
 
     func resetStyle() {
-        gap = 10
+        gap = PageStyle().gap
         backgroundColor = .white
         backgroundKind = .color
-        cornerRadius = 20
+        cornerRadius = PageStyle().cornerRadius
         resetBorder()
     }
 
