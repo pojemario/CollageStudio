@@ -515,7 +515,7 @@ class CollageState: ObservableObject {
         }
     }
 
-    /// Strength of an effect, 0...1 (fade: −1...1).
+    /// Strength of an effect, 0...1.
     func effectAmount(_ effect: CollageEffect) -> Double {
         guard !compareOriginal else { return 0 }
         let r = effect.range
@@ -546,7 +546,7 @@ class CollageState: ObservableObject {
             case .clarity:    effects[effect] = Double(Int.random(in: 0...30))
             case .sharpness:  effects[effect] = Double(Int.random(in: 0...30))
             case .contrast:   effects[effect] = Double(Int.random(in: -20...30))
-            case .fade:       effects[effect] = Double(Int.random(in: -20...30))
+            case .fade:       effects[effect] = Double(Int.random(in: 0...30))
             case .halation:   effects[effect] = Double(Int.random(in: 0...70))
             case .glow:       effects[effect] = Double(Int.random(in: 0...60))
             case .vignette:   effects[effect] = Double(Int.random(in: 10...80))
@@ -643,6 +643,10 @@ class CollageState: ObservableObject {
     /// box keeps showing its last grade until the next one lands.
     @Published private(set) var gradedProxies: [UUID: [Graded]] = [:]
     private var gradeInFlight: Set<UUID> = []
+    /// Grades finished in the last moment, shown together (one canvas
+    /// update) instead of picture by picture.
+    private var gradesToShow: [UUID: Graded] = [:]
+    private var gradeFlushScheduled = false
     /// Full-resolution grades for the export in progress (made synchronously
     /// while it renders; dropped when it ends).
     private var gradeExportCache: [UUID: Graded] = [:]
@@ -698,13 +702,31 @@ class CollageState: ObservableObject {
             await MainActor.run {
                 self.gradeInFlight.remove(id)
                 guard !self.fullGrade.isIdentity else { return }
-                var list = (self.gradedProxies[id] ?? []).filter { $0.source === source && $0.grade != grade }
-                list.append(Graded(source: source, grade: grade, image: graded))
-                self.gradedProxies[id] = Array(list.suffix(2))
-                if let current = self.currentPage.images.first(where: { $0.id == id }) {
-                    self.gradeIfNeeded(current)
-                }
+                self.gradesToShow[id] = Graded(source: source, grade: grade, image: graded)
+                self.scheduleGradeFlush()
             }
+        }
+    }
+
+    /// Shows the grades that just finished all at once, then lets any
+    /// picture whose grade went stale meanwhile catch up.
+    private func scheduleGradeFlush() {
+        guard !gradeFlushScheduled else { return }
+        gradeFlushScheduled = true
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.03) { [weak self] in
+            guard let self else { return }
+            self.gradeFlushScheduled = false
+            let done = self.gradesToShow
+            self.gradesToShow = [:]
+            guard !self.fullGrade.isIdentity, !done.isEmpty else { return }
+            var all = self.gradedProxies
+            for (id, g) in done {
+                var list = (all[id] ?? []).filter { $0.source === g.source && $0.grade != g.grade }
+                list.append(g)
+                all[id] = Array(list.suffix(2))
+            }
+            self.gradedProxies = all
+            for img in self.currentPage.images where done[img.id] != nil { self.gradeIfNeeded(img) }
         }
     }
 

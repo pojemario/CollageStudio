@@ -197,6 +197,11 @@ enum HSLGrader {
     /// cube.
     static func applyCube(to image: PlatformImage,
                           _ transform: (Double, Double, Double) -> (r: Double, g: Double, b: Double)) -> PlatformImage {
+        applyCube(to: image, cube: cubeData(transform))
+    }
+
+    /// Runs a ready-made color cube (see `cubeData`) over a picture.
+    static func applyCube(to image: PlatformImage, cube: Data) -> PlatformImage {
         #if canImport(UIKit)
         guard let cg = image.cgImage else { return image }
         #else
@@ -206,7 +211,7 @@ enum HSLGrader {
         let filter = CIFilter.colorCubeWithColorSpace()
         filter.inputImage = CIImage(cgImage: cg)
         filter.cubeDimension = Float(cubeSize)
-        filter.cubeData = cubeData(transform)
+        filter.cubeData = cube
         filter.colorSpace = sRGB
         guard let output = filter.outputImage,
               let graded = context.createCGImage(output, from: output.extent) else { return image }
@@ -236,7 +241,7 @@ enum HSLGrader {
         return Color(.sRGB, red: out.r, green: out.g, blue: out.b, opacity: Double(a))
     }
 
-    private static func cubeData(_ transform: (Double, Double, Double) -> (r: Double, g: Double, b: Double)) -> Data {
+    static func cubeData(_ transform: (Double, Double, Double) -> (r: Double, g: Double, b: Double)) -> Data {
         let n = cubeSize
         var values = [Float]()
         values.reserveCapacity(n * n * n * 4)
@@ -351,6 +356,23 @@ extension ContentGrade {
 enum ContentGrader {
     private static let context = CIContext()
 
+    /// Color cubes of the last few grades. Building one runs the whole
+    /// color math 32,768 times, so it's made once per slider step and
+    /// shared by every picture instead of once per picture.
+    private static let cubeLock = NSLock()
+    nonisolated(unsafe) private static var cubes: [(grade: ContentGrade, data: Data)] = []
+
+    static func cube(for grade: ContentGrade) -> Data {
+        cubeLock.lock()
+        defer { cubeLock.unlock() }
+        if let hit = cubes.first(where: { $0.grade == grade }) { return hit.data }
+        let m = grade.calibration.isIdentity ? nil : grade.calibration.matrix
+        let data = HSLGrader.cubeData { grade.color($0, $1, $2, calibrationMatrix: m) }
+        cubes.append((grade, data))
+        if cubes.count > 6 { cubes.removeFirst() }
+        return data
+    }
+
     /// A flat color (the collage background) through the per-pixel part.
     static func apply(_ grade: ContentGrade, to color: Color) -> Color {
         guard grade.hasColorChange else { return color }
@@ -361,8 +383,7 @@ enum ContentGrader {
         guard !grade.isIdentity else { return image }
         var source = image
         if grade.hasColorChange {
-            let m = grade.calibration.isIdentity ? nil : grade.calibration.matrix
-            source = HSLGrader.applyCube(to: source) { grade.color($0, $1, $2, calibrationMatrix: m) }
+            source = HSLGrader.applyCube(to: source, cube: cube(for: grade))
         }
         guard grade.hasDetailChange else { return source }
 
@@ -629,11 +650,42 @@ struct EffectsPanel: View {
 
 /// Filter page: a preview tile per preset look (the current page's first
 /// photo run through it), plus a Strength slider for the chosen one.
+extension View {
+    /// Small accent dots beside the labels of a segmented switch, for the
+    /// parts whose settings are changed (like the tab bar's dots). `titles`
+    /// are the segment labels, in order, so each dot sits just after its text.
+    func segmentDots(_ titles: [String], marked: [Bool]) -> some View {
+        overlay {
+            HStack(spacing: 0) {
+                ForEach(Array(titles.enumerated()), id: \.offset) { i, title in
+                    Text(title)
+                        .font(.system(size: 13, weight: .medium))
+                        .hidden()
+                        .overlay(alignment: .topTrailing) {
+                            if i < marked.count, marked[i] {
+                                Circle()
+                                    .fill(Color.accentColor)
+                                    .frame(width: 6, height: 6)
+                                    .offset(x: 9, y: -2)
+                                    .transition(.scale.combined(with: .opacity))
+                            }
+                        }
+                        .frame(maxWidth: .infinity)
+                }
+            }
+            .animation(.easeInOut(duration: 0.2), value: marked)
+            .allowsHitTesting(false)
+            .accessibilityHidden(true)
+        }
+    }
+}
+
 /// The Looks tab: a filter, then fine-tuning — "Filter" (the filter
 /// tiles) and "Edit" (light, color, HSL, calibration, detail, effects).
 struct LooksPanel: View {
     @EnvironmentObject var state: CollageState
     enum Page: String, CaseIterable { case filter = "Filter", effects = "Effects", edit = "Edit" }
+    @State private var switchWidth: CGFloat = 0
 
     var body: some View {
         VStack(spacing: 12) {
@@ -641,6 +693,18 @@ struct LooksPanel: View {
                 ForEach(Page.allCases, id: \.self) { Text($0.rawValue).tag($0) }
             }
             .pickerStyle(.segmented)
+            // A dot by each part whose settings are changed.
+            .segmentDots(Page.allCases.map(\.rawValue), marked: Page.allCases.map(isChanged))
+            .onGeometryChange(for: CGFloat.self) { $0.size.width } action: { switchWidth = $0 }
+            // Double-tapping "Edit" resets everything under it (Light,
+            // Color, HSL, CC, Detail), like double-tapping a slider's name.
+            .simultaneousGesture(
+                SpatialTapGesture(count: 2).onEnded { t in
+                    guard switchWidth > 0 else { return }
+                    let i = min(Int(t.location.x / (switchWidth / CGFloat(Page.allCases.count))), Page.allCases.count - 1)
+                    if Page.allCases[i] == .edit { resetEdit() }
+                }
+            )
             .panelChrome(state)
             switch state.looksPage {
             case .filter: FilterControls()
@@ -648,6 +712,29 @@ struct LooksPanel: View {
             case .edit: EffectsPanel()
             }
         }
+    }
+
+    private static let edits = CollageEffect.light + CollageEffect.color + CollageEffect.detail
+
+    private func isChanged(_ page: Page) -> Bool {
+        switch page {
+        case .filter: return state.colorFilter != .none
+        case .effects: return state.hasEffects(in: CollageEffect.looks)
+        case .edit: return state.hasEffects(in: Self.edits) || !state.hsl.isIdentity || !state.calibration.isIdentity
+        }
+    }
+
+    private func resetEdit() {
+        let edits = Self.edits
+        guard state.hasEffects(in: edits) || !state.hsl.isIdentity || !state.calibration.isIdentity else { return }
+        withAnimation(.easeInOut(duration: 0.2)) {
+            state.resetEffects(in: edits)
+            state.resetHSL()
+            state.calibration = CameraCalibration()
+        }
+        #if canImport(UIKit)
+        UIImpactFeedbackGenerator(style: .light).impactOccurred()
+        #endif
     }
 }
 

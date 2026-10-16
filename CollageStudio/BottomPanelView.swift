@@ -22,6 +22,11 @@ struct FloatingTabBar: View {
     @State private var scrubX: CGFloat?
     /// Tab under the finger while scrubbing, for the haptic tick.
     @State private var hoverTab: Int?
+    /// A tap moving the lens to another tab: like the segmented switches
+    /// (Filter | Effects | Edit), it lifts into clear glass and stretches
+    /// while it travels, then settles back to the solid chip.
+    @State private var gliding = false
+    @State private var glideToken = 0
 
     static let tabs = ["Images", "Layout", "Frames", "Overlay", "Looks"]
     static let icons = ["photo.on.rectangle.angled", "square.grid.2x2",
@@ -84,7 +89,7 @@ struct FloatingTabBar: View {
     private func tabLabel(_ i: Int) -> some View {
         // Idle: the active tab is white on the accent lens. Scrubbing: the
         // lens turns clear and the tab under it takes the accent color.
-        let onChip = !scrubbing && activeTab == i && state.panelTabShown
+        let onChip = !scrubbing && !gliding && activeTab == i && state.panelTabShown
         let hovered = scrubbing && hoverTab == i
         return VStack(spacing: 3) {
             Image(systemName: Self.icons[i])
@@ -131,12 +136,13 @@ struct FloatingTabBar: View {
                                      startPoint: .top, endPoint: .bottom))
                 .overlay(shape.strokeBorder(Color.white.opacity(0.35), lineWidth: 0.8))
                 .shadow(color: Color.accentColor.opacity(0.45), radius: 6, y: 2)
-                .opacity(scrubbing || !state.panelTabShown ? 0 : 1)
+                .opacity(scrubbing || gliding || !state.panelTabShown ? 0 : 1)
             clearGlass(shape)
-                .opacity(scrubbing ? 1 : 0)
+                .opacity(scrubbing || gliding ? 1 : 0)
         }
         .frame(width: tabWidth, height: Self.tabHeight)
-        .scaleEffect(scrubbing ? CGSize(width: 1.22, height: 1.3) : CGSize(width: 1, height: 1))
+        .scaleEffect(scrubbing ? CGSize(width: 1.22, height: 1.3)
+                     : gliding ? CGSize(width: 1.3, height: 1.18) : CGSize(width: 1, height: 1))
         .offset(x: center - tabWidth / 2)
         // Glued to the finger while scrubbing; a spring otherwise.
         .animation(scrubbing ? .interactiveSpring(response: 0.18, dampingFraction: 0.86) : nil, value: scrubX)
@@ -198,9 +204,20 @@ struct FloatingTabBar: View {
                     scrubX = nil
                     hoverTab = nil
                 } else {
+                    if i != activeTab || !state.panelTabShown { glide() }
                     select(i)
                 }
             }
+    }
+
+    private func glide() {
+        glideToken &+= 1
+        let token = glideToken
+        withAnimation(.spring(response: 0.22, dampingFraction: 0.8)) { gliding = true }
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.32) {
+            guard token == glideToken else { return }
+            withAnimation(.spring(response: 0.3, dampingFraction: 0.75)) { gliding = false }
+        }
     }
 
     /// Whether the current page has settings changed in a tab (Images has none).

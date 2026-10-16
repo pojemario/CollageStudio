@@ -736,12 +736,23 @@ struct LayoutPanel: View {
                 ForEach(Page.allCases, id: \.self) { Text($0.rawValue).tag($0) }
             }
             .pickerStyle(.segmented)
+            .segmentDots(Page.allCases.map(\.rawValue), marked: Page.allCases.map(isChanged))
             .panelChrome(state)
             switch state.layoutPage {
             case .layout: layoutPage
             case .border: BorderPanel()
             case .canvas: canvasPage
             }
+        }
+    }
+
+    private func isChanged(_ page: Page) -> Bool {
+        let d = PageStyle()
+        switch page {
+        case .layout: return state.gap != d.gap || state.cornerRadius != d.cornerRadius
+            || state.backgroundColor != d.backgroundColor || state.isRows || state.numCols != d.numCols
+        case .border: return state.hasBorderChanges
+        case .canvas: return state.canvasMargin != 0 || state.canvasRotation != 0
         }
     }
 

@@ -761,8 +761,9 @@ enum CollageEffect: String, CaseIterable, Identifiable {
     var range: ClosedRange<Double> {
         switch self {
         case .sharpness, .halation, .glow, .vignette, .grain: return 0...100
-        // Half the steps: ±50 is the full effect.
-        case .fade: return -50...50
+        // Half the steps (50 is the full effect), and only the fade: the
+        // old negative side was extra contrast, which Edit has.
+        case .fade: return 0...50
         default: return -100...100
         }
     }

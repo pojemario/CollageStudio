@@ -161,7 +161,8 @@ extension Dictionary where Key == CollageEffect, Value == Double {
 
 func effectsFromStorage(_ d: [String: Double]) -> [CollageEffect: Double] {
     var out: [CollageEffect: Double] = [:]
-    for (k, v) in d { if let e = CollageEffect(rawValue: k) { out[e] = v } }
+    // Never below a slider's range (an old negative Fade becomes none).
+    for (k, v) in d { if let e = CollageEffect(rawValue: k) { out[e] = max(v, e.range.lowerBound) } }
     return out
 }
 
@@ -519,6 +520,7 @@ extension CollageState {
             overlays: look.overlays, effects: look.effects, hsl: look.hsl, calibration: look.calibration,
             filter: look.filter, filterStrength: look.filterStrength)
         let thumb = hasAnyImages ? renderThumbnail() : nil
+        Diagnostics.log("saved collage \(currentProjectId.uuidString.prefix(8)) thumb \(thumb.map { "\(Int($0.size.width))x\(Int($0.size.height))" } ?? "none")")
         UserDefaults.standard.set(currentProjectId.uuidString, forKey: Self.lastProjectKey)
         projectStore.save(file, newImages: newImages, thumbnail: thumb) { [weak self] in
             self?.projectStore.refresh()
@@ -560,6 +562,7 @@ extension CollageState {
     /// Back to the start screen (the Collages list): the open collage is
     /// saved and a blank one takes its place.
     func goToCollages() {
+        Diagnostics.log("to Collages · changed \(hasUnsavedChanges) · \(diagnosticsSummary)")
         startNewCollage()
     }
 
@@ -924,14 +927,22 @@ private struct ProjectThumb: View {
                 .padding(10)
             }
         }
+        .onAppear {
+            Diagnostics.log("thumb shown \(url.deletingLastPathComponent().lastPathComponent.prefix(8)) cached \(Self.cache.object(forKey: key) != nil) state \(loaded != nil)")
+        }
         .task(id: key) {
             guard Self.cache.object(forKey: key) == nil else { return }
             let url = url, key = key
             guard let img = await Task.detached(priority: .utility, operation: {
                 PlatformImage(contentsOfFile: url.path)
-            }).value else { return }
+            }).value else {
+                let exists = FileManager.default.fileExists(atPath: url.path)
+                Diagnostics.log("thumb load failed \(url.deletingLastPathComponent().lastPathComponent.prefix(8)) file \(exists ? "there" : "missing")")
+                return
+            }
             Self.cache.setObject(img, forKey: key)
             loaded = img
+            Diagnostics.log("thumb loaded \(url.deletingLastPathComponent().lastPathComponent.prefix(8))")
         }
     }
 }
