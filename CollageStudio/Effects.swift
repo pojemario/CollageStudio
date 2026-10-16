@@ -623,6 +623,27 @@ struct EffectsPanel: View {
 
 /// Filter page: a preview tile per preset look (the current page's first
 /// photo run through it), plus a Strength slider for the chosen one.
+/// The Looks tab: a filter, then fine-tuning — "Filter" (the filter
+/// tiles) and "Edit" (light, color, HSL, calibration, detail, effects).
+struct LooksPanel: View {
+    @EnvironmentObject var state: CollageState
+    enum Page: String, CaseIterable { case filter = "Filter", edit = "Edit" }
+
+    var body: some View {
+        VStack(spacing: 12) {
+            Picker("Looks", selection: $state.looksPage) {
+                ForEach(Page.allCases, id: \.self) { Text($0.rawValue).tag($0) }
+            }
+            .pickerStyle(.segmented)
+            .panelChrome(state)
+            switch state.looksPage {
+            case .filter: FilterControls()
+            case .edit: EffectsPanel()
+            }
+        }
+    }
+}
+
 struct FilterControls: View {
     @EnvironmentObject var state: CollageState
     @State private var previews: [ColorFilter: PlatformImage] = [:]

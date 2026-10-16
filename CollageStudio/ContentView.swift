@@ -311,7 +311,7 @@ struct ContentView: View {
         HStack {
             // Placeholder reserving horizontal space for the logo, which
             // is drawn as an overlay so it can spill below the toolbar.
-            Color.clear.frame(width: 77, height: 1)
+            Color.clear.frame(width: 54, height: 1)
             Spacer()
 
             HStack(spacing: 2) {
@@ -407,7 +407,7 @@ struct ContentView: View {
                 Image("DasKolazLogo")
                     .resizable()
                     .scaledToFit()
-                    .frame(height: 52)
+                    .frame(height: 36)
                     // Monochrome on the empty start screen; color arrives
                     // with the first photos.
                     .grayscale(state.hasAnyImages ? 0 : 1)
@@ -415,7 +415,7 @@ struct ContentView: View {
                     .shimmering(state.isBusy)
             }
             .padding(.leading, 10)
-            .offset(y: 2)
+            .offset(y: -8)
             .allowsHitTesting(false)
         }
         // Keep the toolbar (and its spilling logo) above the canvas below
@@ -599,36 +599,39 @@ struct ContentView: View {
     }
 }
 
-/// Clears every setting of the open collage back to its default (after a
-/// confirmation); the photos stay. Dimmed while nothing differs.
+/// Clears every setting of the open collage back to its default; the
+/// photos stay. No confirmation — Undo brings the settings back. With
+/// several pages it's a menu: all pages, or just the one on screen.
+/// Dimmed while nothing differs.
 struct ResetSettingsButton: View {
     @EnvironmentObject var state: CollageState
-    @State private var confirming = false
 
     var body: some View {
         let enabled = state.hasSettingsChanges
-        Button { confirming = true } label: {
-            Image(systemName: "eraser")
-                .font(.system(size: 15, weight: .medium))
-                .foregroundColor(enabled ? .primary : .secondary.opacity(0.35))
-                .frame(width: 36, height: 40)
-                .contentShape(Rectangle())
+        Group {
+            if state.pages.count > 1 {
+                Menu {
+                    Button("Reset All Pages", systemImage: "square.stack") { reset(currentPageOnly: false) }
+                    Button("Reset Page \(state.currentPageIndex + 1) Only", systemImage: "square") { reset(currentPageOnly: true) }
+                } label: { icon(enabled) }
+            } else {
+                Button { reset(currentPageOnly: false) } label: { icon(enabled) }
+            }
         }
         .buttonStyle(.plain)
         .disabled(!enabled)
         .accessibilityLabel("Reset all settings")
-        .confirmationDialog("Reset all settings?", isPresented: $confirming, titleVisibility: .visible) {
-            Button(state.pages.count > 1 ? "Reset All Pages" : "Reset Settings", role: .destructive) {
-                withAnimation(.easeInOut(duration: 0.25)) { state.resetAllSettings() }
-            }
-            if state.pages.count > 1 {
-                Button("Reset Page \(state.currentPageIndex + 1) Only", role: .destructive) {
-                    withAnimation(.easeInOut(duration: 0.25)) { state.resetAllSettings(currentPageOnly: true) }
-                }
-            }
-            Button("Cancel", role: .cancel) {}
-        } message: {
-            Text("Layout, canvas, frame, overlays, edits, filter and ratio go back to their defaults. Your photos stay, and Undo brings the settings back.")
-        }
+    }
+
+    private func icon(_ enabled: Bool) -> some View {
+        Image(systemName: "arrow.counterclockwise.circle")
+            .font(.system(size: 15, weight: .medium))
+            .foregroundColor(enabled ? .primary : .secondary.opacity(0.35))
+            .frame(width: 36, height: 40)
+            .contentShape(Rectangle())
+    }
+
+    private func reset(currentPageOnly: Bool) {
+        withAnimation(.easeInOut(duration: 0.25)) { state.resetAllSettings(currentPageOnly: currentPageOnly) }
     }
 }

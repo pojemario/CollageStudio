@@ -1188,9 +1188,15 @@ struct ProtrusionLayer: View {
         let rects = state.layout.rects(canvasSize: canvasSize, gap: gap, rows: state.isRows)
         ZStack(alignment: .topLeading) {
             ForEach(state.images.filter { $0.protrusion != nil && $0.canProtrude }) { img in
-                protrusion(img, box: rects[img.id])
-                    // Masks are made on demand (also after a photo is replaced).
-                    .task(id: ObjectIdentifier(img.image)) { state.requestSubjectMask(for: img) }
+                // Masks are made on demand (also after a photo is replaced or
+                // a saved collage opened). The task sits on a view that is
+                // always there: the protrusion itself draws nothing until
+                // its mask exists, and a view that's never there never runs it.
+                ZStack(alignment: .topLeading) {
+                    Color.clear.frame(width: 1, height: 1)
+                    protrusion(img, box: rects[img.id])
+                }
+                .task(id: ObjectIdentifier(img.image)) { state.requestSubjectMask(for: img) }
             }
             // While its Protrude panel is open, a photo shows what Vision
             // found — never in exports.

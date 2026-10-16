@@ -286,13 +286,13 @@ class CollageState: ObservableObject {
     /// Add a pack by dropping its PNGs into Assets.xcassets/FramePacks/ and
     /// listing them here.
     static let framePacks: [FramePack] = [
-        FramePack(name: "Polaroid", ratio: .portrait45, assets: [
-            "Polaroid45_Classic_m080084080220_r4x5",
-            "Polaroid45_Cream_m080084080220_r4x5",
-            "Polaroid45_Black_m080084080220_r4x5",
-            "Polaroid45_Taped_m080084080220_r4x5",
-            "Polaroid45_Blush_m080084080220_r4x5",
-            "Polaroid45_Mint_m080084080220_r4x5",
+        FramePack(name: "Film Slim", ratio: .portrait916, assets: [
+            "FilmSlim916_Thin_m14141414_r9x16",
+            "FilmSlim916_Nicked_m15151515_r9x16",
+            "FilmSlim916_Scuffed_m14141414_r9x16",
+            "FilmSlim916_Uneven_m13161416_r9x16",
+            "FilmSlim916_Corner_m15151515_r9x16",
+            "FilmSlim916_Hairline_m14141414_r9x16",
         ]),
         FramePack(name: "Analog", ratio: .portrait916, assets: [
             "Analog916_Beach_m43434237_r9x16",
@@ -314,13 +314,13 @@ class CollageState: ObservableObject {
             "Film916_Corner_m32323232_r9x16",
             "Film916_Hairline_m30303030_r9x16",
         ]),
-        FramePack(name: "Film Slim", ratio: .portrait916, assets: [
-            "FilmSlim916_Thin_m14141414_r9x16",
-            "FilmSlim916_Nicked_m15151515_r9x16",
-            "FilmSlim916_Scuffed_m14141414_r9x16",
-            "FilmSlim916_Uneven_m13161416_r9x16",
-            "FilmSlim916_Corner_m15151515_r9x16",
-            "FilmSlim916_Hairline_m14141414_r9x16",
+        FramePack(name: "Polaroid", ratio: .portrait45, assets: [
+            "Polaroid45_Classic_m080084080220_r4x5",
+            "Polaroid45_Cream_m080084080220_r4x5",
+            "Polaroid45_Black_m080084080220_r4x5",
+            "Polaroid45_Taped_m080084080220_r4x5",
+            "Polaroid45_Blush_m080084080220_r4x5",
+            "Polaroid45_Mint_m080084080220_r4x5",
         ]),
     ]
 
@@ -613,6 +613,11 @@ class CollageState: ObservableObject {
     @Published var compareOriginal = false
 
     /// Whether the pictures have any edit, effect or filter to compare against.
+    /// Whether any Edit slider (effects, HSL, calibration) is changed.
+    var hasEditChanges: Bool {
+        hasEffects(in: CollageEffect.allCases) || !hsl.isIdentity || !calibration.isIdentity
+    }
+
     var hasLookEdits: Bool {
         !fullGrade.isIdentity || CollageEffect.allCases.contains { (effects[$0] ?? 0) != 0 }
     }
@@ -870,6 +875,8 @@ class CollageState: ObservableObject {
     /// The bottom panel's selected tab. Lives here (not as local view state)
     /// so it's remembered when the panel collapses and reopens.
     @Published var selectedPanelTab: Int = 0
+    /// Which half of the Looks tab shows: the filters or the Edit sliders.
+    @Published var looksPage: LooksPanel.Page = .filter
 
     /// Whether the top ratio panel is showing. In state (not local view state)
     /// so a canvas tap/drag can dismiss it the same way it does the bottom panel.
@@ -1094,6 +1101,7 @@ class CollageState: ObservableObject {
             await MainActor.run {
                 self.maskInFlight.remove(id)
                 self.subjectMasks[id] = mask
+                Diagnostics.log("subject \(mask.mask == nil ? "not found" : "found (\(mask.instances.count))")")
                 self.turnOnProtrusionIfNew(id)
             }
         }

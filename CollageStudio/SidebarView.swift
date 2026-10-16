@@ -6,10 +6,6 @@ import PhotosUI
 struct SidebarView: View {
     @EnvironmentObject var state: CollageState
     @State private var showingCustom = false
-    @State private var showOneOnOneConfirm = false
-    @State private var showBurstConfirm = false
-    @State private var showBurstAllConfirm = false
-    @State private var showAllOnOneConfirm = false
 
     var body: some View {
         ScrollView {
@@ -31,8 +27,7 @@ struct SidebarView: View {
                 borderSection
                 framesSection
                 overlaySection
-                effectsSection
-                filterSection
+                looksSection
             }
         }
     }
@@ -80,37 +75,14 @@ struct SidebarView: View {
                 ToolbarTile(sf: "rectangle.dashed.badge.record", title: "Empty Box") { state.addEmptyImage() }
 
                 SpreadMenuButton(
-                    onBurst: { showBurstConfirm = true },
-                    onOnePerPage: { showOneOnOneConfirm = true },
-                    onAllOnOne: { showAllOnOneConfirm = true },
-                    onBurstAll: { showBurstAllConfirm = true })
+                    // No confirmation: Undo puts the pages back.
+                    onBurst: { state.burstAcrossPages() },
+                    onOnePerPage: { state.distributeOneImagePerPage() },
+                    onAllOnOne: { state.mergeAllOntoOnePage() },
+                    onBurstAll: { state.burstBalanced() })
 
                 // Saved collages and "New Collage" (the open one is kept).
                 ToolbarTile(sf: "square.stack", title: "Collages", prominent: false) { state.goToCollages() }
-            }
-            .alert("Burst!", isPresented: $showBurstAllConfirm) {
-                Button("Proceed") { state.burstBalanced() }
-                Button("Cancel", role: .cancel) {}
-            } message: {
-                Text("This will spread all \(state.totalImageCount) images across \(state.burstPageCount) balanced page\(state.burstPageCount == 1 ? "" : "s"), do you want to proceed?")
-            }
-            .alert("One image per page", isPresented: $showOneOnOneConfirm) {
-                Button("Proceed") { state.distributeOneImagePerPage() }
-                Button("Cancel", role: .cancel) {}
-            } message: {
-                Text("This will add 1 image per 1 page, do you want to proceed?")
-            }
-            .alert("Spread images across pages", isPresented: $showBurstConfirm) {
-                Button("Proceed") { state.burstAcrossPages() }
-                Button("Cancel", role: .cancel) {}
-            } message: {
-                Text("This will distribute all images evenly across the \(state.pages.count) page\(state.pages.count == 1 ? "" : "s"), do you want to proceed?")
-            }
-            .alert("All images on one page", isPresented: $showAllOnOneConfirm) {
-                Button("Proceed") { state.mergeAllOntoOnePage() }
-                Button("Cancel", role: .cancel) {}
-            } message: {
-                Text("This will put all images on a single page and remove the other pages, do you want to proceed?")
             }
 
             PageGroupsView()
@@ -154,8 +126,6 @@ struct SidebarView: View {
                 LabeledSlider(label: "Spacing", value: $state.gap, range: 0...40, step: 1, format: "%.0f",
                               resetValue: 10, swatchColor: $state.backgroundColor,
                               compactValue: true)
-
-                BackgroundKindRow()
 
                 LabeledSlider(label: "Rounding", value: $state.cornerRadius, range: 0...100, step: 1, format: "%.0f",
                               resetValue: 20, reservesSwatchSlot: true,
@@ -206,15 +176,9 @@ struct SidebarView: View {
 
     // MARK: - Effects (brightness, contrast, fade, glow, …)
 
-    var filterSection: some View {
-        SidebarSection(title: "Filter") {
-            FilterControls()
-        }
-    }
-
-    var effectsSection: some View {
-        SidebarSection(title: "Edit") {
-            EffectsPanel()
+    var looksSection: some View {
+        SidebarSection(title: "Looks") {
+            LooksPanel()
         }
     }
 }

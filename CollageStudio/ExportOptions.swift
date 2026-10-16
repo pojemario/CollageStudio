@@ -100,22 +100,28 @@ struct ExportOptionsView: View {
                         }
                     }
                 }
-                Section("Size") {
-                    ForEach(ExportSettings.Size.allCases) { size in
-                        choice(title: size.rawValue, detail: detail(for: size), selected: settings.size == size) {
-                            settings.size = size
+                // Size and format as drop-down menus, so the sheet stays
+                // short; the chosen option's details show under each.
+                Section {
+                    Picker("Size", selection: $settings.size) {
+                        ForEach(ExportSettings.Size.allCases) { size in
+                            Text(size.rawValue).tag(size)
                         }
                     }
-                    if settings.size == .instagram, let hint = instagramHint {
-                        Label(hint, systemImage: "lightbulb")
-                            .font(.footnote)
-                            .foregroundColor(.secondary)
+                    .pickerStyle(.menu)
+                    Picker("Format", selection: $settings.format) {
+                        ForEach(ExportSettings.Format.allCases) { format in
+                            Text(format.rawValue).tag(format)
+                        }
                     }
-                }
-                Section("Format") {
-                    ForEach(ExportSettings.Format.allCases) { format in
-                        choice(title: format.rawValue, detail: format.detail, selected: settings.format == format) {
-                            settings.format = format
+                    .pickerStyle(.menu)
+                } footer: {
+                    VStack(alignment: .leading, spacing: 4) {
+                        Text("\(settings.size.rawValue): \(detail(for: settings.size))")
+                        Text("\(settings.format.rawValue): \(settings.format.detail)")
+                        if settings.size == .instagram, let hint = instagramHint {
+                            Label(hint, systemImage: "lightbulb")
+                                .padding(.top, 4)
                         }
                     }
                 }
@@ -152,26 +158,6 @@ struct ExportOptionsView: View {
         case .portrait916: return "9:16 fits Stories and Reels; feed posts show it cropped to 4:5."
         default: return "Instagram feed posts fit best at 4:5 or 1:1 (change it with the ratio button)."
         }
-    }
-
-    private func choice(title: String, detail: String, selected: Bool, action: @escaping () -> Void) -> some View {
-        Button(action: action) {
-            HStack {
-                VStack(alignment: .leading, spacing: 2) {
-                    Text(title).foregroundColor(.primary)
-                    Text(detail).font(.caption).foregroundColor(.secondary)
-                }
-                Spacer()
-                if selected {
-                    Image(systemName: "checkmark")
-                        .font(.system(size: 15, weight: .semibold))
-                        .foregroundColor(.accentColor)
-                }
-            }
-            .contentShape(Rectangle())
-        }
-        .buttonStyle(.plain)
-        .accessibilityAddTraits(selected ? [.isButton, .isSelected] : .isButton)
     }
 }
 

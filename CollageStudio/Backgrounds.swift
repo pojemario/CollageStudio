@@ -79,6 +79,8 @@ struct CollageBackground: View {
 }
 
 /// Layout tab row: what kind of background, plus the gradient's second color.
+/// Not shown for now (Fill was taken out of Layout); collages saved with a
+/// gradient or automatic background still draw it.
 struct BackgroundKindRow: View {
     @EnvironmentObject var state: CollageState
 

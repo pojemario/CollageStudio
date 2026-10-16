@@ -50,9 +50,10 @@ struct CollageApp: App {
                     importSharedImages()
                 }
                 .sheet(isPresented: $state.showExportOptions) {
+                    // Size and format are drop-downs, so it all fits at half height.
                     ExportOptionsView()
                         .environmentObject(state)
-                        .presentationDetents([.medium, .large])
+                        .presentationDetents([.medium])
                 }
                 .sheet(isPresented: $state.showPastePageLook) {
                     PastePageLookView(allOtherPages: state.pasteToAllOthers)

@@ -23,9 +23,9 @@ struct FloatingTabBar: View {
     /// Tab under the finger while scrubbing, for the haptic tick.
     @State private var hoverTab: Int?
 
-    static let tabs = ["Images", "Layout", "Canvas", "Frames", "Overlay", "Edit", "Filter"]
+    static let tabs = ["Images", "Layout", "Canvas", "Frames", "Overlay", "Looks"]
     static let icons = ["photo.on.rectangle.angled", "square.grid.2x2", "rectangle.inset.filled",
-                        "photo.artframe", "sparkles", "wand.and.stars", "camera.filters"]
+                        "photo.artframe", "sparkles", "camera.filters"]
     /// Vertical room the pill takes at the bottom of the screen (pill +
     /// its margins) — what the panel card and the canvas leave free.
     static let zoneHeight: CGFloat = 80
@@ -210,9 +210,7 @@ struct FloatingTabBar: View {
         case 2: return state.canvasMargin != 0 || state.canvasRotation != 0
         case 3: return state.canvasFrame != nil
         case 4: return !state.overlayLayers.isEmpty
-        case 5: return state.hasEffects(in: CollageEffect.allCases) || !state.hsl.isIdentity
-            || !state.calibration.isIdentity
-        case 6: return state.colorFilter != .none
+        case 5: return state.colorFilter != .none || state.hasEditChanges
         default: return false
         }
     }
@@ -246,10 +244,6 @@ struct FloatingTabBar: View {
 /// sheet that rises above the tab pill.
 struct BottomPanelView: View {
     @EnvironmentObject var state: CollageState
-    @State private var showOneOnOneConfirm = false
-    @State private var showBurstConfirm = false
-    @State private var showBurstAllConfirm = false
-    @State private var showAllOnOneConfirm = false
 
     /// Natural height of the panel content, and how much of it shows.
     @State private var contentHeight: CGFloat = 0
@@ -272,6 +266,8 @@ struct BottomPanelView: View {
     private var capKey: Int {
         if state.textEditTargetId != nil { return -1 }
         if state.protrusionTargetId != nil { return -2 }
+        // Looks: Filter and Edit each keep their own size.
+        if state.selectedPanelTab == 5 && state.looksPage == .edit { return 6 }
         return state.selectedPanelTab
     }
 
@@ -379,8 +375,7 @@ struct BottomPanelView: View {
                 case 2: borderTab
                 case 3: framesTab
                 case 4: overlayTab
-                case 5: effectsTab
-                default: FilterControls()
+                default: LooksPanel()
                 }
             }
         }
@@ -450,37 +445,14 @@ struct BottomPanelView: View {
                 ToolbarTile(sf: "rectangle.dashed.badge.record", title: "Empty Box") { state.addEmptyImage() }
 
                 SpreadMenuButton(
-                    onBurst: { showBurstConfirm = true },
-                    onOnePerPage: { showOneOnOneConfirm = true },
-                    onAllOnOne: { showAllOnOneConfirm = true },
-                    onBurstAll: { showBurstAllConfirm = true })
+                    // No confirmation: Undo puts the pages back.
+                    onBurst: { state.burstAcrossPages() },
+                    onOnePerPage: { state.distributeOneImagePerPage() },
+                    onAllOnOne: { state.mergeAllOntoOnePage() },
+                    onBurstAll: { state.burstBalanced() })
 
                 // Saved collages and "New Collage" (the open one is kept).
                 ToolbarTile(sf: "square.stack", title: "Collages", prominent: false) { state.goToCollages() }
-            }
-            .alert("Burst!", isPresented: $showBurstAllConfirm) {
-                Button("Proceed") { state.burstBalanced() }
-                Button("Cancel", role: .cancel) {}
-            } message: {
-                Text("This will spread all \(state.totalImageCount) images across \(state.burstPageCount) balanced page\(state.burstPageCount == 1 ? "" : "s"), do you want to proceed?")
-            }
-            .alert("One image per page", isPresented: $showOneOnOneConfirm) {
-                Button("Proceed") { state.distributeOneImagePerPage() }
-                Button("Cancel", role: .cancel) {}
-            } message: {
-                Text("This will add 1 image per 1 page, do you want to proceed?")
-            }
-            .alert("Spread images across pages", isPresented: $showBurstConfirm) {
-                Button("Proceed") { state.burstAcrossPages() }
-                Button("Cancel", role: .cancel) {}
-            } message: {
-                Text("This will distribute all images evenly across the \(state.pages.count) page\(state.pages.count == 1 ? "" : "s"), do you want to proceed?")
-            }
-            .alert("All images on one page", isPresented: $showAllOnOneConfirm) {
-                Button("Proceed") { state.mergeAllOntoOnePage() }
-                Button("Cancel", role: .cancel) {}
-            } message: {
-                Text("This will put all images on a single page and remove the other pages, do you want to proceed?")
             }
 
             // The page list at its full height: the panel can grow up to the
@@ -509,8 +481,6 @@ struct BottomPanelView: View {
                 LabeledSlider(label: "Spacing", value: $state.gap, range: 0...70, step: 1, format: "%.0f",
                               resetValue: 10, swatchColor: $state.backgroundColor,
                               compactValue: true)
-
-                BackgroundKindRow()
 
                 LabeledSlider(label: "Rounding", value: $state.cornerRadius, range: 0...100, step: 1, format: "%.0f",
                               resetValue: 20, reservesSwatchSlot: true,
@@ -565,11 +535,6 @@ struct BottomPanelView: View {
         OverlayPanel()
     }
 
-    // MARK: - Effects tab (brightness, contrast, fade, glow, …)
-
-    var effectsTab: some View {
-        EffectsPanel()
-    }
 }
 
 /// Sizes the panel's scroll view to its content's own height, up to `cap`,

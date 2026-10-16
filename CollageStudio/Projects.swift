@@ -679,6 +679,11 @@ extension CollageState {
         isBusy = false
         resetHistory()
         detectFocusPoints()
+        // Protruding photos need their subject found again (masks aren't
+        // saved) before the protrusion can be drawn.
+        for page in pages {
+            for img in page.images where img.protrusion != nil { requestSubjectMask(for: img) }
+        }
     }
 }
 
@@ -695,18 +700,47 @@ struct CollagesHome: View {
     @State private var renaming: ProjectSummary?
     @State private var newName = ""
     @State private var removing: ProjectSummary?
+    /// Select mode: tiles toggle a check instead of opening, for removing
+    /// several collages at once.
+    @State private var selecting = false
+    @State private var selected: Set<UUID> = []
+    @State private var confirmingBatch = false
 
     private let columns = [GridItem(.adaptive(minimum: 150), spacing: 14)]
 
     var body: some View {
         ScrollView {
-            LazyVGrid(columns: columns, spacing: 18) {
-                newTile
-                ForEach(store.summaries) { p in
-                    tile(p)
+            VStack(spacing: 12) {
+                if !store.summaries.isEmpty { header }
+                LazyVGrid(columns: columns, spacing: 18) {
+                    newTile
+                        .disabled(selecting)
+                        .opacity(selecting ? 0.35 : 1)
+                    ForEach(store.summaries) { p in
+                        tile(p)
+                    }
                 }
             }
             .padding(16)
+        }
+        .safeAreaInset(edge: .bottom) {
+            if selecting { deleteBar }
+        }
+        .animation(.easeInOut(duration: 0.2), value: selecting)
+        .onChange(of: store.summaries) { _, list in
+            selected.formIntersection(list.map(\.id))
+            if list.isEmpty { selecting = false }
+        }
+        .confirmationDialog(selected.count == 1 ? "Remove this collage?" : "Remove \(selected.count) collages?",
+                            isPresented: $confirmingBatch, titleVisibility: .visible) {
+            Button(selected.count == 1 ? "Remove" : "Remove \(selected.count)", role: .destructive) {
+                for id in selected { state.removeProject(id) }
+                selected = []
+                selecting = false
+            }
+            Button("Cancel", role: .cancel) {}
+        } message: {
+            Text("They can't be brought back.")
         }
         .alert("Rename", isPresented: Binding(get: { renaming != nil }, set: { if !$0 { renaming = nil } })) {
             TextField("Name", text: $newName)
@@ -727,6 +761,48 @@ struct CollagesHome: View {
         } message: {
             Text("It can't be brought back.")
         }
+    }
+
+    /// "Saved Collages" with Select / Done (and Select All while selecting).
+    private var header: some View {
+        HStack {
+            Text(selecting ? (selected.isEmpty ? "Select Collages" : "\(selected.count) Selected") : "Saved Collages")
+                .font(.headline)
+                .monospacedDigit()
+            Spacer()
+            if selecting {
+                let all = selected.count == store.summaries.count
+                Button(all ? "Deselect All" : "Select All") {
+                    selected = all ? [] : Set(store.summaries.map(\.id))
+                }
+                .padding(.trailing, 12)
+            }
+            Button(selecting ? "Done" : "Select") {
+                selecting.toggle()
+                selected = []
+            }
+            .fontWeight(.semibold)
+        }
+        .font(.subheadline)
+    }
+
+    /// While selecting: removes the checked collages (after a confirmation).
+    private var deleteBar: some View {
+        Button(role: .destructive) {
+            confirmingBatch = true
+        } label: {
+            Label(selected.isEmpty ? "Remove" : "Remove \(selected.count)", systemImage: "trash")
+                .font(.headline)
+                .foregroundColor(.white)
+                .frame(maxWidth: .infinity)
+                .frame(height: 50)
+                .background(Capsule().fill(Color.red.opacity(selected.isEmpty ? 0.35 : 0.9)))
+        }
+        .buttonStyle(.plain)
+        .disabled(selected.isEmpty)
+        .padding(.horizontal, 16)
+        .padding(.bottom, 8)
+        .transition(.move(edge: .bottom).combined(with: .opacity))
     }
 
     private var newTile: some View {
@@ -752,8 +828,13 @@ struct CollagesHome: View {
     }
 
     private func tile(_ p: ProjectSummary) -> some View {
-        Button {
-            state.openProject(p.id)
+        let isSelected = selected.contains(p.id)
+        return Button {
+            if selecting {
+                if isSelected { selected.remove(p.id) } else { selected.insert(p.id) }
+            } else {
+                state.openProject(p.id)
+            }
         } label: {
             VStack(spacing: 8) {
                 // A square tile; the thumbnail fills it.
@@ -764,6 +845,23 @@ struct CollagesHome: View {
                     .overlay(RoundedRectangle(cornerRadius: 14, style: .continuous)
                         .strokeBorder(Color.primary.opacity(0.1), lineWidth: 1))
                     .shadow(color: .black.opacity(0.12), radius: 6, y: 3)
+                    .overlay {
+                        if isSelected {
+                            RoundedRectangle(cornerRadius: 14, style: .continuous)
+                                .strokeBorder(Color.accentColor, lineWidth: 3)
+                        }
+                    }
+                    .overlay(alignment: .topTrailing) {
+                        if selecting {
+                            Image(systemName: isSelected ? "checkmark.circle.fill" : "circle")
+                                .font(.system(size: 24, weight: .medium))
+                                .symbolRenderingMode(.palette)
+                                .foregroundStyle(Color.white,
+                                                 isSelected ? Color.accentColor : Color.black.opacity(0.25))
+                                .shadow(color: .black.opacity(0.3), radius: 2, y: 1)
+                                .padding(8)
+                        }
+                    }
                 Text(p.name)
                     .font(.subheadline.weight(.semibold))
                     .foregroundColor(.primary)
@@ -776,11 +874,13 @@ struct CollagesHome: View {
         }
         .buttonStyle(.plain)
         .contextMenu {
+            Button { selecting = true; selected.insert(p.id) } label: { Label("Select", systemImage: "checkmark.circle") }
             Button { newName = p.name; renaming = p } label: { Label("Rename", systemImage: "pencil") }
             Button { store.duplicate(p.id) } label: { Label("Duplicate", systemImage: "plus.square.on.square") }
             Button(role: .destructive) { removing = p } label: { Label("Remove", systemImage: "trash") }
         }
         .accessibilityLabel("\(p.name), \(p.imageCount) photos")
+        .accessibilityAddTraits(isSelected ? .isSelected : [])
     }
 }
 
@@ -917,6 +1017,12 @@ extension CollageState {
                     self.order = order
                     self.rebuildLayout(resetGrows: true)
                 }
+            }
+        }
+        // `-openNewest`: opens the most recent saved collage.
+        if args.contains("-openNewest") {
+            DispatchQueue.main.asyncAfter(deadline: .now() + 1.5) {
+                if let p = self.projectStore.summaries.first { self.openProject(p.id) }
             }
         }
         if args.contains("-showProjects") {
