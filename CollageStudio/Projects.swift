@@ -451,6 +451,7 @@ extension CollageState {
     /// Saves shortly after edits settle.
     func scheduleAutosave() {
         guard !isRestoringProject else { return }
+        hasUnsavedChanges = true
         autosaveWork?.cancel()
         let work = DispatchWorkItem { [weak self] in self?.saveProjectNow() }
         autosaveWork = work
@@ -466,6 +467,10 @@ extension CollageState {
         // An empty new collage isn't worth a file; an emptied one is
         // written (empty) so it doesn't come back with its old pictures.
         guard hasAnyImages || onDisk else { return }
+        // Nothing changed since it was opened or saved: the file (and its
+        // thumbnail) are already right.
+        guard hasUnsavedChanges || !onDisk else { return }
+        hasUnsavedChanges = false
 
         var newImages: [(PlatformImage, String)] = []
         var used: Set<ObjectIdentifier> = []
@@ -565,6 +570,7 @@ extension CollageState {
         currentProjectId = UUID()
         clear()
         resetHistory()
+        hasUnsavedChanges = false
     }
 
     /// Removes a saved collage; removing the open one leaves a blank one.
@@ -681,6 +687,7 @@ extension CollageState {
         isLoading = false
         isBusy = false
         resetHistory()
+        hasUnsavedChanges = false
         detectFocusPoints()
         // Protruding photos need their subject found again (masks aren't
         // saved) before the protrusion can be drawn.

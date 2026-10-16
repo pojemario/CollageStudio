@@ -964,6 +964,10 @@ class CollageState: ObservableObject {
     /// The collage being edited; it's saved under this id.
     var currentProjectId = UUID()
     var autosaveWork: DispatchWorkItem?
+    /// Edited since it was opened or last saved. Leaving a collage that
+    /// wasn't touched doesn't save it again (that would re-render its
+    /// thumbnail before the photos are drawn, leaving it empty).
+    var hasUnsavedChanges = false
     /// Photo files already written for this collage, by picture.
     var savedImageFiles: [ObjectIdentifier: (image: PlatformImage, file: String)] = [:]
     /// True while a saved collage loads (at launch or from the list).
