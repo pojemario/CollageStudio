@@ -950,6 +950,8 @@ extension CollageState {
             // After -openNewest has opened its collage (which lowers the panel).
             DispatchQueue.main.asyncAfter(deadline: .now() + 3) {
                 self.panelTabShown = true
+                if let p = args.firstIndex(of: "-looksPage"), p + 1 < args.count,
+                   let page = LooksPanel.Page(rawValue: args[p + 1]) { self.looksPage = page }
                 if let p = args.firstIndex(of: "-layoutPage"), p + 1 < args.count,
                    let page = LayoutPanel.Page(rawValue: args[p + 1]) { self.layoutPage = page }
                 self.selectedPanelTab = tab

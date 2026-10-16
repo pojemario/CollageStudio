@@ -444,8 +444,8 @@ enum ContentGrader {
 /// with the per-color HSL controls on a second page.
 struct EffectsPanel: View {
     @EnvironmentObject var state: CollageState
-    /// The Edit tab's pages (in this order): Light, Color, HSL, camera
-    /// calibration, Detail, Effects. (Filters have their own tab.)
+    /// The Edit pages (in this order): Light, Color, HSL, camera
+    /// calibration, Detail — and Effects, shown on its own Looks page.
     enum Page: String, CaseIterable {
         case light = "Light", color = "Color", hsl = "HSL", cc = "CC"
         case detail = "Detail", effects = "Effects"
@@ -462,18 +462,24 @@ struct EffectsPanel: View {
     }
     @State private var page: Page = .light
     @State private var band: HSLBand = .red
+    /// Shows just this page, without the page chips (Looks → Effects).
+    /// Otherwise every page but Effects, which has its own Looks tab.
+    var only: Page? = nil
 
     var body: some View {
+        let page = only ?? self.page
         VStack(spacing: 10) {
             // All pages fit on one line: tight spacing, equal widths.
+            if only == nil {
             HStack(spacing: 4) {
-                ForEach(Page.allCases, id: \.self) { p in
+                ForEach(Page.allCases.filter { $0 != .effects }, id: \.self) { p in
                     PackChip(title: p.rawValue, isActive: page == p, marked: isChanged(p),
-                             horizontalPadding: 4, fillsWidth: true) { page = p }
+                             horizontalPadding: 4, fillsWidth: true) { self.page = p }
                         .doubleTapToReset { resetPage(p) }
                 }
             }
             .panelChrome(state)
+            }
 
             switch page {
             case .light, .color, .detail: basicControls(page.basicEffects ?? [])
@@ -627,7 +633,7 @@ struct EffectsPanel: View {
 /// tiles) and "Edit" (light, color, HSL, calibration, detail, effects).
 struct LooksPanel: View {
     @EnvironmentObject var state: CollageState
-    enum Page: String, CaseIterable { case filter = "Filter", edit = "Edit" }
+    enum Page: String, CaseIterable { case filter = "Filter", effects = "Effects", edit = "Edit" }
 
     var body: some View {
         VStack(spacing: 12) {
@@ -638,6 +644,7 @@ struct LooksPanel: View {
             .panelChrome(state)
             switch state.looksPage {
             case .filter: FilterControls()
+            case .effects: EffectsPanel(only: .effects)
             case .edit: EffectsPanel()
             }
         }

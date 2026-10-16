@@ -273,7 +273,9 @@ struct BottomPanelView: View {
         if state.selectedPanelTab == 1 && state.layoutPage != .layout {
             return state.layoutPage == .border ? 11 : 12
         }
-        if state.selectedPanelTab == 4 && state.looksPage == .edit { return 14 }
+        if state.selectedPanelTab == 4 && state.looksPage != .filter {
+            return state.looksPage == .edit ? 14 : 15
+        }
         return state.selectedPanelTab
     }
 
