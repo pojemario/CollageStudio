@@ -1056,7 +1056,16 @@ class CollageState: ObservableObject {
     /// Adds a text box rendered as an image (in the last used look) and
     /// opens it for editing.
     func addTextImage() {
-        let image = CollageImage.textImage(style: .lastUsed)
+        var style = TextBoxStyle.lastUsed
+        // The text must read against what's behind it: its own fill, or —
+        // when that's see-through — the page's background. Too close
+        // (white on white), it starts black or white instead.
+        let fill = style.backgroundColor.srgbComponents[3] > 0.5 ? style.backgroundColor : backgroundColor
+        if style.textColor.contrastRatio(with: fill) < 3 {
+            style.textColor = Color.black.contrastRatio(with: fill) >= Color.white.contrastRatio(with: fill)
+                ? .black : .white
+        }
+        let image = CollageImage.textImage(style: style)
         addPreparedImages([image])
         if currentPage.images.contains(where: { $0.id == image.id }) {
             focusTextOnOpen = true

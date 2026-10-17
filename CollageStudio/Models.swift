@@ -504,6 +504,19 @@ extension Color {
         #endif
     }
 
+    /// WCAG relative luminance (0 = black, 1 = white).
+    var relativeLuminance: Double {
+        let c = srgbComponents
+        func lin(_ v: Double) -> Double { v <= 0.04045 ? v / 12.92 : pow((v + 0.055) / 1.055, 2.4) }
+        return 0.2126 * lin(c[0]) + 0.7152 * lin(c[1]) + 0.0722 * lin(c[2])
+    }
+
+    /// WCAG contrast ratio against another color (1…21).
+    func contrastRatio(with other: Color) -> Double {
+        let a = relativeLuminance, b = other.relativeLuminance
+        return (max(a, b) + 0.05) / (min(a, b) + 0.05)
+    }
+
     init?(srgbComponents c: [Double]) {
         guard c.count == 4 else { return nil }
         self.init(.sRGB, red: c[0], green: c[1], blue: c[2], opacity: c[3])
