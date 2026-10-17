@@ -3,6 +3,7 @@ import SwiftUI
 @main
 struct CollageApp: App {
     @StateObject private var state = CollageState()
+    @StateObject private var updates = UpdateChecker()
     @Environment(\.scenePhase) private var scenePhase
 
     init() {
@@ -37,6 +38,7 @@ struct CollageApp: App {
                     // (e.g. from Photos) whenever the app becomes active.
                     if phase == .active {
                         Diagnostics.log("ACTIVE \(state.diagnosticsSummary)")
+                        updates.checkIfDue()
                         importSharedImages()
                     } else if phase == .background {
                         // Leaving the app: save right away, not after the delay.
@@ -59,6 +61,20 @@ struct CollageApp: App {
                     PastePageLookView(allOtherPages: state.pasteToAllOthers)
                         .environmentObject(state)
                         .presentationDetents([.medium, .large])
+                }
+                // A newer build is out: offer TestFlight (or the App Store).
+                .alert("New Version Available", isPresented: Binding(
+                    get: { updates.available != nil },
+                    set: { if !$0 { updates.dismiss() } })) {
+                    Button("Update") {
+                        if let url = updates.updateURL { UIApplication.shared.open(url) }
+                        updates.dismiss()
+                    }
+                    Button("Later", role: .cancel) { updates.later() }
+                } message: {
+                    let info = updates.available
+                    let title = [info?.version, info.map { "(\($0.build))" }].compactMap { $0 }.joined(separator: " ")
+                    Text(["das Kolaž \(title) is ready.", info?.notes].compactMap { $0 }.joined(separator: "\n\n"))
                 }
                 .alert("Add Shared Photos", isPresented: $state.showSharedImportChoice) {
                     Button("Start New Collage", role: .destructive) {
