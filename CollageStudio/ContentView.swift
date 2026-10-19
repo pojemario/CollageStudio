@@ -250,7 +250,7 @@ struct ContentView: View {
             if id != nil { PhotoMenuTip().invalidate(reason: .actionPerformed) }
         }
         // The selection belongs to the page it was made on.
-        .onChange(of: state.currentPageIndex) { _, _ in state.selectImage(nil) }
+        .onChange(of: state.currentPageIndex) { _, _ in state.selectImage(nil, reopenPanel: false) }
         // "Undo" / "Redo" after a shake.
         .overlay(alignment: .top) {
             HistoryToast().padding(.top, 70)

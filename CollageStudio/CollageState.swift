@@ -972,18 +972,29 @@ class CollageState: ObservableObject {
         selectImage(selectedImageId == id ? nil : id)
     }
 
-    /// Selects a box (nil: none). Its tools take the panel's place.
-    func selectImage(_ id: UUID?) {
+    /// Selects a box (nil: none). Its tools take the panel's place; letting
+    /// it go brings back the panel that was open before, unless `reopenPanel`
+    /// is false (a tap on the canvas, another page).
+    func selectImage(_ id: UUID?, reopenPanel: Bool = true) {
         lastBoxTap = Date()
         guard id != selectedImageId else { return }
         if id != nil {
+            if selectedImageId == nil { panelOpenBeforeSelection = isPanelOpen }
             endTextEditing()
             endProtrusionEditing()
             closeRatio()
             collapsePanel()
         }
         withAnimation(.spring(response: 0.3, dampingFraction: 0.85)) { selectedImageId = id }
+        if id == nil {
+            if reopenPanel && panelOpenBeforeSelection && panelTabShown {
+                withAnimation(.easeInOut(duration: 0.25)) { isPanelOpen = true }
+            }
+            panelOpenBeforeSelection = false
+        }
     }
+    /// Whether the panel was up when the first box was selected.
+    private var panelOpenBeforeSelection = false
 
     // MARK: - Shared import (Share Extension)
     @Published var pendingSharedImages: [PlatformImage] = []
@@ -1317,7 +1328,7 @@ class CollageState: ObservableObject {
         // it's a double tap): only a tap no box took lets the selection go.
         DispatchQueue.main.asyncAfter(deadline: .now() + 0.4) { [self] in
             guard Date().timeIntervalSince(lastBoxTap) > 0.6 else { return }
-            selectImage(nil)
+            selectImage(nil, reopenPanel: false)
         }
     }
 

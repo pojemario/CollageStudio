@@ -308,7 +308,7 @@ struct PhotoToolsRow: View {
             tool("Done", sf: "xmark") { state.selectImage(nil) }
             if image.canProtrude {
                 tool("Cutout", sf: "person.crop.square") {
-                    state.selectImage(nil)
+                    state.selectImage(nil, reopenPanel: false)
                     state.beginProtrusion(id: image.id)
                 }
             }
