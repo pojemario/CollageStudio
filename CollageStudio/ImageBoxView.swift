@@ -115,6 +115,24 @@ struct ImageBoxView: View {
                     }
                     .allowsHitTesting(false)
                 )
+                // The selected box, whose tools are in the tab bar.
+                .overlay(
+                    Group {
+                        if state.selectedImageId == imageId, !state.isRenderingOffscreen,
+                           state.draggingId == nil {
+                            // Accent ring with a white edge inside: reads on
+                            // any picture, warm ones included.
+                            let shape = RoundedRectangle(cornerRadius: state.cornerRadius * scale)
+                            ZStack {
+                                shape.strokeBorder(Color.accentColor, lineWidth: 4)
+                                shape.inset(by: 4).strokeBorder(Color.white.opacity(0.9), lineWidth: 1.5)
+                            }
+                            .transition(.opacity)
+                        }
+                    }
+                    .animation(.easeOut(duration: 0.15), value: state.selectedImageId)
+                    .allowsHitTesting(false)
+                )
                 // The text box being edited in the panel.
                 .overlay(
                     Group {
@@ -175,10 +193,8 @@ struct ImageBoxView: View {
                 // NOTE: no standalone minimumDistance-0 DragGesture may ever be
                 // attached here — one stranded in its "began" state blocks
                 // every other recognizer on the view, leaving the box deaf to
-                // all touches. The action-menu location comes from a drag
-                // SEQUENCED after the long press instead (see below), and the
-                // popover itself lives on the canvas container.
-                .simultaneousGesture(replaceLongPressGesture)
+                // all touches.
+                .simultaneousGesture(selectLongPressGesture)
                 // Double-tap resets this image; on a text box a single tap
                 // opens it for live editing instead (exclusive, so a double
                 // tap never also opens the editor). Simultaneous (not high
@@ -207,6 +223,9 @@ struct ImageBoxView: View {
                                 toggleSubject(at: tap.location, boxSize: boxSize)
                                 return
                             }
+                            // Otherwise it selects the box: the tab bar
+                            // becomes its tools (tap again to let go).
+                            state.toggleSelection(imageId)
                         })
                 )
                 // Drive the global "an image is being pinched" flag from the
@@ -247,7 +266,7 @@ struct ImageBoxView: View {
                 .accessibilityAddTraits(imgData?.isText == true ? .isButton : .isImage)
                 .accessibilityActions {
                     if imgData?.canProtrude == true {
-                        Button("Protrude") { state.beginProtrusion(id: imageId) }
+                        Button("Cutout") { state.beginProtrusion(id: imageId) }
                     }
                     Button("Replace") {
                         state.boxActionTargetId = imageId
@@ -414,8 +433,8 @@ struct ImageBoxView: View {
         let v = (-x * s + y * c) / placement.size.height + 0.5
         if let index = subject.instance(atU: u, v: v) {
             if img.protrusion == nil {
-                // Picking a subject also turns protrusion on, across all edges.
-                state.setProtrusion(.all, for: img.id)
+                // Picking a subject also turns Cutout on (top and right).
+                state.setProtrusion(.initial, for: img.id)
             }
             state.toggleProtrusionObject(index, for: img.id)
         }
@@ -487,48 +506,20 @@ struct ImageBoxView: View {
             }
     }
 
-    // MARK: - Box actions via long press
+    // MARK: - Select via long press
 
-    /// Holding still on a box for half a second (the iOS standard) opens the
-    /// Replace / Delete menu
-    /// for this image (a single popover on the canvas container). The menu
-    /// opens the moment the timer fires — the sequence transitions to .second
-    /// right then, while the finger is still down. The sequenced drag (which
-    /// only starts recognizing after the long press, so it can never sit
-    /// armed on every touch like a standalone min-0 drag) refines the anchor
-    /// to the exact finger point once it delivers an event; until then the
-    /// box's own frame anchors the popover.
-    var replaceLongPressGesture: some Gesture {
+    /// Holding still on a box for half a second selects it too (where the
+    /// action menu used to open), with a firmer tap of feedback.
+    var selectLongPressGesture: some Gesture {
         LongPressGesture(minimumDuration: 0.5, maximumDistance: 8)
-            .sequenced(before: DragGesture(minimumDistance: 0,
-                                           coordinateSpace: .named("collageCanvas")))
-            .onChanged { value in
-                if case .second(true, let drag) = value {
-                    showActionMenu(at: drag?.startLocation)
-                }
+            .onEnded { _ in
+                guard state.draggingId == nil, state.imageZoomingId == nil,
+                      !state.isCanvasZooming, state.selectedImageId != imageId else { return }
+                #if canImport(UIKit)
+                UIImpactFeedbackGenerator(style: .medium).impactOccurred()
+                #endif
+                state.selectImage(imageId)
             }
-            .onEnded { value in
-                if case .second(true, let drag) = value {
-                    showActionMenu(at: drag?.startLocation)
-                }
-            }
-    }
-
-    /// Opens the action menu popover anchored at a canvas-space point, or at
-    /// the box's tracked frame when the exact finger point isn't known yet.
-    private func showActionMenu(at point: CGPoint?) {
-        guard !state.showBoxActionMenu,
-              state.draggingId == nil,
-              state.imageZoomingId == nil,
-              !state.isCanvasZooming else { return }
-        #if canImport(UIKit)
-        UIImpactFeedbackGenerator(style: .medium).impactOccurred()
-        #endif
-        let boxCenter = state.imageFrame(for: imageId)
-            .map { CGPoint(x: $0.midX, y: $0.midY) } ?? .zero
-        state.boxActionPressPoint = point ?? boxCenter
-        state.boxActionTargetId = imageId
-        state.showBoxActionMenu = true
     }
 
     // MARK: - Pinch + rotate gesture
@@ -572,157 +563,6 @@ struct ImageBoxView: View {
 struct TrackedFrame: Equatable {
     let frame: CGRect
     let epoch: Int
-}
-
-// MARK: - Box action menu (long-press popover)
-
-/// Hosts the long-press action menu at the root of the app, above the canvas
-/// AND the bottom panel. The card is placed at the pressed point. It is drawn
-/// in SwiftUI rather than as a popover, so it gets the app's corner radius —
-/// and per-box popovers must not be used anyway: after swaps they left
-/// orphaned UIKit presentation views over the box that swallowed all its
-/// touches.
-struct BoxActionMenuLayer: View {
-    @EnvironmentObject var state: CollageState
-
-    var body: some View {
-        ZStack {
-            if state.showBoxActionMenu, let id = state.boxActionTargetId {
-                GeometryReader { geo in
-                    let frame = geo.frame(in: .global)
-                    let size = CGSize(width: BoxActionMenu.width,
-                                      height: BoxActionMenu.height(state: state, imageId: id))
-                    let press = CGPoint(
-                        x: state.boxActionCanvasOrigin.x + state.boxActionPressPoint.x - frame.minX,
-                        y: state.boxActionCanvasOrigin.y + state.boxActionPressPoint.y - frame.minY)
-                    // Below the finger if it fits, otherwise above it;
-                    // always fully on screen.
-                    let below = press.y + 12 + size.height <= geo.size.height - 8
-                    let y = below ? press.y + 12 + size.height / 2 : press.y - 12 - size.height / 2
-                    let x = min(max(press.x, size.width / 2 + 8), geo.size.width - size.width / 2 - 8)
-                    ZStack {
-                        // Tap anywhere else to dismiss.
-                        Color.black.opacity(0.001)
-                            .contentShape(Rectangle())
-                            .onTapGesture { dismiss() }
-                        BoxActionMenu(imageId: id)
-                            .position(x: x, y: min(max(y, size.height / 2 + 8),
-                                                   geo.size.height - size.height / 2 - 8))
-                    }
-                }
-                .transition(.opacity.combined(with: .scale(scale: 0.96)))
-            }
-        }
-        .animation(.easeOut(duration: 0.15), value: state.showBoxActionMenu)
-    }
-
-    /// Tapping outside clears the target too, unless the Replace picker
-    /// took over.
-    private func dismiss() {
-        state.showBoxActionMenu = false
-        if !state.showReplacePicker { state.boxActionTargetId = nil }
-    }
-}
-
-/// Replace / Move / Delete menu: a floating card placed at the pressed point
-/// on an image box (see CanvasContainerView).
-struct BoxActionMenu: View {
-    @EnvironmentObject var state: CollageState
-    let imageId: UUID
-
-    static let width: CGFloat = 230
-    private static let rowHeight: CGFloat = 44
-
-    private static func canProtrude(_ state: CollageState, _ imageId: UUID) -> Bool {
-        state.images.first { $0.id == imageId }?.canProtrude ?? false
-    }
-
-    private static func movablePages(_ state: CollageState, _ imageId: UUID) -> [Int] {
-        let source = state.pageIndex(containing: imageId)
-        return state.pages.indices.filter { pi in
-            pi != source && state.pages[pi].images.count < CollageState.maxImagesPerPage
-        }
-    }
-
-    /// Hugs the rows, but never taller than a comfortable menu. Static, so
-    /// the container can place the card before it's on screen.
-    static func height(state: CollageState, imageId: UUID) -> CGFloat {
-        let rows = 2 + movablePages(state, imageId).count
-            + (state.pages.count < CollageState.maxPages ? 1 : 0)
-            + (canProtrude(state, imageId) ? 1 : 0)
-        return min(CGFloat(rows) * rowHeight + 8, 320)
-    }
-
-    var body: some View {
-        let movablePages = Self.movablePages(state, imageId)
-        let height = Self.height(state: state, imageId: imageId)
-        let shape = RoundedRectangle(cornerRadius: ButtonStyleGuide.cornerRadius, style: .continuous)
-
-        ScrollView {
-            VStack(alignment: .leading, spacing: 0) {
-                if Self.canProtrude(state, imageId) {
-                    menuButton("PROTRUDE", sf: "person.crop.square") {
-                        state.beginProtrusion(id: imageId)
-                        dismissMenu()
-                    }
-                    Divider()
-                }
-                menuButton("Replace", sf: "photo.on.rectangle.angled") {
-                    state.showReplacePicker = true
-                    state.showBoxActionMenu = false
-                }
-                ForEach(movablePages, id: \.self) { pi in
-                    Divider()
-                    menuButton("Move to Page \(pi + 1)", sf: "arrow.right.square") {
-                        state.moveImage(id: imageId, toPage: pi)
-                        dismissMenu()
-                    }
-                }
-                if state.pages.count < CollageState.maxPages {
-                    Divider()
-                    menuButton("Move to New Page", sf: "plus.square.on.square") {
-                        state.moveImageToNewPage(id: imageId)
-                        dismissMenu()
-                    }
-                }
-                Divider()
-                menuButton("Remove", sf: "trash", destructive: true) {
-                    state.removeImage(id: imageId)
-                    dismissMenu()
-                }
-            }
-            .padding(.vertical, 4)
-        }
-        .scrollBounceBehavior(.basedOnSize)
-        .frame(width: Self.width, height: height)
-        .background(.regularMaterial, in: shape)
-        .overlay(shape.strokeBorder(ColorManager.glassStroke, lineWidth: 0.8))
-        .clipShape(shape)
-        .shadow(color: .black.opacity(0.22), radius: 18, y: 8)
-    }
-
-    private func dismissMenu() {
-        state.boxActionTargetId = nil
-        state.showBoxActionMenu = false
-    }
-
-    private func menuButton(_ title: String, sf: String, destructive: Bool = false,
-                            action: @escaping () -> Void) -> some View {
-        Button(action: action) {
-            HStack(spacing: 12) {
-                Image(systemName: sf)
-                    .frame(width: 22)
-                Text(title)
-                Spacer(minLength: 0)
-            }
-            .font(.subheadline)
-            .foregroundColor(destructive ? .red : .primary)
-            .padding(.horizontal, 14)
-            .frame(height: 44)
-            .contentShape(Rectangle())
-        }
-        .buttonStyle(.plain)
-    }
 }
 
 // MARK: - Image content (Equatable for performance)
@@ -1481,13 +1321,13 @@ struct ProtrusionPanel: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 10) {
             HStack {
-                Label("Protrude", systemImage: "person.crop.square")
+                Label("Cutout", systemImage: "person.crop.square")
                     .font(.headline)
                 Spacer()
                 if let img {
-                    Toggle("Protrude", isOn: Binding(
+                    Toggle("Cutout", isOn: Binding(
                         get: { img.protrusion != nil },
-                        set: { on in state.setProtrusion(on ? .all : nil, for: img.id) }))
+                        set: { on in state.setProtrusion(on ? .initial : nil, for: img.id) }))
                         .labelsHidden()
                         .tint(.accentColor)
                         .disabled(state.subjectMask(for: img)?.mask == nil)
@@ -1535,9 +1375,6 @@ struct ProtrusionPanel: View {
                 }
             }
             HStack(spacing: 8) {
-                PackChip(title: "All", isActive: edges == .all) {
-                    state.setProtrusion(.all, for: img.id)
-                }
                 ForEach(ProtrusionEdges.ordered, id: \.1) { edge, title in
                     PackChip(title: title, isActive: edges.contains(edge)) {
                         var next = edges

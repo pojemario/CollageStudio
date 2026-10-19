@@ -951,15 +951,39 @@ class CollageState: ObservableObject {
         }
     }
 
-    // MARK: - Box actions (long press: replace / delete)
+    // MARK: - Selected photo (tap: the tab bar becomes its tools)
+
+    /// The box tapped (or held) last; its tools replace the tabs.
+    @Published var selectedImageId: UUID?
+    /// The box whose picture the Replace picker swaps.
     @Published var boxActionTargetId: UUID? = nil
-    @Published var showBoxActionMenu: Bool = false
     @Published var showReplacePicker: Bool = false
-    /// Canvas-space ("collageCanvas") point of the long press, anchoring the
-    /// action menu popover.
-    @Published var boxActionPressPoint: CGPoint = .zero
-    /// Global position of the canvas-space origin (see CanvasContainerView).
-    @Published var boxActionCanvasOrigin: CGPoint = .zero
+    /// When a box last took a tap, so the canvas's own tap handler (which
+    /// sees the same tap) leaves the selection alone.
+    private var lastBoxTap: Date = .distantPast
+
+    /// The selected box, while it's on the page showing.
+    var selectedImage: CollageImage? {
+        selectedImageId.flatMap { id in images.first { $0.id == id } }
+    }
+
+    /// A tap on a box selects it, or lets it go if it was selected.
+    func toggleSelection(_ id: UUID) {
+        selectImage(selectedImageId == id ? nil : id)
+    }
+
+    /// Selects a box (nil: none). Its tools take the panel's place.
+    func selectImage(_ id: UUID?) {
+        lastBoxTap = Date()
+        guard id != selectedImageId else { return }
+        if id != nil {
+            endTextEditing()
+            endProtrusionEditing()
+            closeRatio()
+            collapsePanel()
+        }
+        withAnimation(.spring(response: 0.3, dampingFraction: 0.85)) { selectedImageId = id }
+    }
 
     // MARK: - Shared import (Share Extension)
     @Published var pendingSharedImages: [PlatformImage] = []
@@ -1120,13 +1144,12 @@ class CollageState: ObservableObject {
         }
     }
 
-    /// Opening Protrude turns it on (once the subject is known) for a photo
-    /// that doesn't protrude yet, across all edges, so every way it can
-    /// break out shows at first.
+    /// Opening Cutout turns it on (once the subject is known) for a photo
+    /// that doesn't break out yet, over the top and right edges.
     private func turnOnProtrusionIfNew(_ id: UUID) {
         guard protrusionTargetId == id, let img = images.first(where: { $0.id == id }),
               img.protrusion == nil, subjectMask(for: img)?.mask != nil else { return }
-        setProtrusion(.all, for: id)
+        setProtrusion(.initial, for: id)
     }
 
     func endProtrusionEditing() {
@@ -1289,6 +1312,12 @@ class CollageState: ObservableObject {
             endTextEditing()
             collapsePanel()
             closeRatio()
+        }
+        // A box's own tap comes a moment later (it first waits to see if
+        // it's a double tap): only a tap no box took lets the selection go.
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.4) { [self] in
+            guard Date().timeIntervalSince(lastBoxTap) > 0.6 else { return }
+            selectImage(nil)
         }
     }
 
@@ -1800,13 +1829,14 @@ class CollageState: ObservableObject {
     }
 
     /// Empties the canvas for a new collage, which starts from the default
-    /// settings (nothing carries over from the last collage).
+    /// settings (nothing carries over from the last collage) — except the
+    /// ratio, which is the one last picked.
     func clear() {
         pages = [CollagePage()]
         currentPageIndex = 0
         selectedOverlayId = nil
-        ratio = .square
-        canvasSize = CanvasRatio.square.canvasSize(base: 1024)
+        selectedImageId = nil
+        useLastRatio()
         imageFrames.removeAll()
         clearSwapDrag()
     }
@@ -1814,7 +1844,7 @@ class CollageState: ObservableObject {
     /// Whether any setting of the open collage differs from its default:
     /// ratio, or any page's Layout, canvas, frame, overlays, edits, filter.
     var hasSettingsChanges: Bool {
-        ratio != .square || pages.contains { $0.style != PageStyle() || $0.look != PageLook() }
+        ratio != Self.defaultRatio || pages.contains { $0.style != PageStyle() || $0.look != PageLook() }
     }
 
     /// Puts every setting back to its default — on every page, or only the
@@ -1827,8 +1857,8 @@ class CollageState: ObservableObject {
         }
         selectedOverlayId = nil
         overlayPreview = nil
-        if !currentPageOnly && ratio != .square {
-            setRatio(.square)
+        if !currentPageOnly && ratio != Self.defaultRatio {
+            setRatio(Self.defaultRatio)
         } else {
             rebuildAllPages()
         }
@@ -1852,12 +1882,15 @@ class CollageState: ObservableObject {
         saveRatio()
     }
 
+    /// The Custom size fields as a canvas, in pixels.
+    private var customCanvasSize: CGSize {
+        let w = customUnit.toPx(CGFloat(Double(customWidth) ?? 1200))
+        let h = customUnit.toPx(CGFloat(Double(customHeight) ?? 900))
+        return CGSize(width: max(100, min(6000, w)), height: max(100, min(6000, h)))
+    }
+
     func applyCustomSize() {
-        let wRaw = CGFloat(Double(customWidth) ?? 1200)
-        let hRaw = CGFloat(Double(customHeight) ?? 900)
-        let w = customUnit.toPx(wRaw)
-        let h = customUnit.toPx(hRaw)
-        canvasSize = CGSize(width: max(100, min(6000, w)), height: max(100, min(6000, h)))
+        canvasSize = customCanvasSize
         ratio = .custom
         resetAllImagePositions()
         rebuildAllPages()
@@ -1871,6 +1904,16 @@ class CollageState: ObservableObject {
         static let customHeight = "customHeight"
         static let customUnit = "customUnit"
         static let shuffle = "shuffleOptions"
+        static let lastRatio = "lastRatio"
+    }
+
+    /// The ratio a collage starts with until another one is picked.
+    static let defaultRatio: CanvasRatio = .portrait916
+
+    /// Gives the (new) collage the ratio last picked, 9:16 at first.
+    private func useLastRatio() {
+        ratio = CanvasRatio(rawValue: UserDefaults.standard.string(forKey: DefaultsKey.lastRatio) ?? "") ?? Self.defaultRatio
+        canvasSize = ratio == .custom ? customCanvasSize : ratio.canvasSize(base: 1024)
     }
 
     init() {
@@ -1902,6 +1945,7 @@ class CollageState: ObservableObject {
         }
         if let w = d.string(forKey: DefaultsKey.customWidth) { customWidth = w }
         if let h = d.string(forKey: DefaultsKey.customHeight) { customHeight = h }
+        useLastRatio()
     }
 
     private func saveRatio() {
@@ -1909,6 +1953,7 @@ class CollageState: ObservableObject {
         d.set(customWidth, forKey: DefaultsKey.customWidth)
         d.set(customHeight, forKey: DefaultsKey.customHeight)
         d.set(customUnit.rawValue, forKey: DefaultsKey.customUnit)
+        d.set(ratio.rawValue, forKey: DefaultsKey.lastRatio)
     }
 
     private func saveShuffleOptions() {

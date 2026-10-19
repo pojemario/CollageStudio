@@ -49,8 +49,8 @@ struct TabBarTip: Tip {
 }
 
 struct PhotoMenuTip: Tip {
-    var title: Text { Text("Touch and hold a photo") }
-    var message: Text? { Text("For Protrude, Replace, Move and Remove. Hold and drag it onto another photo to swap them.") }
+    var title: Text { Text("Tap a photo") }
+    var message: Text? { Text("Its tools take over the tab bar: Cutout, Replace, Move, Reset and Remove. Drag it onto another photo to swap them.") }
     var image: Image? { Image(systemName: "hand.tap") }
     var rules: [Rule] {
         #Rule(CollageTips.$step) { $0 == 1 }

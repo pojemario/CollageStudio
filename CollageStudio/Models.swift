@@ -380,6 +380,8 @@ struct ProtrusionEdges: OptionSet, Hashable {
     static let left = ProtrusionEdges(rawValue: 4)
     static let right = ProtrusionEdges(rawValue: 8)
     static let all: ProtrusionEdges = [.top, .bottom, .left, .right]
+    /// What a photo breaks out of when Cutout is turned on.
+    static let initial: ProtrusionEdges = [.top, .right]
 
     static let ordered: [(ProtrusionEdges, String)] = [(.top, "Top"), (.bottom, "Bottom"),
                                                         (.left, "Left"), (.right, "Right")]

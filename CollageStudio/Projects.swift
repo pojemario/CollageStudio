@@ -592,6 +592,7 @@ extension CollageState {
         endTextEditing()
         endProtrusionEditing()
         clearSwapDrag()
+        selectedImageId = nil
         overlayPreview = nil
         savedImageFiles = [:]
     }
@@ -1081,7 +1082,11 @@ extension CollageState {
                 if let p = self.projectStore.summaries.first { self.openProject(p.id) }
             }
         }
-        if args.contains("-showProjects") {
+        // `-selectPhoto`: selects the first photo (its tools in the tab bar).
+        if args.contains("-selectPhoto") {
+            DispatchQueue.main.asyncAfter(deadline: .now() + 2) { self.selectImage(self.images.first?.id) }
+        }
+                if args.contains("-showProjects") {
             DispatchQueue.main.asyncAfter(deadline: .now() + 2.5) { self.goToCollages() }
         }
         guard let i = args.firstIndex(of: "-demoSeed"), !hasAnyImages else { return }

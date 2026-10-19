@@ -51,21 +51,38 @@ struct FloatingTabBar: View {
     /// the pill always shows which tools are one tap away.
     private var activeTab: Int { state.selectedPanelTab }
     private var scrubbing: Bool { scrubX != nil }
+    /// A photo is selected (and no editor has the panel).
+    private var photoTools: Bool {
+        state.selectedImage != nil && state.textEditTargetId == nil && state.protrusionTargetId == nil
+    }
     private var tabWidth: CGFloat { rowWidth / CGFloat(Self.tabs.count) }
 
     var body: some View {
-        HStack(spacing: 0) {
-            ForEach(Self.tabs.indices, id: \.self) { i in
-                tabLabel(i)
+        ZStack {
+            HStack(spacing: 0) {
+                ForEach(Self.tabs.indices, id: \.self) { i in
+                    tabLabel(i)
+                }
+            }
+            .background(alignment: .leading) { lens }
+            .onGeometryChange(for: CGFloat.self) { $0.size.width } action: { rowWidth = $0 }
+            .coordinateSpace(.named(Self.rowSpace))
+            .contentShape(Rectangle())
+            .gesture(scrubGesture)
+            // A selected photo's tools stand in for the tabs.
+            .opacity(photoTools ? 0 : 1)
+            .offset(y: photoTools ? 12 : 0)
+            .allowsHitTesting(!photoTools)
+            .accessibilityHidden(photoTools)
+
+            if let image = state.selectedImage, photoTools {
+                PhotoToolsRow(image: image)
+                    .transition(.offset(y: 12).combined(with: .opacity))
             }
         }
-        .background(alignment: .leading) { lens }
-        .onGeometryChange(for: CGFloat.self) { $0.size.width } action: { rowWidth = $0 }
-        .coordinateSpace(.named(Self.rowSpace))
+        .animation(.spring(response: 0.3, dampingFraction: 0.85), value: photoTools)
         .padding(.vertical, 5)
         .padding(.horizontal, 10)
-        .contentShape(Rectangle())
-        .gesture(scrubGesture)
         .background {
             if !merged { pillGlass }
         }
@@ -257,6 +274,122 @@ struct FloatingTabBar: View {
             state.selectedPanelTab = i
             withAnimation(.easeInOut(duration: 0.25)) { state.isPanelOpen = true }
         }
+    }
+}
+
+/// The selected photo's tools, in the tab bar's place: Done, Cutout,
+/// Replace, Move, Reset, Remove. Move swaps the row for the pages it can
+/// go to.
+struct PhotoToolsRow: View {
+    @EnvironmentObject var state: CollageState
+    let image: CollageImage
+    @State private var moving = false
+
+    private static let height: CGFloat = 50
+
+    private var movablePages: [Int] {
+        let source = state.pageIndex(containing: image.id)
+        return state.pages.indices.filter { pi in
+            pi != source && state.pages[pi].images.count < CollageState.maxImagesPerPage
+        }
+    }
+    private var canMove: Bool { !movablePages.isEmpty || state.pages.count < CollageState.maxPages }
+
+    var body: some View {
+        Group {
+            if moving { pages } else { tools }
+        }
+        .animation(.spring(response: 0.3, dampingFraction: 0.85), value: moving)
+        .onChange(of: image.id) { _, _ in moving = false }
+    }
+
+    private var tools: some View {
+        HStack(spacing: 0) {
+            tool("Done", sf: "xmark") { state.selectImage(nil) }
+            if image.canProtrude {
+                tool("Cutout", sf: "person.crop.square") {
+                    state.selectImage(nil)
+                    state.beginProtrusion(id: image.id)
+                }
+            }
+            if !image.isText {
+                tool("Replace", sf: "photo.on.rectangle.angled") {
+                    state.boxActionTargetId = image.id
+                    state.showReplacePicker = true
+                }
+            }
+            if canMove {
+                tool("Move", sf: "arrow.up.right.square") { moving = true }
+            }
+            if !image.isText && !image.isPlaceholder {
+                tool("Reset", sf: "arrow.counterclockwise") {
+                    withAnimation(.easeInOut(duration: 0.2)) { state.resetTransform(id: image.id) }
+                }
+            }
+            tool("Remove", sf: "trash", tint: .red) {
+                state.selectImage(nil)
+                state.removeImage(id: image.id)
+            }
+        }
+        .transition(.opacity)
+    }
+
+    /// Where the photo can go: each page with room, or a new one.
+    private var pages: some View {
+        HStack(spacing: 0) {
+            tool("Back", sf: "chevron.left") { moving = false }
+                .frame(width: 58)
+            ScrollView(.horizontal) {
+                HStack(spacing: 0) {
+                    ForEach(movablePages, id: \.self) { pi in
+                        tool("Page \(pi + 1)", sf: pi < 50 ? "\(pi + 1).square" : "square") {
+                            moveTo { state.moveImage(id: image.id, toPage: pi) }
+                        }
+                        .frame(width: 62)
+                    }
+                    if state.pages.count < CollageState.maxPages {
+                        tool("New Page", sf: "plus.square.on.square") {
+                            moveTo { state.moveImageToNewPage(id: image.id) }
+                        }
+                        .frame(width: 70)
+                    }
+                }
+            }
+            .scrollIndicators(.hidden)
+            .scrollBounceBehavior(.basedOnSize)
+        }
+        .transition(.opacity)
+    }
+
+    private func moveTo(_ move: () -> Void) {
+        moving = false
+        state.selectImage(nil)
+        move()
+    }
+
+    private func tool(_ title: String, sf: String, tint: Color = .primary,
+                      action: @escaping () -> Void) -> some View {
+        Button {
+            #if canImport(UIKit)
+            UIImpactFeedbackGenerator(style: .light).impactOccurred()
+            #endif
+            action()
+        } label: {
+            VStack(spacing: 3) {
+                Image(systemName: sf)
+                    .font(.system(size: 19))
+                    .frame(height: 24)
+                Text(title)
+                    .font(.system(size: 9.5, weight: .semibold))
+                    .lineLimit(1)
+                    .minimumScaleFactor(0.8)
+            }
+            .foregroundStyle(tint == .primary ? Color.primary.opacity(0.8) : tint)
+            .frame(maxWidth: .infinity)
+            .frame(height: Self.height)
+            .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
     }
 }
 

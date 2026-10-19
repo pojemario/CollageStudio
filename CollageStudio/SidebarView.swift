@@ -17,7 +17,7 @@ struct SidebarView: View {
                     }
                 }
                 if let protrudeId = state.protrusionTargetId {
-                    SidebarSection(title: "Protrude") {
+                    SidebarSection(title: "Cutout") {
                         ProtrusionPanel(imageId: protrudeId)
                     }
                 }

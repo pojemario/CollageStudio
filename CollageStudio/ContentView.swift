@@ -241,16 +241,16 @@ struct ContentView: View {
             }
             #endif
         }
-        // Topmost: the long-press image menu floats above every panel.
-        .overlay { BoxActionMenuLayer() }
         // Redo, dropped down below the toolbar's Undo button.
         .overlay { RedoBubbleLayer() }
         // First-run tips (see Tips.swift).
         .task { await CollageTips.follow() }
         .onChange(of: state.hasAnyImages, initial: true) { _, has in CollageTips.hasImages = has }
-        .onChange(of: state.showBoxActionMenu) { _, open in
-            if open { PhotoMenuTip().invalidate(reason: .actionPerformed) }
+        .onChange(of: state.selectedImageId) { _, id in
+            if id != nil { PhotoMenuTip().invalidate(reason: .actionPerformed) }
         }
+        // The selection belongs to the page it was made on.
+        .onChange(of: state.currentPageIndex) { _, _ in state.selectImage(nil) }
         // "Undo" / "Redo" after a shake.
         .overlay(alignment: .top) {
             HistoryToast().padding(.top, 70)
@@ -274,6 +274,16 @@ struct ContentView: View {
                 PageTabBar()
                 CanvasContainerView()
                     .frame(maxWidth: .infinity, maxHeight: .infinity)
+                // The selected photo's tools (on iPhone they stand in for the tabs).
+                if let image = state.selectedImage {
+                    PhotoToolsRow(image: image)
+                        .frame(maxWidth: 420)
+                        .padding(.horizontal, 10)
+                        .padding(.vertical, 5)
+                        .background(.ultraThinMaterial, in: RoundedRectangle(cornerRadius: FloatingTabBar.cornerRadius, style: .continuous))
+                        .padding(.bottom, 12)
+                        .transition(.move(edge: .bottom).combined(with: .opacity))
+                }
             }
             Divider()
             SidebarView()

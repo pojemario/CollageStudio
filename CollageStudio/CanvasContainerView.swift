@@ -82,7 +82,7 @@ struct CanvasContainerView: View {
                         .shadow(color: state.images.isEmpty ? .clear : .black.opacity(0.25), radius: 20, x: 0, y: 8)
                         .coordinateSpace(name: "collageCanvas")
                         // A small anchor near the top of the collage for the
-                        // touch-and-hold tip.
+                        // tap-a-photo tip.
                         .overlay(alignment: .top) {
                             if state.hasAnyImages {
                                 Color.clear.frame(width: 40, height: 1)
@@ -197,15 +197,6 @@ struct CanvasContainerView: View {
             .onChange(of: photoItems) { _, newItems in
                 loadPhotos(newItems)
             }
-            // Where canvas space sits on screen, for the long-press action
-            // menu — drawn at the app's root (BoxActionMenuLayer) so it floats
-            // above the bottom panel too. The grid sits top-centered in the
-            // content area.
-            .onChange(of: CGPoint(x: geo.frame(in: .global).minX + (contentW - displayW) / 2,
-                                  y: geo.frame(in: .global).minY + padding),
-                      initial: true) { _, origin in
-                state.boxActionCanvasOrigin = origin
-            }
             .onChange(of: geo.frame(in: .global), initial: true) { _, f in state.canvasVisibleRect = f }
             // Single-image picker for the "Replace" action
             .photosPicker(isPresented: $state.showReplacePicker,
@@ -223,7 +214,9 @@ struct CanvasContainerView: View {
         guard !items.isEmpty else { return }
         state.isBusy = true
         state.isLoading = true
+        Diagnostics.log("adding \(items.count) photos")
         Task {
+            let start = Date()
             var loaded: [PlatformImage] = []
             for item in items {
                 if let data = try? await item.loadTransferable(type: Data.self),
@@ -231,6 +224,7 @@ struct CanvasContainerView: View {
                     loaded.append(img)
                 }
             }
+            Diagnostics.log(String(format: "read %d of %d photos in %.1fs", loaded.count, items.count, Date().timeIntervalSince(start)))
             // Generate proxies/thumbnails off the main thread
             let images = loaded
             let prepared = await Task.detached(priority: .userInitiated) {
@@ -238,8 +232,10 @@ struct CanvasContainerView: View {
             }.value
             await MainActor.run {
                 let isNew = !state.hasAnyImages
+                Diagnostics.log(String(format: "prepared photos in %.1fs", Date().timeIntervalSince(start)))
                 state.addPreparedImages(prepared)
                 if isNew && state.hasAnyImages { state.openImagesPanel() }
+                Diagnostics.log("added photos · \(state.diagnosticsSummary)")
                 photoItems = []
                 state.isBusy = false
                 state.isLoading = false
