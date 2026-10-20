@@ -333,6 +333,10 @@ struct CollageImage: Identifiable, Equatable {
     /// The user moved or zoomed the photo themselves; until then the crop
     /// follows `focus`.
     var framedByUser = false
+    /// This photo's own Edit settings (photo toolbar → Edit). Applied when
+    /// drawn, before the page's edits and filter; the picture itself is
+    /// never changed.
+    var edit = PhotoEdit()
 
     static func == (lhs: CollageImage, rhs: CollageImage) -> Bool {
         // Compare the image reference too, so views refresh when an image
@@ -782,6 +786,32 @@ enum CollageEffect: String, CaseIterable, Identifiable {
     var id: String { rawValue }
     var title: String { rawValue }
 
+    /// SF Symbol shown beside the slider (Edit, Effects).
+    var icon: String {
+        switch self {
+        case .exposure: return "sun.max"
+        case .contrast: return "circle.lefthalf.filled"
+        case .highlights: return "sun.max.circle"
+        case .shadows: return "moon"
+        // Drawn as filled circles (see LabeledSlider): white and black.
+        case .whites: return "whites.disc"
+        case .blacks: return "blacks.disc"
+        case .temperature: return "thermometer.medium"
+        case .tint: return "drop.halffull"
+        case .vibrance: return "camera.filters"
+        case .saturation: return "drop"
+        case .texture: return "square.grid.3x3"
+        case .clarity: return "scope"
+        case .dehaze: return "sun.haze"
+        case .sharpness: return "triangle"
+        case .fade: return "circle.bottomhalf.filled"
+        case .halation: return "flame"
+        case .glow: return "light.max"
+        case .vignette: return "camera.metering.center.weighted"
+        case .grain: return "aqi.medium"
+        }
+    }
+
     /// Basic corrections, on the Edit page, in its three sections.
     static let light: [CollageEffect] = [.exposure, .contrast, .highlights, .shadows, .whites, .blacks]
     static let color: [CollageEffect] = [.temperature, .tint, .vibrance, .saturation]
@@ -822,6 +852,8 @@ enum CollageEffect: String, CaseIterable, Identifiable {
 /// modifiers: HSL plus clarity and sharpness. Applied to the photos only —
 /// never to overlays or the frame.
 struct ContentGrade: Hashable {
+    /// One photo's own edits, applied first (nil: none).
+    var photo: PhotoGrade? = nil
     var calibration = CameraCalibration()
     var tone = BasicTone()
     var filter: ColorFilter = .none
@@ -836,10 +868,85 @@ struct ContentGrade: Hashable {
 
     var hasFilter: Bool { filter != .none && filterStrength > 0 }
     /// Whether the per-pixel color part (filter + HSL) does anything.
-    var hasColorChange: Bool { !calibration.isIdentity || !tone.isColorIdentity || hasFilter || !hsl.isIdentity }
+    var hasColorChange: Bool {
+        photo != nil || !calibration.isIdentity || !tone.isColorIdentity || hasFilter || !hsl.isIdentity
+    }
     /// Whether the spatial (neighbourhood) part does anything.
     var hasDetailChange: Bool { clarity != 0 || sharpness > 0 || tone.texture != 0 || tone.dehaze > 0 }
     var isIdentity: Bool { !hasColorChange && !hasDetailChange }
+}
+
+/// One photo's Edit settings: the Edit tab's sliders, HSL and calibration,
+/// for just this picture (see CollageImage.edit).
+struct PhotoEdit: Hashable {
+    var effects: [CollageEffect: Double] = [:]
+    var hsl = HSLAdjustments()
+    var calibration = CameraCalibration()
+
+    var isIdentity: Bool { effects.values.allSatisfy { $0 == 0 } && hsl.isIdentity && calibration.isIdentity }
+
+    /// A slider as −1…1 (as the page's are).
+    func amount(_ e: CollageEffect) -> Double {
+        min(max((effects[e] ?? 0) / e.span, e.range.lowerBound / e.span), e.range.upperBound / e.span)
+    }
+
+    /// The per-pixel part, for the color cube.
+    var grade: PhotoGrade {
+        PhotoGrade(tone: BasicTone(exposure: amount(.exposure), highlights: amount(.highlights),
+                                   shadows: amount(.shadows), whites: amount(.whites), blacks: amount(.blacks),
+                                   vibrance: amount(.vibrance), saturation: amount(.saturation)),
+                   contrast: amount(.contrast), temperature: amount(.temperature), tint: amount(.tint),
+                   hsl: hsl, calibration: calibration,
+                   calibrationMatrix: calibration.isIdentity ? nil : calibration.matrix)
+    }
+}
+
+/// A photo's own color edits, per pixel: calibration, the Basic tone, then
+/// contrast and the temperature / tint washes (done here in the cube, as
+/// the page does them over the whole collage), then HSL.
+struct PhotoGrade: Hashable {
+    var tone: BasicTone
+    var contrast: Double
+    var temperature: Double
+    var tint: Double
+    var hsl: HSLAdjustments
+    var calibration: CameraCalibration
+    /// Worked out once, not for each of the cube's 32,768 colors.
+    var calibrationMatrix: [Double]?
+
+    func apply(_ r: Double, _ g: Double, _ b: Double) -> (r: Double, g: Double, b: Double) {
+        var c = (r: r, g: g, b: b)
+        if let m = calibrationMatrix { c = calibration.apply(c.r, c.g, c.b, matrix: m) }
+        if !tone.isColorIdentity { c = tone.apply(c.r, c.g, c.b) }
+        if contrast != 0 {
+            let k = 1 + 0.5 * contrast
+            func f(_ x: Double) -> Double { min(max((x - 0.5) * k + 0.5, 0), 1) }
+            c = (f(c.r), f(c.g), f(c.b))
+        }
+        if temperature != 0 {
+            c = Self.softLight(c, temperature > 0 ? (1, 0.55, 0.12) : (0.15, 0.45, 1), opacity: 0.65 * abs(temperature))
+        }
+        if tint != 0 {
+            c = Self.softLight(c, tint > 0 ? (0.95, 0.2, 0.75) : (0.25, 0.85, 0.3), opacity: 0.55 * abs(tint))
+        }
+        return hsl.isIdentity ? c : HSLGrader.adjust(c.r, c.g, c.b, hsl)
+    }
+
+    /// The soft-light blend the page's temperature / tint layers use.
+    static func softLight(_ b: (r: Double, g: Double, b: Double), _ s: (Double, Double, Double),
+                          opacity a: Double) -> (r: Double, g: Double, b: Double) {
+        func ch(_ b: Double, _ s: Double) -> Double {
+            let blended: Double
+            if s <= 0.5 {
+                blended = b - (1 - 2 * s) * b * (1 - b)
+            } else {
+                let d = b <= 0.25 ? ((16 * b - 12) * b + 4) * b : b.squareRoot()
+                blended = b + (2 * s - 1) * (d - b)
+            }
+            return b + (blended - b) * a
+        }
+        return (ch(b.r, s.0), ch(b.g, s.1), ch(b.b, s.2))
+    }
 }
 
 /// Lightroom-style Basic tone and presence controls, all −1...1. The

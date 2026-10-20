@@ -54,6 +54,7 @@ struct FloatingTabBar: View {
     /// A photo is selected (and no editor has the panel).
     private var photoTools: Bool {
         state.selectedImage != nil && state.textEditTargetId == nil && state.protrusionTargetId == nil
+            && state.photoEditTargetId == nil
     }
     private var tabWidth: CGFloat { rowWidth / CGFloat(Self.tabs.count) }
 
@@ -73,6 +74,13 @@ struct FloatingTabBar: View {
         .overlay {
             if let image = state.selectedImage, photoTools {
                 PhotoToolsRow(image: image)
+                    // Its own color, filling the pill: photo mode, not the tabs.
+                    .background {
+                        RoundedRectangle(cornerRadius: Self.cornerRadius, style: .continuous)
+                            .fill(Color.accentColor.opacity(0.22))
+                            .padding(.vertical, -5)
+                            .padding(.horizontal, -10)
+                    }
                     .transition(.offset(y: 12).combined(with: .opacity))
             }
         }
@@ -262,10 +270,12 @@ struct FloatingTabBar: View {
         state.closeRatio()
         // Nothing chosen yet (a saved collage just opened): open this tab.
         state.panelTabShown = true
-        if state.textEditTargetId != nil || state.protrusionTargetId != nil {
-            // Any tab leaves text / protrusion editing and shows that tab.
+        if state.textEditTargetId != nil || state.protrusionTargetId != nil || state.photoEditTargetId != nil {
+            // Any tab leaves text / cutout / photo editing and shows that tab.
             state.endTextEditing()
             state.endProtrusionEditing()
+            state.endPhotoEditing()
+            state.selectImage(nil, reopenPanel: false)
             state.selectedPanelTab = i
         } else {
             state.selectedPanelTab = i
@@ -308,6 +318,9 @@ struct PhotoToolsRow: View {
                     state.selectImage(nil, reopenPanel: false)
                     state.beginProtrusion(id: image.id)
                 }
+            }
+            if !image.isText && !image.isPlaceholder {
+                tool("Edit", sf: "slider.horizontal.3") { state.beginPhotoEdit(id: image.id) }
             }
             if !image.isText {
                 tool("Replace", sf: "photo.on.rectangle.angled") {
@@ -416,6 +429,7 @@ struct BottomPanelView: View {
     private var capKey: Int {
         if state.textEditTargetId != nil { return -1 }
         if state.protrusionTargetId != nil { return -2 }
+        if state.photoEditTargetId != nil { return -3 }
         // Layout's and Looks' pages each keep their own size.
         if state.selectedPanelTab == 1 && state.layoutPage != .layout {
             return state.layoutPage == .border ? 11 : 12
@@ -531,8 +545,11 @@ struct BottomPanelView: View {
             if let textId = state.textEditTargetId {
                 TextEditPanel(imageId: textId)
             } else if let protrudeId = state.protrusionTargetId {
-                // So does a photo's protrusion (long-press → Protrude).
+                // So does a photo's cutout (photo toolbar → Cutout).
                 ProtrusionPanel(imageId: protrudeId)
+            } else if state.photoEditTargetId != nil {
+                // And one photo's own edits (photo toolbar → Edit).
+                PhotoEditPanel()
             } else {
                 switch state.selectedPanelTab {
                 case 0: imagesTab
@@ -656,5 +673,42 @@ private struct CappedHeight: Layout {
 
     func placeSubviews(in bounds: CGRect, proposal: ProposedViewSize, subviews: Subviews, cache: inout ()) {
         subviews.first?.place(at: bounds.origin, proposal: ProposedViewSize(bounds.size))
+    }
+}
+
+/// One photo's own edits: the Edit tab's controls, working on the selected
+/// photo only. Done goes back to the photo's tools.
+struct PhotoEditPanel: View {
+    @EnvironmentObject var state: CollageState
+
+    var body: some View {
+        VStack(spacing: 10) {
+            HStack {
+                Label("Edit Photo", systemImage: "slider.horizontal.3")
+                    .font(.headline)
+                Spacer()
+                if let photo = state.photoEditTarget, !photo.edit.isIdentity {
+                    // Back to the photo as it is, in one go (Undo restores).
+                    Button("Reset") {
+                        withAnimation(.easeInOut(duration: 0.2)) {
+                            state.editEffects = [:]
+                            state.editHSL = HSLAdjustments()
+                            state.editCalibration = CameraCalibration()
+                        }
+                    }
+                    .font(.subheadline.weight(.semibold))
+                }
+                Button("Done") { state.endPhotoEditing() }
+                    .font(.subheadline.weight(.semibold))
+                    .buttonStyle(.borderedProminent)
+                    .controlSize(.small)
+            }
+            .panelChrome(state)
+            EffectsPanel()
+        }
+        // The photo was deleted or moved to another page: nothing to edit.
+        .onChange(of: state.photoEditTarget == nil, initial: true) { _, gone in
+            if gone { state.endPhotoEditing() }
+        }
     }
 }

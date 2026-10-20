@@ -241,6 +241,15 @@ struct ProjectFile: Codable {
         var rotation: Double
         var focus: [Double]?
         var framedByUser: Bool?
+        /// The photo's own edits (missing: none, and in older files).
+        var edit: Edit?
+    }
+
+    /// A photo's own Edit settings.
+    struct Edit: Codable {
+        var effects: [String: Double]
+        var hsl: [String: [Double]]
+        var calibration: [Double]
     }
 
     struct Overlay: Codable {
@@ -544,7 +553,10 @@ extension CollageState {
                     pan: [Double(img.panOffset.width), Double(img.panOffset.height)],
                     zoom: Double(img.zoom), rotation: Double(img.rotation),
                     focus: img.focus.map { [Double($0.x), Double($0.y)] },
-                    framedByUser: img.framedByUser)
+                    framedByUser: img.framedByUser,
+                    edit: img.edit.isIdentity ? nil
+                        : ProjectFile.Edit(effects: img.edit.effects.storage, hsl: img.edit.hsl.storage,
+                                           calibration: img.edit.calibration.storage))
             }
             return ProjectFile.Page(
                 images: imagesOut, order: page.order,
@@ -651,6 +663,7 @@ extension CollageState {
         endProtrusionEditing()
         clearSwapDrag()
         selectedImageId = nil
+        photoEditTargetId = nil
         unloadedImageFiles = []
         overlayPreview = nil
         savedImageFiles = [:]
@@ -693,6 +706,10 @@ extension CollageState {
                     if let f = item.focus, f.count == 2 { img.focus = CGPoint(x: f[0], y: f[1]) }
                     // Older files: a moved photo counts as framed by hand.
                     img.framedByUser = item.framedByUser ?? (img.panOffset != .zero || img.zoom != 1)
+                    if let e = item.edit {
+                        img.edit = PhotoEdit(effects: effectsFromStorage(e.effects), hsl: HSLAdjustments(storage: e.hsl),
+                                             calibration: CameraCalibration(storage: e.calibration))
+                    }
                     loaded[item.id] = img
                 }
             }
@@ -1155,12 +1172,37 @@ extension CollageState {
                 if let p = self.projectStore.summaries.first { self.openProject(p.id) }
             }
         }
-        // `-selectPhoto`: selects the first photo (its tools in the tab bar).
+        // `-photoEditTest`: Edit Photo on the first photo, warmer and brighter.
+        if args.contains("-photoEditTest") {
+            DispatchQueue.main.asyncAfter(deadline: .now() + 2.5) {
+                guard let id = self.images.first?.id else { return }
+                self.selectImage(id)
+                self.beginPhotoEdit(id: id)
+                self.editEffects = [.exposure: 40, .temperature: 70, .contrast: 30]
+            }
+        }
+                // `-selectPhoto`: selects the first photo (its tools in the tab bar).
         if args.contains("-selectPhoto") {
             DispatchQueue.main.asyncAfter(deadline: .now() + 2) { self.selectImage(self.images.first?.id) }
         }
                 if args.contains("-showProjects") {
             DispatchQueue.main.asyncAfter(deadline: .now() + 2.5) { self.goToCollages() }
+        }
+        // `-autoTest`: presses Edit → Auto once the photos are in.
+        if args.contains("-autoTest") {
+            DispatchQueue.main.asyncAfter(deadline: .now() + 3.5) {
+                Diagnostics.log("autoTest press")
+                self.toggleAuto()
+            }
+        }
+        // `-demoPhotos <folder>`: real pictures from a Mac folder (the
+        // Simulator sees the Mac's disk), instead of generated ones.
+        if let d = args.firstIndex(of: "-demoPhotos"), d + 1 < args.count, !hasAnyImages {
+            let dir = URL(fileURLWithPath: args[d + 1])
+            let files = ((try? FileManager.default.contentsOfDirectory(at: dir, includingPropertiesForKeys: nil)) ?? [])
+                .sorted { $0.lastPathComponent < $1.lastPathComponent }
+            let pictures = files.prefix(12).compactMap { (try? Data(contentsOf: $0)).flatMap { PlatformImage.decoded(from: $0) } }
+            if !pictures.isEmpty { addImages(pictures); return }
         }
         guard let i = args.firstIndex(of: "-demoSeed"), !hasAnyImages else { return }
         let count = (i + 1 < args.count ? Int(args[i + 1]) : nil) ?? 4

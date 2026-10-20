@@ -20,6 +20,8 @@ struct CanvasContainerView: View {
     @State private var photoItems: [PhotosPickerItem] = []
     @State private var replaceItems: [PhotosPickerItem] = []
     @State private var showAddPicker = false
+    /// The page bar's height over the canvas (PageTabBar plus its margin).
+    static let pagerHeight: CGFloat = 44
 
     var body: some View {
         GeometryReader { geo in
@@ -38,6 +40,12 @@ struct CanvasContainerView: View {
             let displayH = state.canvasSize.height * scale
             let contentW = max(displayW + padding * 2, geo.size.width)
             let contentH = max(displayH + padding * 2, geo.size.height)
+            // Room above the collage for the page bar (shown with more than
+            // one page), taken from the space left under it: all of the
+            // bar's height if there's that much, else what there is (a tall
+            // 9:16 collage keeps the bar floating over its top edge).
+            let pagerReserve: CGFloat = state.pages.count > 1 && !state.toolbarHidden
+                ? min(Self.pagerHeight, max(geo.size.height - displayH, 0)) : 0
 
             // While a text box is edited, the canvas slides up just enough to
             // keep that box in the part of the screen the panel (and
@@ -110,6 +118,8 @@ struct CanvasContainerView: View {
                         .animation(.easeOut(duration: 0.12), value: state.dropInsertTarget)
                         .animation(.spring(response: 0.4), value: state.canvasSize)
                         .animation(.spring(response: 0.4), value: state.numCols)
+                        .padding(.top, pagerReserve)
+                        .animation(.easeInOut(duration: 0.25), value: pagerReserve)
                 }
                 .frame(width: contentW, height: contentH)
                 .offset(y: textShift)

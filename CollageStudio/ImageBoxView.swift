@@ -120,13 +120,14 @@ struct ImageBoxView: View {
                     Group {
                         if state.selectedImageId == imageId, !state.isRenderingOffscreen,
                            state.draggingId == nil {
-                            // Accent ring with a white edge inside: reads on
+                            // Dashed: accent dashes over white, so it reads on
                             // any picture, warm ones included.
                             let shape = RoundedRectangle(cornerRadius: state.cornerRadius * scale)
                             ZStack {
-                                shape.strokeBorder(Color.accentColor, lineWidth: 4)
-                                shape.inset(by: 4).strokeBorder(Color.white.opacity(0.9), lineWidth: 1.5)
+                                shape.strokeBorder(Color.white.opacity(0.95), lineWidth: 2)
+                                shape.strokeBorder(Color.accentColor, style: StrokeStyle(lineWidth: 2, dash: [5, 4]))
                             }
+                            .shadow(color: .black.opacity(0.25), radius: 1.5)
                             .transition(.opacity)
                         }
                     }
@@ -254,7 +255,8 @@ struct ImageBoxView: View {
                     state.liveGesture.update(id: imageId, pan: v.pan, scale: v.scale, rotation: v.rotation)
                 }
                 // Re-grade the picture whenever the grade or the picture changes.
-                .task(id: GradeKey(proxy: imgData.map { ObjectIdentifier($0.proxy) }, grade: state.contentGrade)) {
+                .task(id: GradeKey(proxy: imgData.map { ObjectIdentifier($0.proxy) },
+                                   grade: imgData.map { state.grade(for: $0) } ?? state.contentGrade)) {
                     if let img = imgData { state.gradeIfNeeded(img) }
                 }
                 // VoiceOver: one element per box, with the long-press menu's
@@ -1385,8 +1387,6 @@ struct ProtrusionPanel: View {
                         // Unticking the last edge turns protrusion off.
                         state.setProtrusion(next.isEmpty ? nil : next, for: img.id)
                     }
-                    // Dimmed: the subject doesn't reach that edge now.
-                    .opacity(crossing.contains(edge) ? 1 : 0.45)
                 }
             }
             HStack(spacing: 8) {
@@ -1417,6 +1417,6 @@ struct ProtrusionPanel: View {
         if img.protrusionEffect == .border, state.borderThickness <= 0 {
             return "Border follows the Layout border (color, thickness, pattern) — set a thickness there to see it."
         }
-        return "Dimmed edges: the subject doesn't reach them right now."
+        return "The subject breaks out over the chosen edges, where it reaches them."
     }
 }

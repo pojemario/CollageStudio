@@ -330,59 +330,51 @@ struct ModernSlider: View {
             // never push the fill/thumb beyond the track.
             let fraction = min(max(CGFloat((value - range.lowerBound) / span), 0), 1)
             let thumbX = thumbBase / 2 + fraction * usable
-            let thumbSize = isDragging ? thumbBase + 6 : thumbBase
 
+            // A scale of tick marks, lit in the accent from the slider's
+            // origin (its reset value) to the knob, with a slim glowing knob.
+            let origin = min(max(CGFloat(((resetValue ?? range.lowerBound) - range.lowerBound) / span), 0), 1)
+            let originX = thumbBase / 2 + origin * usable
             ZStack(alignment: .leading) {
-                // Debossed metallic shell: pressed into the panel — dark upper
-                // edge with an inner shadow, bright lower lip catching light
-                // Soft shell: barely darker than the panel, no hard rim, so
-                // the track melts into the background.
+                // A solid bed under the scale, so it reads on any panel, light
+                // or dark; a color track also shows its colors faintly in it.
                 Capsule()
-                    .fill(
-                        LinearGradient(colors: isDark
-                                       ? [Color(white: 0.13), Color(white: 0.30)]
-                                       : [Color.black.opacity(0.10), Color.black.opacity(0.04)],
-                                       startPoint: .top, endPoint: .bottom)
-                        .shadow(.inner(color: .black.opacity(isDark ? 0.7 : 0.16),
-                                       radius: 2, y: 1))
-                    )
-                    .overlay(
-                        Capsule().strokeBorder(Color.black.opacity(isDark ? 0.5 : 0.06), lineWidth: 0.6)
-                    )
-                    .frame(height: 18)
+                    .fill(isDark ? Color.white.opacity(0.09) : Color.black.opacity(0.07))
+                    .overlay {
+                        if let trackColors {
+                            Capsule()
+                                .fill(LinearGradient(colors: trackColors, startPoint: .leading, endPoint: .trailing))
+                                .opacity(isDark ? 0.28 : 0.35)
+                        }
+                    }
+                    .overlay(Capsule().strokeBorder(isDark ? Color.white.opacity(0.08) : Color.black.opacity(0.06),
+                                                    lineWidth: 0.6))
+                    // Edge to edge: lines up with the name above it (two-line
+                    // rows) and the value box beside it.
+                    .frame(height: 20)
 
-                // Recessed inner track — a subtle gray groove (not hard black)
-                // with a soft inner shadow for a gentle 3D dip
+                TickScale(from: thumbBase / 2, to: width - thumbBase / 2,
+                          litFrom: min(originX, thumbX), litTo: max(originX, thumbX),
+                          range: range, step: step, origin: resetValue ?? range.lowerBound,
+                          colors: trackColors, isDark: isDark)
+                    .frame(height: 14)
+
+                // Soft glow around the knob.
                 Capsule()
-                    .fill(
-                        LinearGradient(colors: isDark
-                                       ? [Color(white: 0.22), Color(white: 0.32)]
-                                       : [Color.black.opacity(0.22), Color.black.opacity(0.12)],
-                                       startPoint: .top, endPoint: .bottom)
-                        .shadow(.inner(color: .black.opacity(isDark ? 0.45 : 0.22),
-                                       radius: 1, y: 1))
-                    )
-                    .frame(height: 11)
-                    .padding(.horizontal, 4)
+                    .fill(Color.accentColor.opacity(isDragging ? 0.45 : 0.28))
+                    .frame(width: 30, height: 14)
+                    .blur(radius: 7)
+                    .offset(x: thumbX - 15)
+                    .allowsHitTesting(false)
 
-                if let trackColors {
-                    Capsule()
-                        .fill(LinearGradient(colors: trackColors, startPoint: .leading, endPoint: .trailing))
-                        .overlay(Capsule().strokeBorder(Color.black.opacity(0.15), lineWidth: 0.6))
-                        .frame(height: 12)
-                        .padding(.horizontal, 4)
-                } else {
-                    // Value fill inside the recess
-                    Capsule()
-                        .fill(LinearGradient(colors: [Color.accentColor.opacity(0.55), Color.accentColor],
-                                             startPoint: .leading, endPoint: .trailing))
-                        .frame(width: max(thumbX - 4, 14), height: 14)
-                        .padding(.leading, 4)
-                }
-
-                EmbossedKnobThumb(size: thumbSize)
-                    .shadow(color: .black.opacity(0.4), radius: isDragging ? 5 : 2.5, y: 2)
-                    .offset(x: thumbX - thumbSize / 2)
+                Capsule()
+                    .fill(LinearGradient(colors: [Color(white: 1), Color(red: 1, green: 0.95, blue: 0.86)],
+                                         startPoint: .top, endPoint: .bottom))
+                    .overlay(Capsule().strokeBorder(Color.black.opacity(0.12), lineWidth: 0.5))
+                    .frame(width: isDragging ? 16 : 12, height: isDragging ? 26 : 22)
+                    .shadow(color: Color.accentColor.opacity(0.8), radius: isDragging ? 6 : 4)
+                    .shadow(color: .black.opacity(0.25), radius: 1.5, y: 1)
+                    .offset(x: thumbX - (isDragging ? 8 : 6))
             }
             .frame(maxHeight: .infinity, alignment: .leading)
             .contentShape(Rectangle())
@@ -528,8 +520,89 @@ struct LabeledSlider: View {
     var compactValue = false
     /// Two monospaced digits ("70"); "100" shrinks a little to fit.
     static let twoDigitValueWidth: CGFloat = 20
+    /// An icon for the row (Edit, Effects): the name then sits above the
+    /// slider, the icon to its left.
+    var icon: String? = nil
 
     var body: some View {
+        if let icon { iconRow(icon) } else { inlineRow }
+    }
+
+    /// Icon, name over the slider, value box.
+    private func iconRow(_ icon: String) -> some View {
+        HStack(spacing: 12) {
+            iconView(icon)
+                .frame(width: 26)
+                .contentShape(Rectangle())
+                .onTapGesture(count: 2) { resetToDefault() }
+                .accessibilityHidden(true)
+            VStack(alignment: .leading, spacing: 0) {
+                Text(label)
+                    .font(.subheadline)
+                    .foregroundColor(.primary)
+                    .lineLimit(1)
+                    .contentShape(Rectangle())
+                    .onTapGesture(count: 2) { resetToDefault() }
+                // The value sits level with its slider, not the row.
+                HStack(spacing: 12) {
+                    slider
+                    valueBox(width: 46)
+                }
+            }
+        }
+        .padding(.vertical, 2)
+        .background { focusGlass(active: state.activeAdjustment == label) }
+        .opacity(state.chromeVisible(for: label) ? 1 : 0)
+        .animation(.easeInOut(duration: 0.2), value: state.activeAdjustment)
+    }
+
+    /// An SF Symbol, or for Whites / Blacks a disc filled white / black
+    /// (outlined, so each shows on either theme).
+    @ViewBuilder
+    private func iconView(_ icon: String) -> some View {
+        switch icon {
+        case "whites.disc", "blacks.disc":
+            Circle()
+                .fill(icon == "whites.disc" ? Color.white : Color.black)
+                .overlay(Circle().strokeBorder(Color.primary.opacity(0.55), lineWidth: 1.2))
+                .frame(width: 18, height: 18)
+        default:
+            Image(systemName: icon)
+                .font(.system(size: 19, weight: .regular))
+                .foregroundColor(.primary.opacity(0.85))
+        }
+    }
+
+    private var slider: some View {
+        ModernSlider(value: $value, range: range, step: step,
+                     onEditingChanged: { editing in
+                        withAnimation(.easeInOut(duration: 0.2)) {
+                            state.activeAdjustment = editing ? label : nil
+                        }
+                     },
+                     resetValue: resetValue, trackColors: trackColors)
+            // VoiceOver gets a standard slider (swipe up / down to adjust).
+            .accessibleSlider(value: $value, range: range, step: step, label: label)
+    }
+
+    /// The value in a small framed box, signed on two-way sliders ("+12").
+    private func valueBox(width: CGFloat) -> some View {
+        let text = String(format: format, value)
+        let signed = range.lowerBound < 0 && value > 0 && !text.hasPrefix("+") ? "+" + text : text
+        return Text(signed)
+            .font(.system(size: 13, weight: resetArmed ? .bold : .medium, design: .monospaced))
+            .foregroundColor(resetArmed ? .accentColor : .primary.opacity(0.85))
+            .lineLimit(1)
+            .minimumScaleFactor(0.6)
+            .frame(width: width, height: 24)
+            .background(RoundedRectangle(cornerRadius: 7, style: .continuous)
+                .strokeBorder(Color.primary.opacity(0.18), lineWidth: 1))
+            // Double-tapping the value also resets to default
+            .contentShape(Rectangle())
+            .onTapGesture(count: 2) { resetToDefault() }
+    }
+
+    private var inlineRow: some View {
         HStack(spacing: 8) {
             if let customLabel {
                 customLabel
@@ -553,28 +626,10 @@ struct LabeledSlider: View {
             } else if reservesSwatchSlot {
                 Color.clear.frame(width: 24, height: 24)
             }
-            ModernSlider(value: $value, range: range, step: step,
-                         onEditingChanged: { editing in
-                            withAnimation(.easeInOut(duration: 0.2)) {
-                                state.activeAdjustment = editing ? label : nil
-                            }
-                         },
-                         resetValue: resetValue, trackColors: trackColors)
-                // VoiceOver gets a standard slider (swipe up / down to adjust).
-                .accessibleSlider(value: $value, range: range, step: step, label: label)
-            Text(String(format: format, value))
-                .font(.system(size: 14, weight: resetArmed ? .bold : .medium, design: .monospaced))
-                .foregroundColor(resetArmed ? .accentColor : .primary.opacity(0.85))
-                .lineLimit(1)
-                // Longer values ("-12.5°") shrink a little to fit.
-                .minimumScaleFactor(0.7)
-                // Room for four characters ("-100", "-60°") unless compact,
-                // hugging the slider and kept clear of the panel edge.
-                .frame(width: compactValue ? Self.twoDigitValueWidth : 38, alignment: .leading)
-                .padding(.trailing, compactValue ? 0 : 8)
-                // Double-tapping the value also resets to default
-                .contentShape(Rectangle())
-                .onTapGesture(count: 2) { resetToDefault() }
+            slider
+            // Compact rows (Layout) keep a narrow box: two digits.
+            valueBox(width: compactValue ? 30 : 44)
+                .padding(.trailing, compactValue ? 0 : 4)
         }
         // A small "private" glass panel appears behind this row while it's the
         // one being adjusted, so its label stays readable over the canvas.
@@ -1781,5 +1836,70 @@ extension Color {
         let g = Double((int >> 8)  & 0xFF) / 255
         let b = Double(int         & 0xFF) / 255
         self.init(red: r, green: g, blue: b)
+    }
+}
+
+
+/// The slider's scale: tick marks at the slider's values, accent between
+/// `litFrom` and `litTo` (or, with `colors`, the colors left to right:
+/// bright where lit, softer elsewhere).
+struct TickScale: View {
+    let from: CGFloat
+    let to: CGFloat
+    let litFrom: CGFloat
+    let litTo: CGFloat
+    let range: ClosedRange<Double>
+    let step: Double
+    /// The value the scale counts from (a taller tick).
+    let origin: Double
+    var colors: [Color]? = nil
+    var isDark: Bool
+
+    /// The value between ticks: one tick per step when they fit (Cols:
+    /// 1, 2, 3 …), otherwise a round multiple of it (5, 10 …) at least
+    /// `minGap` points apart.
+    static func tickInterval(range: ClosedRange<Double>, step: Double, width: CGFloat, minGap: CGFloat = 6) -> Double {
+        let span = max(range.upperBound - range.lowerBound, 0.0001)
+        let unit = step > 0 ? step : span / 40
+        for k in [1.0, 2, 5, 10, 20, 25, 50, 100, 200, 500] {
+            let interval = unit * k
+            if CGFloat(interval / span) * width >= minGap { return interval }
+        }
+        return span / 10
+    }
+
+    var body: some View {
+        Canvas { ctx, size in
+            let span = max(range.upperBound - range.lowerBound, 0.0001)
+            let width = to - from
+            let interval = Self.tickInterval(range: range, step: step, width: width)
+            // Few ticks (one per value): all the same, taller. Many: every
+            // fifth taller, like a ruler, counted from the origin.
+            let sparse = span / interval <= 12
+            var lit = Path(), unlit = Path()
+            var v = (range.lowerBound / interval).rounded(.up) * interval
+            while v <= range.upperBound + interval * 0.001 {
+                let x = from + CGFloat((v - range.lowerBound) / span) * width
+                let n = ((v - origin) / interval).rounded()
+                let major = sparse || abs(n.truncatingRemainder(dividingBy: 5)) < 0.5
+                let h: CGFloat = major ? 11 : 7
+                v += interval
+                let tick = Path(roundedRect: CGRect(x: x - 1, y: (size.height - h) / 2, width: 2, height: h),
+                                cornerRadius: 1)
+                if x >= litFrom - 0.5 && x <= litTo + 0.5 { lit.addPath(tick) } else { unlit.addPath(tick) }
+            }
+            if let colors {
+                let shading = GraphicsContext.Shading.linearGradient(
+                    Gradient(colors: colors), startPoint: CGPoint(x: from, y: 0), endPoint: CGPoint(x: to, y: 0))
+                ctx.opacity = 0.75
+                ctx.fill(unlit, with: shading)
+                ctx.opacity = 1
+                ctx.fill(lit, with: shading)
+            } else {
+                ctx.fill(unlit, with: .color(Color.primary.opacity(isDark ? 0.32 : 0.28)))
+                ctx.fill(lit, with: .color(Color.accentColor))
+            }
+        }
+        .allowsHitTesting(false)
     }
 }

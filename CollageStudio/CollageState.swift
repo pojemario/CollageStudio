@@ -623,6 +623,63 @@ class CollageState: ObservableObject {
 
     var hasLookEdits: Bool {
         !fullGrade.isIdentity || CollageEffect.allCases.contains { (effects[$0] ?? 0) != 0 }
+            || currentPage.images.contains { !$0.edit.isIdentity }
+    }
+
+    // MARK: - Editing one photo (photo toolbar → Edit)
+
+    /// Whether this is not nil, the Edit panel works on this photo alone.
+    @Published var photoEditTargetId: UUID? = nil
+
+    /// The photo being edited, while it's on the page showing.
+    var photoEditTarget: CollageImage? {
+        photoEditTargetId.flatMap { id in images.first { $0.id == id } }
+    }
+
+    func beginPhotoEdit(id: UUID) {
+        Diagnostics.log("photo edit")
+        closeRatio()
+        textEditTargetId = nil
+        protrusionTargetId = nil
+        withAnimation(.easeInOut(duration: 0.25)) {
+            photoEditTargetId = id
+            isPanelOpen = true
+        }
+    }
+
+    func endPhotoEditing() {
+        guard photoEditTargetId != nil else { return }
+        withAnimation(.easeInOut(duration: 0.2)) { photoEditTargetId = nil }
+    }
+
+    private func updatePhotoEdit(_ change: (inout PhotoEdit) -> Void) {
+        guard let id = photoEditTargetId, let pi = pageIndex(containing: id),
+              let idx = pages[pi].images.firstIndex(where: { $0.id == id }) else { return }
+        var e = pages[pi].images[idx].edit
+        change(&e)
+        e.effects = e.effects.filter { $0.value != 0 }
+        pages[pi].images[idx].edit = e
+    }
+
+    /// What the Edit panel's sliders show and change: the photo being
+    /// edited, else the page.
+    var editEffects: [CollageEffect: Double] {
+        get { photoEditTarget?.edit.effects ?? effects }
+        set { if photoEditTargetId != nil { updatePhotoEdit { $0.effects = newValue } } else { effects = newValue } }
+    }
+    var editHSL: HSLAdjustments {
+        get { photoEditTarget?.edit.hsl ?? hsl }
+        set { if photoEditTargetId != nil { updatePhotoEdit { $0.hsl = newValue } } else { hsl = newValue } }
+    }
+    var editCalibration: CameraCalibration {
+        get { photoEditTarget?.edit.calibration ?? calibration }
+        set { if photoEditTargetId != nil { updatePhotoEdit { $0.calibration = newValue } } else { calibration = newValue } }
+    }
+    func editHasEffects(in group: [CollageEffect]) -> Bool { group.contains { (editEffects[$0] ?? 0) != 0 } }
+    func editResetEffects(in group: [CollageEffect]) {
+        var e = editEffects
+        for effect in group { e[effect] = nil }
+        editEffects = e
     }
 
     /// The grade with the filter, even while it's being bypassed.
@@ -652,14 +709,39 @@ class CollageState: ObservableObject {
     private var gradeExportCache: [UUID: Graded] = [:]
 
     func dropGradesIfIdentity() {
-        if fullGrade.isIdentity, !gradedProxies.isEmpty { gradedProxies = [:] }
+        if !needsGrading, !gradedProxies.isEmpty { gradedProxies = [:] }
+    }
+
+    /// Whether any picture on the page gets graded: page edits, or a
+    /// photo with edits of its own.
+    var needsGrading: Bool {
+        !fullGrade.isIdentity || currentPage.images.contains { !$0.edit.isIdentity }
+    }
+
+    /// The grade a picture is drawn with: the page's, with the photo's own
+    /// edits in front (none while comparing with the original).
+    func grade(for img: CollageImage) -> ContentGrade {
+        Self.merge(contentGrade, img.edit, comparing: compareOriginal)
+    }
+
+    nonisolated static func merge(_ page: ContentGrade, _ edit: PhotoEdit, comparing: Bool = false) -> ContentGrade {
+        guard !comparing else { return ContentGrade() }
+        guard !edit.isIdentity else { return page }
+        var g = page
+        g.photo = edit.grade
+        // Detail: the photo's adds to the page's.
+        g.clarity = min(max(g.clarity + edit.amount(.clarity), -1), 1)
+        g.sharpness = min(max(g.sharpness + edit.amount(.sharpness), 0), 1)
+        g.tone.texture = min(max(g.tone.texture + edit.amount(.texture), -1), 1)
+        g.tone.dehaze = min(max(g.tone.dehaze + edit.amount(.dehaze), -1), 1)
+        return g
     }
 
     /// The picture a box should draw: its proxy (or the original while
     /// exporting) with the current grade applied.
     func gradedDisplayImage(for img: CollageImage) -> PlatformImage {
         let source = renderFullResolution ? img.image : img.proxy
-        let grade = contentGrade
+        let grade = grade(for: img)
         guard !grade.isIdentity, !img.isPlaceholder else { return source }
         if renderFullResolution {
             if let g = gradeExportCache[img.id], g.source === source, g.grade == grade { return g.image }
@@ -682,13 +764,14 @@ class CollageState: ObservableObject {
     /// With a filter on, the same picture without it is prepared next, so a
     /// before / after peek never waits.
     func gradeIfNeeded(_ img: CollageImage) {
-        var grades = [contentGrade]
+        var grades = [grade(for: img)]
         // The peek's twin is prepared only when no slider is moving, so a
         // drag gets all the grading time.
         if fullGrade.hasFilter, activeAdjustment == nil {
-            var without = fullGrade
+            let full = Self.merge(fullGrade, img.edit)
+            var without = full
             without.filter = .none
-            grades.append(filterBypass ? fullGrade : without)
+            grades.append(filterBypass ? full : without)
         }
         let source = img.proxy, id = img.id
         guard !img.isPlaceholder, !gradeInFlight.contains(id) else { return }
@@ -701,7 +784,7 @@ class CollageState: ObservableObject {
             let graded = ContentGrader.apply(grade, to: source)
             await MainActor.run {
                 self.gradeInFlight.remove(id)
-                guard !self.fullGrade.isIdentity else { return }
+                guard self.needsGrading else { return }
                 self.gradesToShow[id] = Graded(source: source, grade: grade, image: graded)
                 self.scheduleGradeFlush()
             }
@@ -718,7 +801,7 @@ class CollageState: ObservableObject {
             self.gradeFlushScheduled = false
             let done = self.gradesToShow
             self.gradesToShow = [:]
-            guard !self.fullGrade.isIdentity, !done.isEmpty else { return }
+            guard self.needsGrading, !done.isEmpty else { return }
             var all = self.gradedProxies
             for (id, g) in done {
                 var list = (all[id] ?? []).filter { $0.source === g.source && $0.grade != g.grade }
@@ -1054,6 +1137,10 @@ class CollageState: ObservableObject {
     /// Files written by the last export ("Collage 01.jpg" …).
     @Published var exportedFiles: [URL] = []
     @Published var showExportSheet: Bool = false
+    /// Edit → Auto is working out the page.
+    @Published var isAutoAdjusting = false
+    /// Where Auto was pressed, by page id (for its on / off).
+    @Published var autoApplied: [UUID: AutoApplied] = [:]
     /// Set when pages couldn't be exported; shown as an alert.
     @Published var exportProblem: String?
     /// Asks the user whether to export the current page or all pages.
@@ -2422,6 +2509,7 @@ class CollageState: ObservableObject {
         if let id = selectedImageId, !ids.contains(id) { selectedImageId = nil }
         if let id = textEditTargetId, !ids.contains(id) { textEditTargetId = nil }
         if let id = protrusionTargetId, !ids.contains(id) { protrusionTargetId = nil }
+        if let id = photoEditTargetId, !ids.contains(id) { photoEditTargetId = nil }
         if let id = boxActionTargetId, !ids.contains(id), !showReplacePicker { boxActionTargetId = nil }
         if gradedProxies.keys.contains(where: { !ids.contains($0) }) {
             gradedProxies = gradedProxies.filter { ids.contains($0.key) }

@@ -338,6 +338,8 @@ extension ContentGrade {
     func color(_ r: Double, _ g: Double, _ b: Double,
                calibrationMatrix: [Double]?) -> (r: Double, g: Double, b: Double) {
         var c = (r: r, g: g, b: b)
+        // The photo's own edits first, then the page's.
+        if let photo { c = photo.apply(c.r, c.g, c.b) }
         // Camera calibration first, like Lightroom's profile stage, then the
         // Basic tone controls.
         if let m = calibrationMatrix { c = calibration.apply(r, g, b, matrix: m) }
@@ -485,7 +487,16 @@ struct EffectsPanel: View {
             }
         }
     }
-    @State private var page: Page = .light
+    @State private var page: Page = Self.firstPage
+
+    /// Light; in Debug, `-editPage Color` (for screenshots).
+    private static var firstPage: Page {
+        #if DEBUG
+        let args = ProcessInfo.processInfo.arguments
+        if let i = args.firstIndex(of: "-editPage"), i + 1 < args.count, let p = Page(rawValue: args[i + 1]) { return p }
+        #endif
+        return .light
+    }
     @State private var band: HSLBand = .red
     /// Shows just this page, without the page chips (Looks → Effects).
     /// Otherwise every page but Effects, which has its own Looks tab.
@@ -497,6 +508,8 @@ struct EffectsPanel: View {
             // All pages fit on one line: tight spacing, equal widths.
             if only == nil {
             HStack(spacing: 4) {
+                // Auto: balances the page's light and color in one go.
+                AutoChip { self.page = .light }
                 ForEach(Page.allCases.filter { $0 != .effects }, id: \.self) { p in
                     PackChip(title: p.rawValue, isActive: page == p, marked: isChanged(p),
                              horizontalPadding: 4, fillsWidth: true) { self.page = p }
@@ -518,20 +531,20 @@ struct EffectsPanel: View {
     /// Everything on a page back to its default (double-tap its chip).
     private func resetPage(_ page: Page) {
         switch page {
-        case .light, .color, .detail: state.resetEffects(in: page.basicEffects ?? [])
-        case .hsl: state.resetHSL()
-        case .cc: state.calibration = CameraCalibration()
-        case .effects: state.resetEffects(in: CollageEffect.looks)
+        case .light, .color, .detail: state.editResetEffects(in: page.basicEffects ?? [])
+        case .hsl: state.editHSL = HSLAdjustments()
+        case .cc: state.editCalibration = CameraCalibration()
+        case .effects: state.editResetEffects(in: CollageEffect.looks)
         }
     }
 
     /// Whether anything on a page differs from its default.
     private func isChanged(_ page: Page) -> Bool {
         switch page {
-        case .light, .color, .detail: return state.hasEffects(in: page.basicEffects ?? [])
-        case .hsl: return !state.hsl.isIdentity
-        case .cc: return !state.calibration.isIdentity
-        case .effects: return state.hasEffects(in: CollageEffect.looks)
+        case .light, .color, .detail: return state.editHasEffects(in: page.basicEffects ?? [])
+        case .hsl: return !state.editHSL.isIdentity
+        case .cc: return !state.editCalibration.isIdentity
+        case .effects: return state.editHasEffects(in: CollageEffect.looks)
         }
     }
 
@@ -539,18 +552,18 @@ struct EffectsPanel: View {
         ForEach(group) { effect in
             LabeledSlider(label: effect.title,
                           value: Binding(
-                            get: { state.effects[effect] ?? 0 },
-                            set: { state.effects[effect] = $0 }),
+                            get: { state.editEffects[effect] ?? 0 },
+                            set: { state.editEffects[effect] = $0 }),
                           range: effect.range, step: 1, format: "%.0f", resetValue: 0,
-                          trackColors: effect.trackColors)
+                          trackColors: effect.trackColors, icon: effect.icon)
         }
     }
 
     /// One Basic page (Light, Color or Detail).
     private func basicControls(_ effects: [CollageEffect]) -> some View {
         sliders(effects)
-            .swipeNumbersToReset(canReset: state.hasEffects(in: effects)) {
-                state.resetEffects(in: effects)
+            .swipeNumbersToReset(canReset: state.editHasEffects(in: effects)) {
+                state.editResetEffects(in: effects)
             }
     }
 
@@ -558,8 +571,8 @@ struct EffectsPanel: View {
     private var effectControls: some View {
         VStack(spacing: 10) {
             sliders(CollageEffect.looks)
-                .swipeNumbersToReset(canReset: state.hasEffects(in: CollageEffect.looks)) {
-                    state.resetEffects(in: CollageEffect.looks)
+                .swipeNumbersToReset(canReset: state.editHasEffects(in: CollageEffect.looks)) {
+                    state.editResetEffects(in: CollageEffect.looks)
                 }
             HStack(spacing: 8) {
                 EffectShuffleButton().panelChrome(state, keep: "Shuffle")
@@ -581,7 +594,7 @@ struct EffectsPanel: View {
                                 .padding(3)
                                 .overlay(Circle().stroke(band == b ? Color.primary : .clear, lineWidth: 2))
                             Circle()
-                                .fill(Color.primary.opacity(state.hsl[b].isZero ? 0 : 0.6))
+                                .fill(Color.primary.opacity(state.editHSL[b].isZero ? 0 : 0.6))
                                 .frame(width: 4, height: 4)
                         }
                         .frame(maxWidth: .infinity)
@@ -592,7 +605,7 @@ struct EffectsPanel: View {
                     // first tap of it selects the circle as usual).
                     .simultaneousGesture(TapGesture(count: 2).onEnded {
                         band = b
-                        state.hsl[b] = HSLShift()
+                        state.editHSL[b] = HSLShift()
                         #if canImport(UIKit)
                         UIImpactFeedbackGenerator(style: .light).impactOccurred()
                         #endif
@@ -605,14 +618,14 @@ struct EffectsPanel: View {
             VStack(spacing: 10) {
                 LabeledSlider(label: "Hue", value: shift(\.hue),
                               range: -100...100, step: 1, format: "%.0f", resetValue: 0,
-                              trackColors: band.hueSweep)
+                              trackColors: band.hueSweep, icon: "paintpalette")
                 LabeledSlider(label: "Saturation", value: shift(\.saturation),
-                              range: -100...100, step: 1, format: "%.0f", resetValue: 0)
+                              range: -100...100, step: 1, format: "%.0f", resetValue: 0, icon: "drop")
                 LabeledSlider(label: "Luminance", value: shift(\.luminance),
-                              range: -100...100, step: 1, format: "%.0f", resetValue: 0)
+                              range: -100...100, step: 1, format: "%.0f", resetValue: 0, icon: "sun.min")
             }
             // Resets the selected color (or Master).
-            .swipeNumbersToReset(canReset: !state.hsl[band].isZero) { state.hsl[band] = HSLShift() }
+            .swipeNumbersToReset(canReset: !state.editHSL[band].isZero) { state.editHSL[band] = HSLShift() }
         }
     }
 
@@ -624,31 +637,31 @@ struct EffectsPanel: View {
         func c(_ r: Double, _ g: Double, _ b: Double) -> Color { Color(red: r / 255, green: g / 255, blue: b / 255) }
         let gray = Color(white: 0.6)
         return VStack(spacing: 10) {
-            calSlider("Shadow Tint", \.shadowsTint, [c(130, 219, 107), c(170, 160, 170), c(202, 96, 210)])
-            calSlider("Red Hue", \.redHue, [c(235, 57, 156), c(240, 60, 90), c(226, 146, 86)])
-            calSlider("Red Sat", \.redSaturation, [gray, c(200, 70, 65)])
-            calSlider("Green Hue", \.greenHue, [c(206, 217, 77), c(102, 227, 105), c(99, 221, 190)])
-            calSlider("Green Sat", \.greenSaturation, [gray, c(90, 195, 55)])
-            calSlider("Blue Hue", \.blueHue, [c(98, 220, 141), c(99, 221, 196), c(32, 85, 211), c(91, 71, 204)])
-            calSlider("Blue Sat", \.blueSaturation, [gray, c(90, 178, 209)])
+            calSlider("Shadow Tint", \.shadowsTint, [c(130, 219, 107), c(170, 160, 170), c(202, 96, 210)], "moon")
+            calSlider("Red Hue", \.redHue, [c(235, 57, 156), c(240, 60, 90), c(226, 146, 86)], "paintpalette")
+            calSlider("Red Sat", \.redSaturation, [gray, c(200, 70, 65)], "drop")
+            calSlider("Green Hue", \.greenHue, [c(206, 217, 77), c(102, 227, 105), c(99, 221, 190)], "paintpalette")
+            calSlider("Green Sat", \.greenSaturation, [gray, c(90, 195, 55)], "drop")
+            calSlider("Blue Hue", \.blueHue, [c(98, 220, 141), c(99, 221, 196), c(32, 85, 211), c(91, 71, 204)], "paintpalette")
+            calSlider("Blue Sat", \.blueSaturation, [gray, c(90, 178, 209)], "drop")
         }
-        .swipeNumbersToReset(canReset: !state.calibration.isIdentity) {
-            state.calibration = CameraCalibration()
+        .swipeNumbersToReset(canReset: !state.editCalibration.isIdentity) {
+            state.editCalibration = CameraCalibration()
         }
     }
 
     private func calSlider(_ label: String, _ key: WritableKeyPath<CameraCalibration, Double>,
-                           _ track: [Color]) -> some View {
+                           _ track: [Color], _ icon: String) -> some View {
         LabeledSlider(label: label,
-                      value: Binding(get: { state.calibration[keyPath: key] },
-                                     set: { state.calibration[keyPath: key] = $0 }),
+                      value: Binding(get: { state.editCalibration[keyPath: key] },
+                                     set: { state.editCalibration[keyPath: key] = $0 }),
                       range: -100...100, step: 1, format: "%.0f", resetValue: 0,
-                      trackColors: track)
+                      trackColors: track, icon: icon)
     }
 
     private func shift(_ key: WritableKeyPath<HSLShift, Double>) -> Binding<Double> {
-        Binding(get: { state.hsl[band][keyPath: key] },
-                set: { state.hsl[band][keyPath: key] = $0 })
+        Binding(get: { state.editHSL[band][keyPath: key] },
+                set: { state.editHSL[band][keyPath: key] = $0 })
     }
 }
 
@@ -1013,5 +1026,49 @@ struct EffectShuffleButton: View {
         .foregroundColor(.white)
         .frame(height: 38)
         .appButtonBackground(prominent: true)
+    }
+}
+
+/// Edit → Auto, a toggle: on balances the page (see AutoAdjust) and shows
+/// Light; off puts the sliders back as they were. Moving a slider after
+/// Auto turns it off.
+private struct AutoChip: View {
+    @EnvironmentObject var state: CollageState
+    var then: () -> Void
+
+    var body: some View {
+        let on = state.isAutoOn
+        Button {
+            let wasOn = on
+            state.toggleAuto()
+            if !wasOn { then() }
+        } label: {
+            HStack(spacing: 3) {
+                if state.isAutoAdjusting {
+                    ProgressView().controlSize(.mini)
+                } else {
+                    Image(systemName: "wand.and.stars")
+                        .font(.system(size: 11, weight: .semibold))
+                }
+                Text("Auto")
+                    .font(.system(size: 13, weight: .semibold))
+            }
+            // On: filled. Off: an outline, ready to press.
+            .foregroundStyle(on ? Color.white : Color.accentColor)
+            .padding(.horizontal, 9)
+            .frame(height: 30)
+            .background(Capsule().fill(on ? Color.accentColor : Color.clear))
+            .overlay(Capsule().strokeBorder(Color.accentColor, lineWidth: on ? 0 : 1.2))
+            .contentShape(Capsule())
+            .animation(.easeInOut(duration: 0.2), value: on)
+        }
+        .buttonStyle(.plain)
+        // Always its full width; the page chips share what's left.
+        .fixedSize()
+        .layoutPriority(1)
+        .disabled(state.isAutoAdjusting || !state.images.contains { !$0.isText && !$0.isPlaceholder })
+        .accessibilityLabel("Auto")
+        .accessibilityValue(on ? "On" : "Off")
+        .accessibilityHint(on ? "Puts the sliders back as they were" : "Balances this page's photos")
     }
 }

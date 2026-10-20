@@ -57,6 +57,7 @@ extension CollageImage {
             && protrusion == o.protrusion && protrusionEffect == o.protrusionEffect
             && protrusionObjects == o.protrusionObjects
             && framedByUser == o.framedByUser && zoom == o.zoom && rotation == o.rotation
+            && edit == o.edit
             // A crop that follows the subject isn't an edit of its own.
             && (!framedByUser || panOffset == o.panOffset)
     }
