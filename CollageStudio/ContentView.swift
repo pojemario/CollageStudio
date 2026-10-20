@@ -294,7 +294,7 @@ struct ContentView: View {
                         .padding(.horizontal, 10)
                         .padding(.vertical, 5)
                         .background(.ultraThinMaterial, in: RoundedRectangle(cornerRadius: FloatingTabBar.cornerRadius, style: .continuous))
-                        .background(Color.accentColor.opacity(0.22), in: RoundedRectangle(cornerRadius: FloatingTabBar.cornerRadius, style: .continuous))
+                        .background(PhotoToolsRow.background, in: RoundedRectangle(cornerRadius: FloatingTabBar.cornerRadius, style: .continuous))
                         .padding(.bottom, 12)
                         .transition(.move(edge: .bottom).combined(with: .opacity))
                 }

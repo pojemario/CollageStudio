@@ -40,7 +40,8 @@ struct SidebarView: View {
             Image("DasKolazLogo")
                 .resizable()
                 .scaledToFit()
-                .frame(height: 80)
+                // Same size as on the upright phone's toolbar: room for the icons.
+                .frame(height: 36)
                 .grayscale(state.hasAnyImages ? 1 : 0)   // color only on the Collages screen
                 .animation(.easeInOut(duration: 0.4), value: state.hasAnyImages)
                 .shimmering(state.isBusy)
@@ -61,7 +62,8 @@ struct SidebarView: View {
             .buttonStyle(.plain)
             .disabled(!state.hasAnyImages)
         }
-        .padding(16)
+        .padding(.horizontal, 16)
+        .padding(.vertical, 10)
     }
 
     // MARK: - Images
@@ -335,19 +337,21 @@ struct ModernSlider: View {
             // origin (its reset value) to the knob, with a slim glowing knob.
             let origin = min(max(CGFloat(((resetValue ?? range.lowerBound) - range.lowerBound) / span), 0), 1)
             let originX = thumbBase / 2 + origin * usable
+            // Rounded like the knob (a 12 pt capsule), not a full pill.
+            let bed = RoundedRectangle(cornerRadius: 6, style: .continuous)
             ZStack(alignment: .leading) {
                 // A solid bed under the scale, so it reads on any panel, light
                 // or dark; a color track also shows its colors faintly in it.
-                Capsule()
+                bed
                     .fill(isDark ? Color.white.opacity(0.09) : Color.black.opacity(0.07))
                     .overlay {
                         if let trackColors {
-                            Capsule()
+                            bed
                                 .fill(LinearGradient(colors: trackColors, startPoint: .leading, endPoint: .trailing))
                                 .opacity(isDark ? 0.28 : 0.35)
                         }
                     }
-                    .overlay(Capsule().strokeBorder(isDark ? Color.white.opacity(0.08) : Color.black.opacity(0.06),
+                    .overlay(bed.strokeBorder(isDark ? Color.white.opacity(0.08) : Color.black.opacity(0.06),
                                                     lineWidth: 0.6))
                     // Edge to edge: lines up with the name above it (two-line
                     // rows) and the value box beside it.

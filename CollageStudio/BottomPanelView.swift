@@ -77,7 +77,7 @@ struct FloatingTabBar: View {
                     // Its own color, filling the pill: photo mode, not the tabs.
                     .background {
                         RoundedRectangle(cornerRadius: Self.cornerRadius, style: .continuous)
-                            .fill(Color.accentColor.opacity(0.22))
+                            .fill(PhotoToolsRow.background)
                             .padding(.vertical, -5)
                             .padding(.horizontal, -10)
                     }
@@ -288,6 +288,9 @@ struct FloatingTabBar: View {
 /// Replace, Move, Reset, Remove. Move swaps the row for the pages it can
 /// go to.
 struct PhotoToolsRow: View {
+    /// A solid accent pill: clearly photo mode, never mistaken for the tabs.
+    static let background = Color.accentColor.opacity(0.55)
+
     @EnvironmentObject var state: CollageState
     let image: CollageImage
     @State private var moving = false
@@ -319,9 +322,6 @@ struct PhotoToolsRow: View {
                     state.beginProtrusion(id: image.id)
                 }
             }
-            if !image.isText && !image.isPlaceholder {
-                tool("Edit", sf: "slider.horizontal.3") { state.beginPhotoEdit(id: image.id) }
-            }
             if !image.isText {
                 tool("Replace", sf: "photo.on.rectangle.angled") {
                     state.boxActionTargetId = image.id
@@ -335,6 +335,7 @@ struct PhotoToolsRow: View {
                 tool("Reset", sf: "arrow.counterclockwise") {
                     withAnimation(.easeInOut(duration: 0.2)) { state.resetTransform(id: image.id) }
                 }
+                tool("Edit", sf: "slider.horizontal.3") { state.beginPhotoEdit(id: image.id) }
             }
             tool("Remove", sf: "trash", tint: .red) {
                 state.selectImage(nil)
