@@ -299,8 +299,8 @@ def pan_markings(wx0, wy0, wx1, wy1):
 def portra400_markings(wx0, wy0, wx1, wy1):
     length = int(wy1 - wy0)
     left = edge_strip(length, 54, [
-        (.04, "text", "KODAK PORTRA 400"), (.30, "arrow", 8), (.33, "text", "9"),
-        (.54, "text", "KODAK PORTRA 400"), (.80, "arrow", 8), (.83, "text", "9A"),
+        (.04, "text", "DASKOLAŽ 400"), (.30, "arrow", 8), (.33, "text", "9"),
+        (.54, "text", "DASKOLAŽ 400"), (.80, "arrow", 8), (.83, "text", "9A"),
     ], FONT_DIN, 36)
     right = edge_strip(length, 54, [
         (.08, "text", "9"), (.30, "bars", 12), (.58, "text", "10"), (.78, "bars", 5),
@@ -311,11 +311,11 @@ def portra400_markings(wx0, wy0, wx1, wy1):
 def portra160_markings(wx0, wy0, wx1, wy1):
     length = int(wx1 - wx0)
     top = edge_strip(length, 54, [
-        (.04, "text", "KODAK PORTRA 160"), (.46, "arrow", 8), (.49, "text", "5"),
+        (.04, "text", "DASKOLAŽ 160"), (.46, "arrow", 8), (.49, "text", "5"),
         (.70, "bars", 9),
     ], FONT_DIN, 36)
     bottom = edge_strip(length, 54, [
-        (.06, "text", "5"), (.30, "bars", 4), (.62, "text", "KODAK PORTRA 160"),
+        (.06, "text", "5"), (.30, "bars", 4), (.62, "text", "DASKOLAŽ 160"),
     ], FONT_DIN, 36)
     return [("h", wy0 - 35, top), ("h", wy1 + 37, bottom)]
 
@@ -323,8 +323,8 @@ def portra160_markings(wx0, wy0, wx1, wy1):
 def hp5_markings(wx0, wy0, wx1, wy1):
     length = int(wy1 - wy0)
     left = edge_strip(length, 50, [
-        (.05, "text", "ILFORD HP5 PLUS"), (.34, "arrow", 8), (.37, "text", "23"),
-        (.56, "text", "ILFORD HP5 PLUS"), (.85, "arrow", 8), (.88, "text", "23A"),
+        (.05, "text", "DASKOLAŽ 400 PLUS"), (.34, "arrow", 8), (.37, "text", "23"),
+        (.56, "text", "DASKOLAŽ 400 PLUS"), (.85, "arrow", 8), (.88, "text", "23A"),
     ], FONT_NARROW, 30)
     right = edge_strip(length, 50, [
         (.10, "text", "23"), (.48, "text", "SAFETY FILM"), (.84, "text", "24"),
@@ -335,7 +335,7 @@ def hp5_markings(wx0, wy0, wx1, wy1):
 def delta_markings(wx0, wy0, wx1, wy1):
     length = int(wy1 - wy0)
     left = edge_strip(length, 50, [
-        (.06, "text", "ILFORD DELTA 100 PROFESSIONAL"), (.62, "arrow", 8), (.65, "text", "14"),
+        (.06, "text", "DASKOLAŽ 100 PROFESSIONAL"), (.62, "arrow", 8), (.65, "text", "14"),
     ], FONT_NARROW, 30)
     right = edge_strip(length, 50, [(.14, "text", "14"), (.74, "text", "15")], FONT_NARROW, 30)
     return [("v", wx0 - 31, left), ("v", wx1 + 31, right)]

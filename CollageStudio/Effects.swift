@@ -369,7 +369,11 @@ enum ContentGrader {
         let m = grade.calibration.isIdentity ? nil : grade.calibration.matrix
         let data = HSLGrader.cubeData { grade.color($0, $1, $2, calibrationMatrix: m) }
         cubes.append((grade, data))
-        if cubes.count > 6 { cubes.removeFirst() }
+        // Room for the filter tiles' previews without pushing out the live
+        // grade (and its before/after twin). Built under the lock on
+        // purpose: every photo asks for the same cube at once, and only
+        // one should build it.
+        if cubes.count > 14 { cubes.removeFirst() }
         return data
     }
 

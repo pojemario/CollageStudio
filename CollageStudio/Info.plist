@@ -37,6 +37,8 @@
 	<false/>
 	<key>LSRequiresIPhoneOS</key>
 	<true/>
+	<key>NSPhotoLibraryAddUsageDescription</key>
+	<string>das Kolaž saves the collages you export to your photo library.</string>
 	<key>NSPhotoLibraryUsageDescription</key>
 	<string>das Kolaž uses your photo library to add photos to your collages and save the ones you export.</string>
 	<key>UIApplicationSceneManifest</key>

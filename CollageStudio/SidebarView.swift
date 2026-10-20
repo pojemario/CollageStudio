@@ -1152,8 +1152,11 @@ struct SpreadMenuButton: View {
         .popover(isPresented: $show, arrowEdge: .bottom) {
             VStack(alignment: .leading, spacing: 2) {
                 item("Spread across \(state.burstPageCount) page\(state.burstPageCount == 1 ? "" : "s")", "sparkles", onBurstAll)
-                item("One image per page", "photo.stack", onOnePerPage)
-                item("All images on one page", "rectangle.stack", onAllOnOne)
+                // Not offered when the photos wouldn't fit (some would be left out).
+                item("One image per page", "photo.stack", onOnePerPage,
+                     fits: state.totalImageCount <= CollageState.maxPages + CollageState.maxImagesPerPage - 1)
+                item("All images on one page", "rectangle.stack", onAllOnOne,
+                     fits: state.totalImageCount <= CollageState.maxImagesPerPage)
             }
             .padding(.vertical, 6)
             .frame(width: 270)
@@ -1162,7 +1165,8 @@ struct SpreadMenuButton: View {
         }
     }
 
-    private func item(_ title: String, _ sf: String, _ action: @escaping () -> Void) -> some View {
+    private func item(_ title: String, _ sf: String, _ action: @escaping () -> Void,
+                      fits: Bool = true) -> some View {
         Button {
             show = false
             // Let the popover dismiss before presenting the confirm alert.
@@ -1180,6 +1184,9 @@ struct SpreadMenuButton: View {
             .contentShape(Rectangle())
         }
         .buttonStyle(.plain)
+        .disabled(!fits)
+        .opacity(fits ? 1 : 0.4)
+        .accessibilityHint(fits ? "" : "Too many photos for this")
     }
 }
 
@@ -1531,8 +1538,10 @@ struct PageGroupsView: View {
                                         .strokeBorder(Color.accentColor, lineWidth: 3)
                                 }
                             }
-                            .onGeometryChange(for: CGRect.self) { $0.frame(in: .named("pageGroups")) } action: {
-                                thumbFrames[img.id] = $0
+                            .onGeometryChange(for: CGRect.self) { $0.frame(in: .named("pageGroups")) } action: { f in
+                                if let old = thumbFrames[img.id], !f.differs(from: old) { return }
+                                Diagnostics.count("thumbFrames")
+                                thumbFrames[img.id] = f
                             }
                             .simultaneousGesture(thumbDragGesture(img))
                     }
@@ -1550,9 +1559,13 @@ struct PageGroupsView: View {
                         .foregroundColor(.secondary)
                         .frame(width: 20)
                         .frame(maxHeight: .infinity)
+                        // A finger-sized target, drawn small.
+                        .padding(.horizontal, 6)
                         .contentShape(Rectangle())
                 }
                 .buttonStyle(.plain)
+                .padding(.horizontal, -6)
+                .accessibilityLabel("Delete page \(pi + 1)")
             }
         }
         .fixedSize(horizontal: false, vertical: true)
@@ -1619,7 +1632,7 @@ struct PageAddPhotosButton: View {
             var loaded: [PlatformImage] = []
             for item in picked {
                 if let data = try? await item.loadTransferable(type: Data.self),
-                   let img = PlatformImage(data: data) {
+                   let img = PlatformImage.decoded(from: data) {
                     loaded.append(img)
                 }
             }
@@ -1659,9 +1672,13 @@ struct ImageThumb: View {
                     .frame(width: 18, height: 18)
                     .background(Color.black.opacity(0.7))
                     .clipShape(Circle())
+                    // A little more room to hit than it shows.
+                    .padding(5)
+                    .contentShape(Rectangle())
             }
             .buttonStyle(.plain)
-            .offset(x: -3, y: 3)
+            .offset(x: 2, y: -2)
+            .accessibilityLabel(img.isText ? "Remove text box" : img.isPlaceholder ? "Remove empty box" : "Remove photo")
         }
     }
 

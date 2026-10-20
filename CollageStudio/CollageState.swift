@@ -317,13 +317,13 @@ class CollageState: ObservableObject {
             "Film916_Corner_m32323232_r9x16",
             "Film916_Hairline_m30303030_r9x16",
         ]),
-        FramePack(name: "Polaroid", ratio: .portrait45, assets: [
-            "Polaroid45_Classic_m080084080220_r4x5",
-            "Polaroid45_Cream_m080084080220_r4x5",
-            "Polaroid45_Black_m080084080220_r4x5",
-            "Polaroid45_Taped_m080084080220_r4x5",
-            "Polaroid45_Blush_m080084080220_r4x5",
-            "Polaroid45_Mint_m080084080220_r4x5",
+        FramePack(name: "Instant", ratio: .portrait45, assets: [
+            "Polaroid45_Classic_m080084080104_r4x5",
+            "Polaroid45_Cream_m080084080104_r4x5",
+            "Polaroid45_Black_m080084080104_r4x5",
+            "Polaroid45_Taped_m080084080104_r4x5",
+            "Polaroid45_Blush_m080084080104_r4x5",
+            "Polaroid45_Mint_m080084080104_r4x5",
         ]),
     ]
 
@@ -375,14 +375,14 @@ class CollageState: ObservableObject {
     /// Bundled overlay packs. Add one by dropping its PNGs into
     /// Assets.xcassets/Overlays/ and listing them here.
     static let overlayPacks: [OverlayPack] = [
-        OverlayPack(name: "Dust & Scratches", kind: .dust, assets: [
-            "Dust916_Fine", "Dust916_Heavy", "Dust916_Hairs",
-            "Dust916_Scratches", "Dust916_Grit", "Dust916_Worn",
-        ]),
         OverlayPack(name: "Light Leaks", kind: .leak, assets: [
             "Leak916_Edge", "Leak916_Corner", "Leak916_Band",
             "Leak916_Burn", "Leak916_Magenta", "Leak916_Streaks",
             "Leak916_Blaze", "Leak916_Coral",
+        ]),
+        OverlayPack(name: "Dust & Scratches", kind: .dust, assets: [
+            "Dust916_Fine", "Dust916_Heavy", "Dust916_Hairs",
+            "Dust916_Scratches", "Dust916_Grit", "Dust916_Worn",
         ]),
     ]
 
@@ -1027,6 +1027,9 @@ class CollageState: ObservableObject {
     var hasUnsavedChanges = false
     /// Photo files already written for this collage, by picture.
     var savedImageFiles: [ObjectIdentifier: (image: PlatformImage, file: String)] = [:]
+    /// Photo files the open collage lists but couldn't load: never deleted
+    /// as unused by a save.
+    var unloadedImageFiles: Set<String> = []
     /// True while a saved collage loads (at launch or from the list).
     @Published var isRestoringProject = false
     var isRenderingThumbnail = false
@@ -1051,6 +1054,8 @@ class CollageState: ObservableObject {
     /// Files written by the last export ("Collage 01.jpg" …).
     @Published var exportedFiles: [URL] = []
     @Published var showExportSheet: Bool = false
+    /// Set when pages couldn't be exported; shown as an alert.
+    @Published var exportProblem: String?
     /// Asks the user whether to export the current page or all pages.
     @Published var showExportOptions: Bool = false
     /// A page's settings, copied from the page menu to paste onto others.
@@ -1485,6 +1490,13 @@ class CollageState: ObservableObject {
               let idx = pages[pi].images.firstIndex(where: { $0.id == id }) else { return }
         pages[pi].images[idx].setImage(newImage)
         focusChecked.remove(id)
+        // The old picture's cutout must not stay with the new one (the
+        // caches know a picture by its address, which can be reused).
+        subjectMasks[id] = nil
+        mergedShapes[id] = nil
+        instanceOutlines[id] = nil
+        dilatedMasks[id] = nil
+        subjectOutlines[id] = nil
         defer { detectFocusPoints() }
         pages[pi].images[idx].panOffset = .zero
         pages[pi].images[idx].framedByUser = false
@@ -1515,6 +1527,7 @@ class CollageState: ObservableObject {
         if draggingId == id || dropTargetId == id {
             clearSwapDrag()
         }
+        forgetRemovedImages()
     }
 
     // MARK: - Page management
@@ -1536,7 +1549,11 @@ class CollageState: ObservableObject {
             imageFrames.removeValue(forKey: img.id)
         }
         pages.remove(at: index)
+        // Stay on the page that was showing (it moves up one if an earlier
+        // page went).
+        if index < currentPageIndex { currentPageIndex -= 1 }
         currentPageIndex = min(currentPageIndex, pages.count - 1)
+        forgetRemovedImages()
     }
 
     /// Moves an image to another page (appended at the end), resetting its
@@ -1588,6 +1605,8 @@ class CollageState: ObservableObject {
 
     /// Collapses the whole collage onto a single page, deleting the others.
     func mergeAllOntoOnePage() {
+        // Never leave photos out (the menu doesn't offer it then either).
+        guard totalImageCount <= Self.maxImagesPerPage else { return }
         let allImages = pages.flatMap { $0.images }.prefix(Self.maxImagesPerPage).map { img -> CollageImage in
             var i = img
             i.panOffset = .zero
@@ -1702,7 +1721,8 @@ class CollageState: ObservableObject {
     /// the limit, the remainder stacks on the last page).
     func distributeOneImagePerPage() {
         let allImages = pages.flatMap { $0.images }
-        guard !allImages.isEmpty else { return }
+        guard !allImages.isEmpty,
+              allImages.count <= Self.maxPages + Self.maxImagesPerPage - 1 else { return }
         let styleTemplate = currentPage.style, lookTemplate = currentPage.look
 
         var newPages: [CollagePage] = []
@@ -1847,6 +1867,7 @@ class CollageState: ObservableObject {
         currentPageIndex = 0
         selectedOverlayId = nil
         selectedImageId = nil
+        forgetRemovedImages()
         useLastRatio()
         imageFrames.removeAll()
         clearSwapDrag()
@@ -2040,23 +2061,29 @@ class CollageState: ObservableObject {
 
     func setBoxSize(id: UUID, boxSize: CGSize) {
         guard !isRenderingOffscreen else { return }
-        guard let idx = images.firstIndex(where: { $0.id == id }) else { return }
-        images[idx].lastBoxSize = boxSize
+        guard let idx = images.firstIndex(where: { $0.id == id }),
+              boxSize.differs(from: images[idx].lastBoxSize) else { return }
+        Diagnostics.count("boxSize")
+        // All changes on a copy, written back once: each write to the pages
+        // redraws every box.
+        var img = images[idx]
+        img.lastBoxSize = boxSize
         // A photo not positioned by hand keeps its subject in view.
-        if let pan = Self.focusPan(for: images[idx], boxSize: boxSize), pan != images[idx].panOffset {
-            images[idx].panOffset = pan
+        if let pan = Self.focusPan(for: img, boxSize: boxSize), pan != img.panOffset {
+            img.panOffset = pan
         }
         // A text block always takes the shape of its box: re-render when the
         // box's proportions moved away from the bitmap's.
-        if let style = images[idx].textStyle, boxSize.width > 1, boxSize.height > 1 {
+        if let style = img.textStyle, boxSize.width > 1, boxSize.height > 1 {
             let target = CollageImage.textRenderSize(forBox: boxSize)
-            let current = images[idx].naturalSize
+            let current = img.naturalSize
             if abs(target.width - current.width) > 2 || abs(target.height - current.height) > 2 {
-                images[idx].setImage(CollageImage.renderTextImage(
+                img.setImage(CollageImage.renderTextImage(
                     style: style, size: target, boxLongEdge: max(boxSize.width, boxSize.height)))
-                images[idx].textStyle = style
+                img.textStyle = style
             }
         }
+        images[idx] = img
     }
 
     func setZoom(id: UUID, zoom: CGFloat, anchor: CGPoint, boxSize: CGSize) {
@@ -2165,7 +2192,11 @@ class CollageState: ObservableObject {
     }
 
     func updateResizeBoxes(colIndex: Int, biA: Int, biB: Int, totalDeltaFraction: CGFloat) {
-        guard colIndex < dragStartBoxGrows.count else { return }
+        // The layout may have changed since the drag began.
+        guard dragStartBoxGrows.indices.contains(colIndex), layout.boxGrows.indices.contains(colIndex),
+              dragStartBoxGrows[colIndex].count == layout.boxGrows[colIndex].count,
+              dragStartBoxGrows[colIndex].indices.contains(biA),
+              dragStartBoxGrows[colIndex].indices.contains(biB) else { return }
         var columnBoxes = dragStartBoxGrows[colIndex]
         let total = columnBoxes.reduce(0, +)
         if total == 0 { return }
@@ -2185,7 +2216,8 @@ class CollageState: ObservableObject {
     }
 
     func updateResizeCols(ciA: Int, ciB: Int, totalDeltaFraction: CGFloat) {
-        guard ciA < dragStartColGrows.count, ciB < dragStartColGrows.count else { return }
+        guard ciA < dragStartColGrows.count, ciB < dragStartColGrows.count,
+              dragStartColGrows.count == layout.colGrows.count else { return }
         
         let totalSum = dragStartColGrows.reduce(0, +)
         let sumAB = dragStartColGrows[ciA] + dragStartColGrows[ciB]
@@ -2204,7 +2236,9 @@ class CollageState: ObservableObject {
     }
 
     func resizeBoxes(colIndex: Int, biA: Int, biB: Int, deltaFraction: CGFloat) {
-        guard colIndex < layout.boxGrows.count else { return }
+        guard layout.boxGrows.indices.contains(colIndex),
+              layout.boxGrows[colIndex].indices.contains(biA),
+              layout.boxGrows[colIndex].indices.contains(biB) else { return }
         var columnBoxes = layout.boxGrows[colIndex]
         let total = columnBoxes.reduce(0, +)
         if total == 0 { return }
@@ -2359,12 +2393,13 @@ class CollageState: ObservableObject {
     }
 
     func clearSwapDrag() {
-        swapArmedId = nil
-        draggingId = nil
-        dropTargetId = nil
-        dropTargetEmptyCol = nil
-        dropInsertTarget = nil
-        dragOffset = .zero
+        // Only what's set: an unchanged write still redraws everything.
+        if swapArmedId != nil { swapArmedId = nil }
+        if draggingId != nil { draggingId = nil }
+        if dropTargetId != nil { dropTargetId = nil }
+        if dropTargetEmptyCol != nil { dropTargetEmptyCol = nil }
+        if dropInsertTarget != nil { dropInsertTarget = nil }
+        if dragOffset != .zero { dragOffset = .zero }
     }
 
     /// Belt-and-braces reset of every transient interaction flag. If any
@@ -2373,8 +2408,32 @@ class CollageState: ObservableObject {
     /// the page can never stay frozen.
     func clearInteractionLocks() {
         clearSwapDrag()
-        imageZoomingId = nil
-        isCanvasZooming = false
+        if imageZoomingId != nil { imageZoomingId = nil }
+        if isCanvasZooming { isCanvasZooming = false }
+        // A splitter drag cancelled without its end would otherwise keep
+        // undo and autosave paused.
+        if isResizing { isResizing = false }
+    }
+
+    /// Lets go of whatever pointed at a picture that's no longer in the
+    /// collage (selection, editors, caches).
+    func forgetRemovedImages() {
+        let ids = Set(pages.flatMap { $0.images.map(\.id) })
+        if let id = selectedImageId, !ids.contains(id) { selectedImageId = nil }
+        if let id = textEditTargetId, !ids.contains(id) { textEditTargetId = nil }
+        if let id = protrusionTargetId, !ids.contains(id) { protrusionTargetId = nil }
+        if let id = boxActionTargetId, !ids.contains(id), !showReplacePicker { boxActionTargetId = nil }
+        if gradedProxies.keys.contains(where: { !ids.contains($0) }) {
+            gradedProxies = gradedProxies.filter { ids.contains($0.key) }
+        }
+        if subjectMasks.keys.contains(where: { !ids.contains($0) }) {
+            subjectMasks = subjectMasks.filter { ids.contains($0.key) }
+        }
+        focusChecked = focusChecked.filter { ids.contains($0) }
+        mergedShapes = mergedShapes.filter { ids.contains($0.key) }
+        instanceOutlines = instanceOutlines.filter { ids.contains($0.key) }
+        dilatedMasks = dilatedMasks.filter { ids.contains($0.key) }
+        subjectOutlines = subjectOutlines.filter { ids.contains($0.key) }
     }
 
     func emptySlotTarget(at location: CGPoint) -> Int? {
@@ -2573,21 +2632,30 @@ class CollageState: ObservableObject {
         exportProgress = 0
 
         var urls: [URL] = []
+        var failed: [Int] = []
         for (n, pi) in targets.enumerated() {
             currentPageIndex = pi
             refreshEffectMaps(force: true)
+            defer {
+                // Each page's full-size graded photos go before the next.
+                gradeExportCache = [:]
+                exportProgress = Double(n + 1) / Double(targets.count)
+            }
             guard let image = renderCurrentPage(scale: settings.scale(for: canvasSize)),
-                  let data = settings.encode(image) else { continue }
-            // Numbered in order, so a carousel posts in the right sequence.
-            let name = targets.count > 1 ? String(format: "Collage %02d", n + 1) : "Collage"
+                  let data = settings.encode(image) else {
+                failed.append(pi + 1)
+                continue
+            }
+            // Numbered in order (of the pages that made it), so a carousel
+            // posts in the right sequence.
+            let name = targets.count > 1 ? String(format: "Collage %02d", urls.count + 1) : "Collage"
             let url = dir.appendingPathComponent(name + "." + settings.format.fileExtension)
             do {
                 try data.write(to: url)
                 urls.append(url)
             } catch {
-                print("Export failed for page \(pi + 1): \(error)")
+                failed.append(pi + 1)
             }
-            exportProgress = Double(n + 1) / Double(targets.count)
             // Let the progress bar repaint between pages.
             await Task.yield()
         }
@@ -2600,6 +2668,12 @@ class CollageState: ObservableObject {
         isLoading = false
         savePhase = .idle
         exportedFiles = urls
+        if !failed.isEmpty {
+            Diagnostics.log("export failed for pages \(failed)")
+            exportProblem = urls.isEmpty
+                ? "The collage couldn't be exported. Try a smaller size, or close other apps and try again."
+                : "Page\(failed.count == 1 ? "" : "s") \(failed.map(String.init).joined(separator: ", ")) couldn't be exported; the others are ready to share."
+        }
         if !urls.isEmpty {
             showExportSheet = true
         }

@@ -4,6 +4,8 @@ import SwiftUI
 struct CollageApp: App {
     @StateObject private var state = CollageState()
     @StateObject private var updates = UpdateChecker()
+    /// Shared photos are being read in (each activation asks again).
+    @State private var drainingInbox = false
     @Environment(\.scenePhase) private var scenePhase
 
     init() {
@@ -115,7 +117,16 @@ struct CollageApp: App {
             DispatchQueue.main.asyncAfter(deadline: .now() + 0.4) { importSharedImages() }
             return
         }
-        let shared = SharedInbox.drainPendingImages()
+        guard !drainingInbox else { return }
+        drainingInbox = true
+        Task {
+            let shared = await Task.detached(priority: .userInitiated) { SharedInbox.drainPendingImages() }.value
+            drainingInbox = false
+            addShared(shared)
+        }
+    }
+
+    private func addShared(_ shared: [PlatformImage]) {
         guard !shared.isEmpty else { return }
 
         if state.images.isEmpty {

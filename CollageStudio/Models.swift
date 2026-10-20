@@ -30,6 +30,29 @@ extension PlatformImage {
 // MARK: - Image downsampling
 
 extension PlatformImage {
+    /// The longest edge a picked or shared photo is kept at: the largest
+    /// export is 4096 px across the whole collage, so no photo ever needs
+    /// more, and a 48 MP original would take ~190 MB decoded.
+    static let maxImportEdge: CGFloat = 4096
+
+    /// Decodes picture data straight to at most `maxEdge` on its long side
+    /// (upright), without ever decoding the full-size original.
+    nonisolated static func decoded(from data: Data, maxEdge: CGFloat = maxImportEdge) -> PlatformImage? {
+        #if canImport(UIKit)
+        guard let source = CGImageSourceCreateWithData(data as CFData, [kCGImageSourceShouldCache: false] as CFDictionary),
+              let cg = CGImageSourceCreateThumbnailAtIndex(source, 0, [
+                  kCGImageSourceCreateThumbnailFromImageAlways: true,
+                  kCGImageSourceCreateThumbnailWithTransform: true,
+                  kCGImageSourceShouldCacheImmediately: true,
+                  kCGImageSourceThumbnailMaxPixelSize: maxEdge,
+              ] as CFDictionary)
+        else { return UIImage(data: data) }
+        return UIImage(cgImage: cg)
+        #else
+        return NSImage(data: data)
+        #endif
+    }
+
     /// Returns a copy scaled down so its long edge is at most `longEdge`.
     /// Returns self if the image is already small enough.
     func downsampled(longEdge target: CGFloat) -> PlatformImage {
@@ -617,11 +640,19 @@ struct FramePack: Identifiable {
         self.ratio = ratio
         self.frames = assets.map { asset in
             let parts = asset.split(separator: "_")
+            let label = parts.count > 1 ? String(parts[1]) : asset
             return CanvasFrameSet(baseName: parts.prefix(2).joined(separator: "_"),
                                   variantAssets: [asset],
-                                  label: parts.count > 1 ? String(parts[1]) : asset)
+                                  label: Self.labels[label] ?? label)
         }
     }
+
+    /// Picker names for frames whose asset names came from film stocks
+    /// (the asset names stay: saved collages refer to them).
+    private static let labels = [
+        "Portra400": "Color 400", "Portra160": "Color 160",
+        "HP5": "Mono 400", "Delta100": "Mono 100",
+    ]
 }
 
 // MARK: - Overlays
@@ -1099,6 +1130,10 @@ enum ColorFilter: Hashable, Identifiable {
     /// Amber reference look: warm amber skin and reds against teal-cyan
     /// sky and denim, muted greens, cool mint-gray whites held under white.
     case amber
+    /// Quiet editorial film look: light, clean peach skin (never deeper),
+    /// rust reds, cool deep emerald greens, dusty steel blues, crisp
+    /// contrast and cool steel-gray whites.
+    case amber2
     /// Warm, even skin against complementary split toning: olive-green
     /// shadows and teal highlights.
     case tealSplit
@@ -1131,7 +1166,7 @@ enum ColorFilter: Hashable, Identifiable {
     case lut(String)
 
     /// The built-in looks, in tile order.
-    static let builtIns: [ColorFilter] = [.none, .amber, .heritage, .tealSplit, .brownie, .melancholy, .classicNegative,
+    static let builtIns: [ColorFilter] = [.none, .amber, .amber2, .heritage, .tealSplit, .brownie, .melancholy, .classicNegative,
                                           .classicNegative2, .portra400]
     /// Every filter offered: built-ins, then the bundled LUTs.
     static var allCases: [ColorFilter] { groups.flatMap(\.filters) }
@@ -1148,13 +1183,14 @@ enum ColorFilter: Hashable, Identifiable {
         switch self {
         case .none: return "None"
         case .amber: return "Amber"
+        case .amber2: return "Amber2"
         case .tealSplit: return "Teal Split"
         case .heritage: return "Heritage"
         case .brownie: return "Brownie"
         case .melancholy: return "Melancholy"
-        case .classicNegative: return "Classic Neg"
-        case .classicNegative2: return "Classic Neg 2"
-        case .portra400: return "Portra 400"
+        case .classicNegative: return "Split Neg"
+        case .classicNegative2: return "Classic Fade"
+        case .portra400: return "P400"
         case .lut(let key): return LUTLibrary.displayName(key)
         }
     }
@@ -1168,6 +1204,8 @@ enum ColorFilter: Hashable, Identifiable {
             return LUTLibrary.shared.lut(named: name)?.sample(r, g, b) ?? (r, g, b)
         case .amber:
             return Self.amber(r, g, b)
+        case .amber2:
+            return Self.amber2(r, g, b)
         case .tealSplit:
             return Self.tealSplit(r, g, b)
         case .heritage:
@@ -1270,6 +1308,85 @@ enum ColorFilter: Hashable, Identifiable {
         let mid = [-0.010, 0.010, -0.004]       // faint green
         let high = [-0.016, 0.006, 0.008]       // mint-gray
         let out = (0..<3).map { min(max(c[$0] + wm * mid[$0] + wh * high[$0], 0), 1) }
+        return (out[0], out[1], out[2])
+    }
+
+    /// Matched to the amber2Style references (quiet editorial on film): light,
+    /// clean peach skin held off orange, true rust reds, cool deep emerald
+    /// greens, muted yellows, denim and sky eased to a dusty steel slate,
+    /// crisp contrast over near-true blacks, and cool steel-gray mids and
+    /// whites rolled off well under 1.
+    private static func amber2(_ r: Double, _ g: Double, _ b: Double) -> (r: Double, g: Double, b: Double) {
+        func bump(_ h: Double, _ center: Double, _ width: Double) -> Double {
+            var d = (h - center + 180).truncatingRemainder(dividingBy: 360)
+            if d < 0 { d += 360 }
+            d -= 180
+            let w = min(max(1 - abs(d) / width, 0), 1)
+            return w * w * (3 - 2 * w)
+        }
+        /// `h` moved `amount` of the short way round toward `target`.
+        func toward(_ h: Double, _ target: Double, _ amount: Double) -> Double {
+            var d = (target - h).truncatingRemainder(dividingBy: 360)
+            if d > 180 { d -= 360 } else if d < -180 { d += 360 }
+            return h + d * amount
+        }
+        var (h, s, v) = hsv(r, g, b)
+        let chroma = min(s / 0.25, 1)          // grays have no hue to darken by
+        // Skin: light, clean peach. Hue held off orange, saturation eased
+        // down, never darker. Only moderate saturation — rust and brick stay.
+        let wk = bump(h, 22, 22) * min(max((s - 0.08) / 0.10, 0), 1) * min(max((0.70 - s) / 0.15, 0), 1)
+        h = toward(h, 18, wk * 0.35)
+        s -= wk * max(s - 0.30, 0) * 0.25
+        v = min(v * (1 + 0.01 * wk), 1)
+        // Reds and rust: true red-orange, as they are.
+        let wr = bump(h, 8, 18) * (1 - wk)
+        h = toward(h, 10, wr * 0.3)
+        // Yellows toward amber, well muted.
+        let wy = bump(h, 56, 22)
+        h = toward(h, 50, wy * 0.35)
+        s *= 1 - 0.40 * wy
+        // Greens: cool, deep emerald.
+        let wg = bump(h, 115, 55)
+        h = toward(h, 138, wg * 0.35)
+        s *= 1 - 0.15 * wg
+        v *= 1 - 0.08 * wg * chroma
+        // Aqua: a quiet teal.
+        let wa = bump(h, 178, 22)
+        s *= 1 - 0.10 * wa
+        // Blues: a dusty steel slate, a touch toward cyan.
+        let wb = bump(h, 218, 40)
+        h = toward(h, 207, wb * 0.35)
+        s *= 1 - 0.40 * wb
+        v *= 1 - 0.08 * wb * chroma
+        s *= 0.93
+        h = h.truncatingRemainder(dividingBy: 360)
+        if h < 0 { h += 360 }
+        var c = rgb(h, s, v)
+        // Crisp contrast over near-true blacks, whites rolled off well under
+        // 1 — mostly on luminance, and skin keeps its lightness.
+        func tone(_ x: Double) -> Double {
+            let sc = x * x * (3 - 2 * x)
+            let y = pow(x * 0.65 + sc * 0.35, 1.05)
+            let top = y > 0.75 ? 0.75 + (y - 0.75) * 0.75 : y
+            return 0.004 + (0.97 - 0.004) * top
+        }
+        let l0 = 0.299 * c[0] + 0.587 * c[1] + 0.114 * c[2]
+        var t = tone(l0)
+        t += (max(t, l0) - t) * wk * 0.85
+        let k = l0 > 1e-4 ? t / l0 : 1
+        c = c.map { x in tone(x) * 0.3 * (1 - wk) + min(x * k, 1) * (0.7 + 0.3 * wk) }
+        // Teal-green shadows, cool steel mids on the near-neutrals, cool
+        // cyan-gray whites — all kept off skin so it stays clean.
+        let l = 0.299 * c[0] + 0.587 * c[1] + 0.114 * c[2]
+        let neutral = 1 - min(max((hsv(c[0], c[1], c[2]).1 - 0.06) / 0.14, 0), 1)
+        let keep = 1 - 0.9 * wk
+        let ws = pow(min(max(1 - l / 0.35, 0), 1), 1.2) * keep
+        let wm = min(max(1 - abs(l - 0.5) / 0.3, 0), 1) * neutral * keep
+        let wh = pow(min(max((l - 0.6) / 0.35, 0), 1), 1.1) * keep
+        let shadow = [-0.012, 0.010, 0.002]     // teal-green
+        let mid = [-0.012, 0.003, 0.014]        // cool steel
+        let high = [-0.020, 0.006, 0.020]       // cool cyan-gray
+        let out = (0..<3).map { min(max(c[$0] + ws * shadow[$0] + wm * mid[$0] + wh * high[$0], 0), 1) }
         return (out[0], out[1], out[2])
     }
 
@@ -1449,7 +1566,7 @@ enum ColorFilter: Hashable, Identifiable {
     /// cyan-leaning blues, a strong S-curve over a lifted green-teal black
     /// floor, warm-olive midtones and near-neutral highlights.
     /// `shadow` is the tint added to the shadows (green-teal for Classic
-    /// Neg, blue-teal for Classic Neg 2).
+    /// Neg, blue-teal for Classic Fade).
     private static func classicNegative(_ r: Double, _ g: Double, _ b: Double,
                                         shadow: [Double]) -> (r: Double, g: Double, b: Double) {
         /// Smooth weight around `center` (degrees), 0 beyond ±`width`.

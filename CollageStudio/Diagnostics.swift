@@ -73,11 +73,13 @@ enum Diagnostics {
                 // Where it's stuck: a few looks at its stack, a second apart.
                 if samples < 3, now.timeIntervalSince(seen) > 2.5 + Double(samples) {
                     samples += 1
-                    write("\(timestamp()) main thread stack \(samples):\n" + mainThreadStack())
+                    write("\(timestamp()) main thread stack \(samples):\n" + takeWrites() + mainThreadStack())
                 }
             } else if let since = stuckSince {
                 write(String(format: "%@ main thread back after %.1fs\n", timestamp(), seen.timeIntervalSince(since)))
                 stuckSince = nil
+            } else {
+                _ = takeWrites()
             }
             DispatchQueue.main.async { lastSeen.withLock { $0 = Date() } }
         }
@@ -85,6 +87,16 @@ enum Diagnostics {
         mainWatch = timer
     }
     private static var mainWatch: DispatchSourceTimer?
+
+    /// How often each layout-driven value was set since the last look:
+    /// during a freeze, the one that keeps changing is the loop.
+    private static let writes = OSAllocatedUnfairLock(initialState: [String: Int]())
+    static func count(_ name: String) { writes.withLock { $0[name, default: 0] += 1 } }
+    private static func takeWrites() -> String {
+        let counts = writes.withLock { w -> [String: Int] in defer { w = [:] }; return w }
+        let top = counts.sorted { $0.value > $1.value }.prefix(8)
+        return top.isEmpty ? "  writes: none\n" : "  writes: " + top.map { "\($0.key)×\($0.value)" }.joined(separator: " ") + "\n"
+    }
     private static var mainThread: thread_act_t = 0
 
     /// The main thread's call stack, one frame a line ("image +offset
@@ -182,5 +194,19 @@ extension CollageState {
             return s + "c\(p.style.numCols)"
         }
         return "pages \(pages.count) [\(perPage.joined(separator: " "))] on \(currentPageIndex + 1) ratio \(ratio.rawValue)"
+    }
+}
+
+// Layout reports differing only in a fraction of a point are noise: taking
+// them as changes can feed a layout back into itself without end.
+extension CGFloat {
+    func differs(from other: CGFloat) -> Bool { abs(self - other) > 0.5 }
+}
+extension CGSize {
+    func differs(from other: CGSize) -> Bool { width.differs(from: other.width) || height.differs(from: other.height) }
+}
+extension CGRect {
+    func differs(from other: CGRect) -> Bool {
+        minX.differs(from: other.minX) || minY.differs(from: other.minY) || size.differs(from: other.size)
     }
 }

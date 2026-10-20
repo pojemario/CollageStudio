@@ -170,13 +170,11 @@ struct ImageBoxView: View {
                                       initial: true) { _, tracked in
                                 let newFrame = tracked.frame
                                 // Offscreen copies (export, effect snapshot)
-                                // must not overwrite on-screen geometry.
-                                guard !state.isRenderingOffscreen else { return }
+                                // must not overwrite on-screen geometry; nor
+                                // does a box lifted (offset, enlarged) by a
+                                // swap drag.
+                                guard !state.isRenderingOffscreen, state.draggingId != imageId else { return }
                                 updateTrackedGeometry(frame: newFrame, boxSize: newFrame.size)
-                                guard let img = imgData else { return }
-                                if img.lastBoxSize != newFrame.size {
-                                    state.setPan(id: imageId, pan: img.panOffset, boxSize: newFrame.size)
-                                }
                             }
                     }
                 )
@@ -278,7 +276,9 @@ struct ImageBoxView: View {
                 // (a tap on the box itself is left to the box's gestures).
                 // In a corner nothing covers (the pager, the compare button,
                 // the panel, the screen's edge).
-                .overlay(alignment: editButtonPlacement(box: geo.frame(in: .global))) {
+                // (Only a text box reads where it is on screen: that makes a
+                // box redraw whenever it moves.)
+                .overlay(alignment: imgData?.isText == true ? editButtonPlacement(box: geo.frame(in: .global)) : .topTrailing) {
                     // Always there, except when only the collage is showing.
                     if imgData?.isText == true, !state.isRenderingOffscreen, !state.toolbarHidden {
                         TextEditButton(active: state.textEditTargetId == imageId) {
@@ -287,7 +287,8 @@ struct ImageBoxView: View {
                         .padding(Self.editButtonInset)
                     }
                 }
-                .animation(.easeInOut(duration: 0.2), value: editButtonPlacement(box: geo.frame(in: .global)))
+                .animation(.easeInOut(duration: 0.2),
+                           value: imgData?.isText == true ? editButtonPlacement(box: geo.frame(in: .global)) : .topTrailing)
                 .id(imgData?.gestureEpoch ?? 0)
         }
     }
@@ -511,7 +512,9 @@ struct ImageBoxView: View {
     /// Holding still on a box for half a second selects it too (where the
     /// action menu used to open), with a firmer tap of feedback.
     var selectLongPressGesture: some Gesture {
-        LongPressGesture(minimumDuration: 0.5, maximumDistance: 8)
+        // (No more give than the pan's 4pt: a slow drift either pans or
+        // selects, never both.)
+        LongPressGesture(minimumDuration: 0.5, maximumDistance: 4)
             .onEnded { _ in
                 guard state.draggingId == nil, state.imageZoomingId == nil,
                       !state.isCanvasZooming, state.selectedImageId != imageId else { return }

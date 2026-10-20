@@ -44,7 +44,7 @@ struct StylePreset: Identifiable, Codable, Equatable {
     /// The looks that come with the app.
     static let builtIns: [StylePreset] = [
         StylePreset(name: "Clean", style: style(background: .white, gap: 10, rounding: 20)),
-        StylePreset(name: "Polaroid",
+        StylePreset(name: "Instant",
                     style: style(background: color(0.97, 0.96, 0.93), gap: 28, rounding: 0),
                     effects: ["Fade": 10, "Grain": 25, "Vignette": 15],
                     filter: "brownie", filterStrength: 45),
@@ -54,7 +54,7 @@ struct StylePreset: Identifiable, Codable, Equatable {
                     style: style(background: color(0.08, 0.08, 0.08), gap: 14, rounding: 3),
                     effects: ["Grain": 35, "Vignette": 30, "Halation": 25],
                     filter: "classicNegative", filterStrength: 80),
-        StylePreset(name: "Portra",
+        StylePreset(name: "Warm Film",
                     style: style(background: color(0.98, 0.95, 0.89), gap: 16, rounding: 12),
                     effects: ["Grain": 20], filter: "portra400"),
         StylePreset(name: "Pastel",

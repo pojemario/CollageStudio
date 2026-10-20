@@ -84,6 +84,7 @@ extension CollageState {
             selectedOverlayId = overlayLayers.last?.id
         }
         dropGradesIfIdentity()
+        forgetRemovedImages()
     }
 
     /// Watches for edits: once changes settle (and no finger is still on a
@@ -207,7 +208,11 @@ struct UndoRedoButtons: View {
             // Redo drops down below in a bubble (RedoBubbleLayer, on the
             // app's top layer so a tap on it never reaches the collage).
             button("arrow.uturn.backward", label: "Undo", enabled: state.canUndo) { state.undo() }
-                .onGeometryChange(for: CGRect.self) { $0.frame(in: .global) } action: { state.undoButtonFrame = $0 }
+                .onGeometryChange(for: CGRect.self) { $0.frame(in: .global) } action: { f in
+                    guard f.differs(from: state.undoButtonFrame) else { return }
+                    Diagnostics.count("undoButtonFrame")
+                    state.undoButtonFrame = f
+                }
                 .onDisappear { state.undoButtonFrame = .zero }
         } else {
             HStack(spacing: 0) {

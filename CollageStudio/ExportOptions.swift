@@ -8,10 +8,19 @@ struct ExportSettings: Equatable {
         case print = "Print"
         var id: String { rawValue }
 
+        /// Shown in the picker (the raw value is what's remembered).
+        var title: String {
+            switch self {
+            case .standard: return "Standard"
+            case .instagram: return "Social"
+            case .print: return "Print"
+            }
+        }
+
         var detail: String {
             switch self {
             case .standard: return "Sharp on any screen"
-            case .instagram: return "Sized for Instagram"
+            case .instagram: return "1080 px wide, for social feeds"
             case .print: return "For prints up to ~35 cm"
             }
         }
@@ -105,7 +114,7 @@ struct ExportOptionsView: View {
                 Section {
                     Picker("Size", selection: $settings.size) {
                         ForEach(ExportSettings.Size.allCases) { size in
-                            Text(size.rawValue).tag(size)
+                            Text(size.title).tag(size)
                         }
                     }
                     .pickerStyle(.menu)
@@ -117,7 +126,7 @@ struct ExportOptionsView: View {
                     .pickerStyle(.menu)
                 } footer: {
                     VStack(alignment: .leading, spacing: 4) {
-                        Text("\(settings.size.rawValue): \(detail(for: settings.size))")
+                        Text("\(settings.size.title): \(detail(for: settings.size))")
                         Text("\(settings.format.rawValue): \(settings.format.detail)")
                         if settings.size == .instagram, let hint = instagramHint {
                             Label(hint, systemImage: "lightbulb")
@@ -151,12 +160,12 @@ struct ExportOptionsView: View {
         return "\(Int(px.width)) × \(Int(px.height)) px · \(size.detail)"
     }
 
-    /// Instagram crops other shapes; say which canvas ratios fit.
+    /// Social feeds crop other shapes; say which canvas ratios fit.
     private var instagramHint: String? {
         switch state.ratio {
         case .square, .portrait45: return nil
-        case .portrait916: return "9:16 fits Stories and Reels; feed posts show it cropped to 4:5."
-        default: return "Instagram feed posts fit best at 4:5 or 1:1 (change it with the ratio button)."
+        case .portrait916: return "9:16 fits stories and reels; feed posts usually show it cropped to 4:5."
+        default: return "Feed posts fit best at 4:5 or 1:1 (change it with the ratio button)."
         }
     }
 }

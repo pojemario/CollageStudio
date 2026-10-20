@@ -87,8 +87,10 @@ final class UpdateChecker: ObservableObject {
               info.build > currentBuild,
               info.build != UserDefaults.standard.integer(forKey: Self.skippedKey) else { return }
         Diagnostics.log("update available: build \(info.build) (running \(currentBuild))")
-        updateURL = URL(string: info.testflightURL ?? "itms-beta://")
-        available = info
+        updateURL = Self.trustedTestFlightURL(info.testflightURL)
+        var shown = info
+        shown.notes = info.notes.map { String($0.prefix(300)) }
+        available = shown
     }
 
     /// App Store installs: the App Store's own listing decides.
@@ -103,9 +105,21 @@ final class UpdateChecker: ObservableObject {
         // "Later" for an App Store version is remembered by its number.
         let marker = Self.versionMarker(version)
         guard marker != UserDefaults.standard.integer(forKey: Self.skippedKey) else { return }
+        // Only an App Store link.
         updateURL = (result["trackViewUrl"] as? String).flatMap(URL.init(string:))
+            .flatMap { $0.scheme == "https" && $0.host == "apps.apple.com" ? $0 : nil }
         available = UpdateInfo(version: version, build: marker, notes: result["releaseNotes"] as? String,
                                testflightURL: nil, appStoreURL: updateURL?.absoluteString)
+    }
+
+    /// The feed is only a gist: the link it gives is opened only if it
+    /// goes to TestFlight; anything else falls back to the TestFlight app.
+    static func trustedTestFlightURL(_ string: String?) -> URL {
+        let fallback = URL(string: "itms-beta://")!
+        guard let string, let url = URL(string: string) else { return fallback }
+        if url.scheme == "itms-beta" { return url }
+        if url.scheme == "https", url.host == "testflight.apple.com" { return url }
+        return fallback
     }
 
     /// "2.10" is newer than "2.9".

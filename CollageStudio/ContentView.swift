@@ -243,9 +243,22 @@ struct ContentView: View {
         }
         // Redo, dropped down below the toolbar's Undo button.
         .overlay { RedoBubbleLayer() }
+        .alert("Export", isPresented: Binding(get: { state.exportProblem != nil },
+                                             set: { if !$0 { state.exportProblem = nil } })) {
+            Button("OK", role: .cancel) {}
+        } message: {
+            Text(state.exportProblem ?? "")
+        }
         // First-run tips (see Tips.swift).
         .task { await CollageTips.follow() }
-        .onChange(of: state.hasAnyImages, initial: true) { _, has in CollageTips.hasImages = has }
+        // Tips wait until a new collage has settled on screen (a popover
+        // presented while the panel slides in is asking for trouble).
+        .onChange(of: state.hasAnyImages, initial: true) { _, has in
+            guard has else { CollageTips.hasImages = false; return }
+            DispatchQueue.main.asyncAfter(deadline: .now() + 2) {
+                if state.hasAnyImages { CollageTips.hasImages = true }
+            }
+        }
         .onChange(of: state.selectedImageId) { _, id in
             if id != nil { PhotoMenuTip().invalidate(reason: .actionPerformed) }
         }
@@ -492,7 +505,10 @@ struct ContentView: View {
                     PageTabBar().padding(.top, 2)
                         .onGeometryChange(for: CGRect.self) { $0.frame(in: .global) } action: { f in
                             pagerBottomY = f.maxY
-                            state.pagerFrame = state.pages.count > 1 ? f : .zero
+                            let frame = state.pages.count > 1 ? f : .zero
+                            guard frame.differs(from: state.pagerFrame) else { return }
+                            Diagnostics.count("pagerFrame")
+                            state.pagerFrame = frame
                         }
                         .onChange(of: state.pages.count > 1) { _, shown in
                             if !shown { state.pagerFrame = .zero }
@@ -503,7 +519,10 @@ struct ContentView: View {
             .onGeometryChange(for: CGFloat.self) { $0.frame(in: .global).minY } action: { canvasTopY = $0 }
             .onChange(of: PanelLimitKey(canvasTop: canvasTopY, pagerBottom: pagerBottomY, pages: state.pages.count),
                       initial: true) { _, k in
-                state.panelTopLimitY = (k.pages > 1 ? max(k.pagerBottom, k.canvasTop) : k.canvasTop) + 8
+                let limit = (k.pages > 1 ? max(k.pagerBottom, k.canvasTop) : k.canvasTop) + 8
+                guard limit.differs(from: state.panelTopLimitY) else { return }
+                Diagnostics.count("panelTopLimitY")
+                state.panelTopLimitY = limit
             }
             .overlay(alignment: .bottom) {
                 // No chrome until there are images — the empty canvas just
@@ -523,7 +542,10 @@ struct ContentView: View {
                                     Color.clear
                                         .onChange(of: g.frame(in: .global).minY, initial: true) { _, y in
                                             guard !state.isPanelDragging else { return }
-                                            state.panelTopGlobalY = state.isPanelOpen ? y : 0
+                                            let top = state.isPanelOpen ? y : 0
+                                            guard top.differs(from: state.panelTopGlobalY) else { return }
+                                            Diagnostics.count("panelTopGlobalY")
+                                            state.panelTopGlobalY = top
                                         }
                                         .onChange(of: state.isPanelDragging) { _, dragging in
                                             guard !dragging else { return }

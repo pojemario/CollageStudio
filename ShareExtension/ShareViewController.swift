@@ -68,9 +68,9 @@ class ShareViewController: UIViewController {
             // Show a short confirmation, then hand off to the main app.
             self.spinner.stopAnimating()
             self.spinner.isHidden = true
-            self.hudLabel.text = savedCount == 1
-                ? "Added 1 photo ✓"
-                : "Added \(savedCount) photos ✓"
+            self.hudLabel.text = savedCount == 0
+                ? "Couldn't add these photos"
+                : savedCount == 1 ? "Added 1 photo ✓" : "Added \(savedCount) photos ✓"
             DispatchQueue.main.asyncAfter(deadline: .now() + 0.7) {
                 self.openHostApp()
                 self.complete()

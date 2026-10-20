@@ -15,7 +15,8 @@ enum SharedInbox {
     }
 
     /// Loads all pending shared images (oldest first) and clears the inbox.
-    static func drainPendingImages() -> [PlatformImage] {
+    /// Off the main thread: decoding up to 30 photos takes a while.
+    nonisolated static func drainPendingImages() -> [PlatformImage] {
         guard let dir = inboxDirectory,
               let files = try? FileManager.default.contentsOfDirectory(
                   at: dir,
@@ -32,7 +33,7 @@ enum SharedInbox {
         var images: [PlatformImage] = []
         for url in sorted {
             if let data = try? Data(contentsOf: url),
-               let img = PlatformImage(data: data) {
+               let img = PlatformImage.decoded(from: data) {
                 images.append(img)
             }
             try? FileManager.default.removeItem(at: url)

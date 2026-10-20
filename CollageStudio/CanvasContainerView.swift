@@ -114,13 +114,9 @@ struct CanvasContainerView: View {
                 .frame(width: contentW, height: contentH)
                 .offset(y: textShift)
                 .animation(.easeInOut(duration: 0.3), value: textShift)
-                // Any tap on the canvas area (including the gaps/separators
-                // between images) dismisses an open panel or ratio sheet.
-                // Simultaneous so image pan/pinch/swap still win on a drag.
+                // (Taps here, gaps between images included, reach the canvas
+                // area's tap handler below — once.)
                 .contentShape(Rectangle())
-                .simultaneousGesture(
-                    TapGesture().onEnded { state.handleCanvasTap() }
-                )
                 // Drives the slide transition between pages
                 .animation(.easeInOut(duration: 0.3), value: state.currentPageIndex)
                 // Pages slide within the canvas area, never over the chrome.
@@ -187,7 +183,11 @@ struct CanvasContainerView: View {
                     CompareButton()
                         // Centered on the pager's line (pager: 40 tall, 2 down).
                         .padding(.top, 3)
-                        .onGeometryChange(for: CGRect.self) { $0.frame(in: .global) } action: { state.compareButtonFrame = $0 }
+                        .onGeometryChange(for: CGRect.self) { $0.frame(in: .global) } action: { f in
+                            guard f.differs(from: state.compareButtonFrame) else { return }
+                            Diagnostics.count("compareButtonFrame")
+                            state.compareButtonFrame = f
+                        }
                         .onDisappear { state.compareButtonFrame = .zero }
                         .padding(.trailing, 10)
                         .transition(.opacity)
@@ -197,7 +197,11 @@ struct CanvasContainerView: View {
             .onChange(of: photoItems) { _, newItems in
                 loadPhotos(newItems)
             }
-            .onChange(of: geo.frame(in: .global), initial: true) { _, f in state.canvasVisibleRect = f }
+            .onChange(of: geo.frame(in: .global), initial: true) { _, f in
+                guard f.differs(from: state.canvasVisibleRect) else { return }
+                Diagnostics.count("canvasVisibleRect")
+                state.canvasVisibleRect = f
+            }
             // Single-image picker for the "Replace" action
             .photosPicker(isPresented: $state.showReplacePicker,
                           selection: $replaceItems,
@@ -220,7 +224,7 @@ struct CanvasContainerView: View {
             var loaded: [PlatformImage] = []
             for item in items {
                 if let data = try? await item.loadTransferable(type: Data.self),
-                   let img = PlatformImage(data: data) {
+                   let img = PlatformImage.decoded(from: data) {
                     loaded.append(img)
                 }
             }
@@ -248,7 +252,7 @@ struct CanvasContainerView: View {
               let targetId = state.boxActionTargetId else { return }
         Task {
             if let data = try? await item.loadTransferable(type: Data.self),
-               let img = PlatformImage(data: data) {
+               let img = PlatformImage.decoded(from: data) {
                 await MainActor.run {
                     state.replaceImage(id: targetId, with: img)
                 }

@@ -6,8 +6,8 @@ import PhotosUI
 
 /// The floating tab pill at the bottom of the phone layout: one glass
 /// capsule, always visible while there are images, a tab per panel. Tapping
-/// a tab raises the panel card above it; tapping the open tab again lowers
-/// it. The active tab sits in a lens that slides between tabs; dragging
+/// a tab raises the panel card above it (a tap never lowers it: a tap on
+/// the canvas does). The active tab sits in a lens that slides between tabs; dragging
 /// across the pill lifts the lens into clear glass that follows the finger,
 /// and letting go opens the tab under it.
 struct FloatingTabBar: View {
@@ -58,23 +58,19 @@ struct FloatingTabBar: View {
     private var tabWidth: CGFloat { rowWidth / CGFloat(Self.tabs.count) }
 
     var body: some View {
-        ZStack {
-            HStack(spacing: 0) {
-                ForEach(Self.tabs.indices, id: \.self) { i in
-                    tabLabel(i)
-                }
+        HStack(spacing: 0) {
+            ForEach(Self.tabs.indices, id: \.self) { i in
+                tabLabel(i)
             }
-            .background(alignment: .leading) { lens }
-            .onGeometryChange(for: CGFloat.self) { $0.size.width } action: { rowWidth = $0 }
-            .coordinateSpace(.named(Self.rowSpace))
-            .contentShape(Rectangle())
-            .gesture(scrubGesture)
-            // A selected photo's tools stand in for the tabs.
-            .opacity(photoTools ? 0 : 1)
-            .offset(y: photoTools ? 12 : 0)
-            .allowsHitTesting(!photoTools)
-            .accessibilityHidden(photoTools)
-
+        }
+        .background(alignment: .leading) { lens }
+        .onGeometryChange(for: CGFloat.self) { $0.size.width } action: { rowWidth = $0 }
+        .coordinateSpace(.named(Self.rowSpace))
+        // A selected photo's tools stand in for the tabs.
+        .opacity(photoTools ? 0 : 1)
+        .offset(y: photoTools ? 12 : 0)
+        .accessibilityHidden(photoTools)
+        .overlay {
             if let image = state.selectedImage, photoTools {
                 PhotoToolsRow(image: image)
                     .transition(.offset(y: 12).combined(with: .opacity))
@@ -83,6 +79,9 @@ struct FloatingTabBar: View {
         .animation(.spring(response: 0.3, dampingFraction: 0.85), value: photoTools)
         .padding(.vertical, 5)
         .padding(.horizontal, 10)
+        .contentShape(Rectangle())
+        // (Off while the photo tools show: their buttons take the touches.)
+        .gesture(scrubGesture, including: photoTools ? .subviews : .all)
         .background {
             if !merged { pillGlass }
         }
@@ -216,8 +215,7 @@ struct FloatingTabBar: View {
                 let i = tab(at: v.location.x)
                 if scrubbing {
                     TabBarTip().invalidate(reason: .actionPerformed)
-                    // A scrub always lands open on its tab, never toggles it shut.
-                    select(i, toggles: false)
+                    select(i)
                     scrubX = nil
                     hoverTab = nil
                 } else {
@@ -254,22 +252,21 @@ struct FloatingTabBar: View {
         return min(max(Int(x / tabWidth), 0), Self.tabs.count - 1)
     }
 
-    private func select(_ i: Int, toggles: Bool = true) {
-        Diagnostics.log("tab \(Self.tabs[i]) · \(state.diagnosticsSummary)")
+    /// Opens a tab's panel. A tap never closes it (the grabber, a tap on
+    /// the canvas or working on the collage lower it).
+    private func select(_ i: Int) {
+        Diagnostics.log("tab \(Self.tabs[i]) (row \(Int(rowWidth))) · \(state.diagnosticsSummary)")
         #if canImport(UIKit)
         UIImpactFeedbackGenerator(style: .light).impactOccurred()
         #endif
         state.closeRatio()
         // Nothing chosen yet (a saved collage just opened): open this tab.
-        let wasShown = state.panelTabShown
         state.panelTabShown = true
         if state.textEditTargetId != nil || state.protrusionTargetId != nil {
             // Any tab leaves text / protrusion editing and shows that tab.
             state.endTextEditing()
             state.endProtrusionEditing()
             state.selectedPanelTab = i
-        } else if toggles && wasShown && state.selectedPanelTab == i && state.isPanelOpen {
-            withAnimation(.easeInOut(duration: 0.25)) { state.isPanelOpen = false }
         } else {
             state.selectedPanelTab = i
             withAnimation(.easeInOut(duration: 0.25)) { state.isPanelOpen = true }
@@ -449,7 +446,7 @@ struct BottomPanelView: View {
         VStack(spacing: 0) {
             // Grabber: drag it to size the panel (it stays where it's left,
             // and the content scrolls when it doesn't all fit). It doesn't
-            // close the panel: tapping the open tab does.
+            // close the panel: a tap on the canvas does.
             Capsule()
                 .fill(Color.primary.opacity(0.22))
                 .frame(width: 36, height: 5)
@@ -492,7 +489,13 @@ struct BottomPanelView: View {
                 }
             }
             .onGeometryChange(for: CGFloat.self) { $0.size.height } action: { shownHeight = $0 }
-            .onGeometryChange(for: CGFloat.self) { $0.frame(in: .global).maxY } action: { contentBottomY = $0 }
+            .onGeometryChange(for: CGFloat.self) { $0.frame(in: .global).maxY } action: { y in
+                // Only measured with the panel fully up and still: while it
+                // slides, its own offset would feed into its height (and the
+                // height into the offset).
+                guard state.panelOffset == 0, !state.isPanelDragging, y.differs(from: contentBottomY) else { return }
+                contentBottomY = y
+            }
             .environment(\.panelScrolls, scrolls)
         }
         // Floating glass card. Fades while adjusting a slider so the collage
@@ -513,7 +516,11 @@ struct BottomPanelView: View {
         // every frame); the drag reports it when it ends.
         .onGeometryChange(for: CGFloat.self) { $0.size.height } action: { h in
             cardHeight = h
-            if !state.isPanelDragging { state.panelHeight = h + FloatingTabBar.zoneHeight + 60 }
+            let height = h + FloatingTabBar.zoneHeight + 60
+            if !state.isPanelDragging, height.differs(from: state.panelHeight) {
+                Diagnostics.count("panelHeight")
+                state.panelHeight = height
+            }
         }
     }
 
