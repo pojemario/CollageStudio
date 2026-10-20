@@ -12,12 +12,14 @@ struct CollageSnapshot {
     var customWidth: String
     var customHeight: String
     var customUnit: CustomUnit
+    /// Slides the canvas is cut into (1: a single picture).
+    var slides: Int = 1
 
     /// Same document, ignoring bookkeeping that changes on its own: box
     /// sizes, gesture epochs, text bitmaps re-rendered for a new box shape,
     /// and which page is on screen.
     func sameDocument(as o: CollageSnapshot) -> Bool {
-        ratio == o.ratio && canvasSize == o.canvasSize
+        ratio == o.ratio && canvasSize == o.canvasSize && slides == o.slides
             && customWidth == o.customWidth && customHeight == o.customHeight && customUnit == o.customUnit
             && pages.count == o.pages.count
             && zip(pages, o.pages).allSatisfy { $0.sameContent(as: $1) }
@@ -69,7 +71,8 @@ extension CollageState {
     var documentSnapshot: CollageSnapshot {
         CollageSnapshot(pages: pages, currentPageIndex: currentPageIndex,
                         ratio: ratio, canvasSize: canvasSize,
-                        customWidth: customWidth, customHeight: customHeight, customUnit: customUnit)
+                        customWidth: customWidth, customHeight: customHeight, customUnit: customUnit,
+                        slides: slides)
     }
 
     /// Puts a document in place as is (no re-layout, no reset positions).
@@ -78,6 +81,7 @@ extension CollageState {
         currentPageIndex = min(max(pageIndex ?? s.currentPageIndex, 0), pages.count - 1)
         ratio = s.ratio
         canvasSize = s.canvasSize
+        slides = s.slides
         customWidth = s.customWidth
         customHeight = s.customHeight
         customUnit = s.customUnit

@@ -59,13 +59,15 @@ extension CollageState {
                 if parts.contains(.layout) {
                     let cols = max(1, min(src.numCols, max(1, min(6, page.images.count))))
                     let relayout = cols != page.style.numCols || src.isRows != page.style.isRows
+                        || src.isStrip != page.style.isStrip
                     page.style.numCols = cols
                     page.style.isRows = src.isRows
+                    page.style.isStrip = src.isStrip
                     page.style.gap = src.gap
                     page.style.cornerRadius = src.cornerRadius
                     if relayout {
                         page.layout.resetGrows()
-                        page.layout.rebuild(images: page.images, order: page.order, numCols: cols)
+                        page.layout.rebuild(images: page.images, order: page.order, numCols: cols, strip: page.style.isStrip)
                     }
                 }
                 if parts.contains(.background) {

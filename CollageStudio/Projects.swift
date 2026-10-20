@@ -5,7 +5,7 @@ import Combine
 
 extension PageStyle: Codable {
     private enum CodingKeys: String, CodingKey {
-        case numCols, isRows, gap, cornerRadius, backgroundColor, borderColor, borderThickness
+        case numCols, isRows, isStrip, gap, cornerRadius, backgroundColor, borderColor, borderThickness
         case borderStyle, borderPlacement, linkBorderToBackground, backgroundKind, backgroundColor2
     }
 
@@ -15,6 +15,7 @@ extension PageStyle: Codable {
         let c = try decoder.container(keyedBy: CodingKeys.self)
         numCols = max(1, try c.decodeIfPresent(Int.self, forKey: .numCols) ?? numCols)
         isRows = try c.decodeIfPresent(Bool.self, forKey: .isRows) ?? isRows
+        isStrip = try c.decodeIfPresent(Bool.self, forKey: .isStrip) ?? isStrip
         gap = try c.decodeIfPresent(Double.self, forKey: .gap) ?? gap
         cornerRadius = try c.decodeIfPresent(Double.self, forKey: .cornerRadius) ?? cornerRadius
         if let v = try c.decodeIfPresent([Double].self, forKey: .backgroundColor), let col = Color(srgbComponents: v) { backgroundColor = col }
@@ -31,6 +32,7 @@ extension PageStyle: Codable {
         var c = encoder.container(keyedBy: CodingKeys.self)
         try c.encode(numCols, forKey: .numCols)
         try c.encode(isRows, forKey: .isRows)
+        if isStrip { try c.encode(isStrip, forKey: .isStrip) }
         try c.encode(gap, forKey: .gap)
         try c.encode(cornerRadius, forKey: .cornerRadius)
         try c.encode(backgroundColor.srgbComponents, forKey: .backgroundColor)
@@ -196,6 +198,8 @@ struct ProjectFile: Codable {
     var calibration: [Double]
     var filter: String
     var filterStrength: Double
+    /// Slides the canvas is cut into (missing in older files: 1).
+    var slides: Int? = nil
 
     struct Page: Codable {
         var images: [Image]
@@ -577,7 +581,8 @@ extension CollageState {
             customWidth: customWidth, customHeight: customHeight, customUnit: customUnit.rawValue,
             canvasMargin: look.canvasMargin, canvasRotation: look.canvasRotation, frame: look.frame,
             overlays: look.overlays, effects: look.effects, hsl: look.hsl, calibration: look.calibration,
-            filter: look.filter, filterStrength: look.filterStrength)
+            filter: look.filter, filterStrength: look.filterStrength,
+            slides: slides > 1 ? slides : nil)
         let thumb = hasAnyImages ? renderThumbnail() : nil
         Diagnostics.log("saved collage \(currentProjectId.uuidString.prefix(8)) thumb \(thumb.map { "\(Int($0.size.width))x\(Int($0.size.height))" } ?? "none")")
         UserDefaults.standard.set(currentProjectId.uuidString, forKey: Self.lastProjectKey)
@@ -750,7 +755,7 @@ extension CollageState {
                 page.layout.colGrows = p.colGrows.map { CGFloat($0) }
                 page.layout.boxGrows = p.boxGrows.map { $0.map { CGFloat($0) } }
             } else {
-                page.layout.rebuild(images: page.images, order: page.order, numCols: page.style.numCols)
+                page.layout.rebuild(images: page.images, order: page.order, numCols: page.style.numCols, strip: page.style.isStrip)
             }
             return page
         }
@@ -759,7 +764,8 @@ extension CollageState {
             ratio: CanvasRatio(rawValue: file.ratio) ?? .square,
             canvasSize: CGSize(width: file.canvasWidth, height: file.canvasHeight),
             customWidth: file.customWidth, customHeight: file.customHeight,
-            customUnit: CustomUnit(rawValue: file.customUnit) ?? .px)
+            customUnit: CustomUnit(rawValue: file.customUnit) ?? .px,
+            slides: min(max(file.slides ?? 1, 1), Self.maxSlides))
         applyDocument(snapshot)
         Diagnostics.log("opened collage \(diagnosticsSummary)")
         // The pictures already on disk aren't written again.
@@ -1061,6 +1067,28 @@ extension CollageState {
                    let page = LayoutPanel.Page(rawValue: args[p + 1]) { self.layoutPage = page }
                 self.selectedPanelTab = tab
                 self.isPanelOpen = true
+            }
+        }
+        // `-slides N` cuts the opened collage into N slides; `-exportTest`
+        // then exports it (files logged, left in tmp/CollageExport).
+        if let t = args.firstIndex(of: "-slides"), t + 1 < args.count, let n = Int(args[t + 1]) {
+            DispatchQueue.main.asyncAfter(deadline: .now() + 2.5) {
+                self.setSlides(n)
+                if args.contains("-strip") { self.setLanes(.strip) }
+                if args.contains("-allSlides") { self.slideFocus = nil }
+                if args.contains("-openRatio") { self.openRatio() }
+            }
+        }
+        if args.contains("-exportTest") {
+            DispatchQueue.main.asyncAfter(deadline: .now() + 4) {
+                Task {
+                    await self.exportPages(allPages: false, settings: ExportSettings(size: .instagram, format: .jpeg))
+                    for url in self.exportedFiles {
+                        let img = UIImage(contentsOfFile: url.path)
+                        Diagnostics.log("exported \(url.lastPathComponent) \(Int(img?.size.width ?? 0))x\(Int(img?.size.height ?? 0))")
+                    }
+                    self.showExportSheet = false
+                }
             }
         }
         if let t = args.firstIndex(of: "-style"), t + 1 < args.count, let n = Int(args[t + 1]) {

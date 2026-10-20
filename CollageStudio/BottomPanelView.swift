@@ -246,7 +246,7 @@ struct FloatingTabBar: View {
     /// Whether the current page has settings changed in a tab (Images has none).
     private func hasChanges(_ i: Int) -> Bool {
         switch i {
-        case 1: return state.hasStyleChanges || state.isRows
+        case 1: return state.hasStyleChanges || state.isRows || state.isStrip
             || state.canvasMargin != 0 || state.canvasRotation != 0
         case 2: return state.canvasFrame != nil
         case 3: return !state.overlayLayers.isEmpty

@@ -86,7 +86,7 @@ struct EffectLayers: View {
                                endRadius: longEdge * 0.68)
             }
             if grain > 0, let texture = PlatformImage.named("EffectGrain") {
-                mapLayer(texture).opacity(0.75 * grain).blendMode(.overlay)
+                grainLayer(texture).opacity(0.75 * grain).blendMode(.overlay)
             }
         }
         .frame(width: canvasSize.width, height: canvasSize.height)
@@ -96,6 +96,33 @@ struct EffectLayers: View {
                 .offset(x: window.minX, y: window.minY)
         }
         .allowsHitTesting(false)
+    }
+
+    /// Grain as fine on a carousel strip as on a single picture: one tile of
+    /// the texture per slide.
+    @ViewBuilder
+    private func grainLayer(_ texture: PlatformImage) -> some View {
+        let slides = max(state.slides, 1)
+        if slides == 1 {
+            mapLayer(texture)
+        } else {
+            let w = canvasSize.width / CGFloat(slides)
+            HStack(spacing: 0) {
+                ForEach(0..<slides, id: \.self) { _ in
+                    Group {
+                        #if canImport(UIKit)
+                        Image(uiImage: texture).resizable()
+                        #else
+                        Image(nsImage: texture).resizable()
+                        #endif
+                    }
+                    .scaledToFill()
+                    .frame(width: w, height: canvasSize.height)
+                    .clipped()
+                }
+            }
+            .frame(width: canvasSize.width, height: canvasSize.height)
+        }
     }
 
     private func mapLayer(_ image: PlatformImage) -> some View {
@@ -129,9 +156,10 @@ final class EffectMaps: ObservableObject {
         if halation != nil { halation = nil }
     }
 
-    func update(from snapshot: CGImage, glow wantGlow: Bool, halation wantHalation: Bool) {
+    /// `slides`: a carousel strip blurs as much as one of its slides would.
+    func update(from snapshot: CGImage, glow wantGlow: Bool, halation wantHalation: Bool, slides: Int = 1) {
         let source = CIImage(cgImage: snapshot)
-        let longEdge = max(source.extent.width, source.extent.height)
+        let longEdge = max(source.extent.width / CGFloat(max(slides, 1)), source.extent.height)
 
         glow = wantGlow
             ? render(highlights(of: source, from: 0.35), blur: longEdge * 0.045, extent: source.extent)

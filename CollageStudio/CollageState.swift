@@ -92,6 +92,24 @@ class CollageState: ObservableObject {
     // MARK: - Canvas
     @Published var ratio: CanvasRatio = .square
     @Published var canvasSize: CGSize = CGSize(width: 1024, height: 1024)
+    /// A seamless carousel: the canvas is this many slides of the chosen
+    /// ratio side by side, exported as one picture per slide that line up
+    /// when swiped. 1 = a single picture.
+    @Published var slides: Int = 1
+    static let maxSlides = 10
+    /// The slide the canvas is zoomed to, or nil for the whole strip (only
+    /// on screen; with one slide it means nothing).
+    @Published var slideFocus: Int? = 0
+    /// The zoomed-to slide, kept within the strip (nil: the whole strip).
+    var focusedSlide: Int? {
+        guard slides > 1, let f = slideFocus else { return nil }
+        return min(max(f, 0), slides - 1)
+    }
+
+    /// One slide of the canvas (the whole canvas with a single slide).
+    var slideSize: CGSize {
+        CGSize(width: canvasSize.width / CGFloat(max(slides, 1)), height: canvasSize.height)
+    }
     @Published var customWidth: String = "1200"
     @Published var customHeight: String = "900"
     @Published var customUnit: CustomUnit = .px
@@ -105,6 +123,21 @@ class CollageState: ObservableObject {
     var isRows: Bool {
         get { currentPage.style.isRows }
         set { currentPage.style.isRows = newValue }
+    }
+    /// The page as one row of photos, each at its own shape (see PageStyle).
+    var isStrip: Bool { currentPage.style.isStrip }
+
+    /// Lanes: columns, rows, or a strip.
+    enum Lanes: Hashable { case columns, rows, strip }
+    var lanes: Lanes { isStrip ? .strip : isRows ? .rows : .columns }
+
+    func setLanes(_ l: Lanes) {
+        guard l != lanes else { return }
+        let wasStrip = isStrip
+        currentPage.style.isStrip = l == .strip
+        currentPage.style.isRows = l == .rows
+        // In or out of a strip the columns change: lay them out again.
+        if wasStrip || l == .strip { rebuildLayout(resetGrows: true) }
     }
     /// Highest column count that makes sense for the current page — one column
     /// per image, capped at 6. Drives the Columns slider's range; the slider is
@@ -241,7 +274,7 @@ class CollageState: ObservableObject {
             pages[pi].layout.resetGrows()
             pages[pi].layout.rebuild(images: pages[pi].images,
                                      order: pages[pi].order,
-                                     numCols: source.numCols)
+                                     numCols: source.numCols, strip: source.isStrip)
         }
         lastAppliedStyle = source
     }
@@ -337,7 +370,9 @@ class CollageState: ObservableObject {
     /// ratio if there is one, else the set's first variant (drawn
     /// undistorted, covering the canvas).
     private func resolvedFrameAssetName() -> String? {
-        guard let set = canvasFrame else { return nil }
+        // Frames fit one picture; a carousel strip shows none (the page
+        // keeps its frame for when it's a single picture again).
+        guard slides == 1, let set = canvasFrame else { return nil }
         let suffix = ratio.rawValue.replacingOccurrences(of: ":", with: "x")
         if let name = set.assetName(ratioSuffix: suffix), PlatformImage.named(name) != nil {
             return name
@@ -862,7 +897,7 @@ class CollageState: ObservableObject {
         // The maps are heavily blurred — half resolution is plenty.
         renderer.scale = 0.5
         guard let snapshot = renderer.cgImage else { return }
-        effectMaps.update(from: snapshot, glow: glow, halation: halation)
+        effectMaps.update(from: snapshot, glow: glow, halation: halation, slides: slides)
     }
 
     // MARK: - Drag to swap
@@ -1511,7 +1546,7 @@ class CollageState: ObservableObject {
                 }
                 pages[pi].layout.rebuild(images: pages[pi].images,
                                          order: pages[pi].order,
-                                         numCols: pages[pi].style.numCols)
+                                         numCols: pages[pi].style.numCols, strip: pages[pi].style.isStrip)
                 remaining = remaining.dropFirst(chunk.count)
             }
             guard !remaining.isEmpty else { break }
@@ -1598,7 +1633,7 @@ class CollageState: ObservableObject {
         } else {
             pages[pi].layout.rebuild(images: pages[pi].images,
                                      order: pages[pi].order,
-                                     numCols: pages[pi].style.numCols)
+                                     numCols: pages[pi].style.numCols, strip: pages[pi].style.isStrip)
         }
     }
 
@@ -1609,7 +1644,7 @@ class CollageState: ObservableObject {
         pages[pi].layout.resetGrows()
         pages[pi].layout.rebuild(images: pages[pi].images,
                                  order: pages[pi].order,
-                                 numCols: pages[pi].style.numCols)
+                                 numCols: pages[pi].style.numCols, strip: pages[pi].style.isStrip)
         imageFrames.removeValue(forKey: id)
         if draggingId == id || dropTargetId == id {
             clearSwapDrag()
@@ -1667,7 +1702,7 @@ class CollageState: ObservableObject {
             pages[pi].layout.resetGrows()
             pages[pi].layout.rebuild(images: pages[pi].images,
                                      order: pages[pi].order,
-                                     numCols: pages[pi].style.numCols)
+                                     numCols: pages[pi].style.numCols, strip: pages[pi].style.isStrip)
         }
         imageFrames.removeValue(forKey: id)
     }
@@ -1706,7 +1741,7 @@ class CollageState: ObservableObject {
         page.images = Array(allImages)
         page.order = allImages.map(\.id)
         page.style.numCols = max(1, min(allImages.count, 6))
-        page.layout.rebuild(images: page.images, order: page.order, numCols: page.style.numCols)
+        page.layout.rebuild(images: page.images, order: page.order, numCols: page.style.numCols, strip: page.style.isStrip)
         pages = [page]
         currentPageIndex = 0
         imageFrames.removeAll()
@@ -1792,7 +1827,7 @@ class CollageState: ObservableObject {
             page.order = Self.fittingOrder(chunk, numCols: page.style.numCols,
                                            canvas: canvasSize, rows: page.style.isRows)
             page.layout.rebuild(images: page.images, order: page.order,
-                                numCols: page.style.numCols)
+                                numCols: page.style.numCols, strip: page.style.isStrip)
             newPages.append(page)
         }
 
@@ -1839,7 +1874,7 @@ class CollageState: ObservableObject {
             }
             last.style.numCols = min(last.images.count, 6)
             last.layout.rebuild(images: last.images, order: last.order,
-                                numCols: last.style.numCols)
+                                numCols: last.style.numCols, strip: last.style.isStrip)
             newPages[newPages.count - 1] = last
         }
 
@@ -1963,7 +1998,7 @@ class CollageState: ObservableObject {
     /// Whether any setting of the open collage differs from its default:
     /// ratio, or any page's Layout, canvas, frame, overlays, edits, filter.
     var hasSettingsChanges: Bool {
-        ratio != Self.defaultRatio || pages.contains { $0.style != PageStyle() || $0.look != PageLook() }
+        ratio != Self.defaultRatio || slides != 1 || pages.contains { $0.style != PageStyle() || $0.look != PageLook() }
     }
 
     /// Puts every setting back to its default — on every page, or only the
@@ -1976,6 +2011,11 @@ class CollageState: ObservableObject {
         }
         selectedOverlayId = nil
         overlayPreview = nil
+        if !currentPageOnly && slides != 1 {
+            canvasSize = slideSize
+            slides = 1
+            resetAllImagePositions()
+        }
         if !currentPageOnly && ratio != Self.defaultRatio {
             setRatio(Self.defaultRatio)
         } else {
@@ -1987,14 +2027,14 @@ class CollageState: ObservableObject {
 
     func rebuildLayout(resetGrows: Bool = false) {
         if resetGrows { layout.resetGrows() }
-        layout.rebuild(images: images, order: order, numCols: numCols)
+        layout.rebuild(images: images, order: order, numCols: numCols, strip: currentPage.style.isStrip)
         objectWillChange.send()
     }
 
     func setRatio(_ r: CanvasRatio) {
         ratio = r
         if r != .custom {
-            canvasSize = r.canvasSize(base: 1024)
+            canvasSize = Self.stripSize(r.canvasSize(base: 1024), slides: slides)
         }
         resetAllImagePositions()
         rebuildAllPages()
@@ -2008,8 +2048,25 @@ class CollageState: ObservableObject {
         return CGSize(width: max(100, min(6000, w)), height: max(100, min(6000, h)))
     }
 
+    /// Cuts the canvas into `n` slides of the current ratio (1 = one picture).
+    func setSlides(_ n: Int) {
+        let n = min(max(n, 1), Self.maxSlides)
+        guard n != slides else { return }
+        canvasSize = Self.stripSize(slideSize, slides: n)
+        slides = n
+        if let f = slideFocus { slideFocus = min(f, n - 1) }
+        Diagnostics.log("slides \(n) · canvas \(Int(canvasSize.width))x\(Int(canvasSize.height))")
+        resetAllImagePositions()
+        rebuildAllPages()
+    }
+
+    /// `slides` slides of `slide` side by side.
+    static func stripSize(_ slide: CGSize, slides: Int) -> CGSize {
+        CGSize(width: slide.width * CGFloat(max(slides, 1)), height: slide.height)
+    }
+
     func applyCustomSize() {
-        canvasSize = customCanvasSize
+        canvasSize = Self.stripSize(customCanvasSize, slides: slides)
         ratio = .custom
         resetAllImagePositions()
         rebuildAllPages()
@@ -2033,6 +2090,7 @@ class CollageState: ObservableObject {
     private func useLastRatio() {
         ratio = CanvasRatio(rawValue: UserDefaults.standard.string(forKey: DefaultsKey.lastRatio) ?? "") ?? Self.defaultRatio
         canvasSize = ratio == .custom ? customCanvasSize : ratio.canvasSize(base: 1024)
+        slides = 1
     }
 
     init() {
@@ -2102,7 +2160,7 @@ class CollageState: ObservableObject {
             if resetGrows { pages[pi].layout.resetGrows() }
             pages[pi].layout.rebuild(images: pages[pi].images,
                                      order: pages[pi].order,
-                                     numCols: pages[pi].style.numCols)
+                                     numCols: pages[pi].style.numCols, strip: pages[pi].style.isStrip)
         }
     }
 
@@ -2409,7 +2467,7 @@ class CollageState: ObservableObject {
             page.layout.columns[a.col][a.row] = page.layout.columns[b.col][b.row]
             page.layout.columns[b.col][b.row] = itemA
         } else {
-            page.layout.rebuild(images: page.images, order: page.order, numCols: page.style.numCols)
+            page.layout.rebuild(images: page.images, order: page.order, numCols: page.style.numCols, strip: page.style.isStrip)
         }
         // As on the canvas: zoom and rotation stay, the pan starts over.
         for id in [id1, id2] {
@@ -2721,6 +2779,9 @@ class CollageState: ObservableObject {
 
         var urls: [URL] = []
         var failed: [Int] = []
+        // A carousel's canvas goes out one picture per slide.
+        let slideCount = max(slides, 1)
+        let pictures = targets.count * slideCount
         for (n, pi) in targets.enumerated() {
             currentPageIndex = pi
             refreshEffectMaps(force: true)
@@ -2729,23 +2790,29 @@ class CollageState: ObservableObject {
                 gradeExportCache = [:]
                 exportProgress = Double(n + 1) / Double(targets.count)
             }
-            guard let image = renderCurrentPage(scale: settings.scale(for: canvasSize)),
-                  let data = settings.encode(image) else {
-                failed.append(pi + 1)
-                continue
+            for slide in 0..<slideCount {
+                guard let image = renderCurrentPage(scale: settings.scale(for: slideSize),
+                                                    slide: slideCount > 1 ? slide : nil),
+                      let data = settings.encode(image) else {
+                    if failed.last != pi + 1 { failed.append(pi + 1) }
+                    continue
+                }
+                // Numbered in order (of the pictures that made it), so a
+                // carousel posts in the right sequence.
+                let name = pictures > 1 ? String(format: "Collage %02d", urls.count + 1) : "Collage"
+                let url = dir.appendingPathComponent(name + "." + settings.format.fileExtension)
+                do {
+                    try data.write(to: url)
+                    urls.append(url)
+                } catch {
+                    if failed.last != pi + 1 { failed.append(pi + 1) }
+                }
+                if slideCount > 1 {
+                    exportProgress = (Double(n) + Double(slide + 1) / Double(slideCount)) / Double(targets.count)
+                }
+                // Let the progress bar repaint between pictures.
+                await Task.yield()
             }
-            // Numbered in order (of the pages that made it), so a carousel
-            // posts in the right sequence.
-            let name = targets.count > 1 ? String(format: "Collage %02d", urls.count + 1) : "Collage"
-            let url = dir.appendingPathComponent(name + "." + settings.format.fileExtension)
-            do {
-                try data.write(to: url)
-                urls.append(url)
-            } catch {
-                failed.append(pi + 1)
-            }
-            // Let the progress bar repaint between pages.
-            await Task.yield()
         }
 
         currentPageIndex = originalIndex
@@ -2773,13 +2840,19 @@ class CollageState: ObservableObject {
     /// way to rasterize a SwiftUI view and free of the offscreen
     /// `drawHierarchy(afterScreenUpdates:)` crash.
     @MainActor
-    private func renderCurrentPage(scale: CGFloat = 2) -> PlatformImage? {
+    private func renderCurrentPage(scale: CGFloat = 2, slide: Int? = nil) -> PlatformImage? {
+        // One slide: the whole canvas laid out as on screen, shifted and
+        // cut to that slide — so neighbouring slides meet exactly.
+        let size = slide == nil ? canvasSize : slideSize
         let gridView = CollageGridView_Grid(scale: 1.0)
             .frame(width: canvasSize.width, height: canvasSize.height)
             .environmentObject(self)
+            .offset(x: -CGFloat(slide ?? 0) * slideSize.width)
+            .frame(width: size.width, height: size.height, alignment: .leading)
+            .clipped()
 
         let renderer = ImageRenderer(content: gridView)
-        renderer.proposedSize = ProposedViewSize(canvasSize)
+        renderer.proposedSize = ProposedViewSize(size)
         // Standard: 2× the 1024-pt canvas → crisp while staying memory-safe.
         renderer.scale = scale
         renderer.isOpaque = false

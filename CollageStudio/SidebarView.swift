@@ -176,7 +176,58 @@ struct RatioPanelView: View {
             if state.ratio == .custom {
                 CustomSizeRow()
             }
+            SlidesRow()
         }
+    }
+}
+
+/// Slides: the canvas as several slides of the chosen ratio side by side —
+/// one wide collage, posted as a carousel that lines up when swiped.
+struct SlidesRow: View {
+    @EnvironmentObject var state: CollageState
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 4) {
+            HStack(spacing: 10) {
+                Image(systemName: "rectangle.split.3x1")
+                    .font(.system(size: 15, weight: .medium))
+                    .frame(width: 22)
+                Text("Slides")
+                    .font(.system(size: 14, weight: .medium))
+                Spacer()
+                stepButton("minus", enabled: state.slides > 1) { state.setSlides(state.slides - 1) }
+                Text("\(state.slides)")
+                    .font(.system(size: 15, weight: .semibold, design: .monospaced))
+                    .frame(minWidth: 26)
+                    .contentTransition(.numericText())
+                stepButton("plus", enabled: state.slides < CollageState.maxSlides) { state.setSlides(state.slides + 1) }
+            }
+            .padding(.horizontal, 12)
+            .padding(.vertical, 6)
+            .appButtonBackground(prominent: false)
+            Text(state.slides > 1
+                 ? "One wide collage, exported as \(state.slides) pictures that line up when swiped."
+                 : "Add slides for a seamless carousel: photos can run across the cuts.")
+                .font(.caption)
+                .foregroundStyle(.secondary)
+                .padding(.horizontal, 4)
+        }
+        .accessibilityElement(children: .contain)
+    }
+
+    private func stepButton(_ sf: String, enabled: Bool, action: @escaping () -> Void) -> some View {
+        Button {
+            withAnimation(.easeInOut(duration: 0.2)) { action() }
+        } label: {
+            Image(systemName: sf)
+                .font(.system(size: 14, weight: .bold))
+                .frame(width: 36, height: 32)
+                .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
+        .foregroundStyle(enabled ? Color.accentColor : Color.secondary.opacity(0.5))
+        .disabled(!enabled)
+        .accessibilityLabel(sf == "plus" ? "More slides" : "Fewer slides")
     }
 }
 
@@ -659,10 +710,12 @@ struct LanesSwitch: View {
 
     var body: some View {
         Picker("Lanes", selection: Binding(
-            get: { state.isRows },
-            set: { rows in withAnimation(.spring(response: 0.35)) { state.isRows = rows } })) {
-            Text("Cols").tag(false)
-            Text("Rows").tag(true)
+            get: { state.lanes },
+            set: { l in withAnimation(.spring(response: 0.35)) { state.setLanes(l) } })) {
+            Text("Cols").tag(CollageState.Lanes.columns)
+            Text("Rows").tag(CollageState.Lanes.rows)
+            // One row of photos at their own shapes — for carousel strips.
+            Text("Strip").tag(CollageState.Lanes.strip)
         }
         .pickerStyle(.segmented)
         .labelsHidden()
@@ -809,7 +862,7 @@ struct LayoutPanel: View {
         let d = PageStyle()
         switch page {
         case .layout: return state.gap != d.gap || state.cornerRadius != d.cornerRadius
-            || state.backgroundColor != d.backgroundColor || state.isRows || state.numCols != d.numCols
+            || state.backgroundColor != d.backgroundColor || state.isRows || state.isStrip || state.numCols != d.numCols
         case .border: return state.hasBorderChanges
         case .canvas: return state.canvasMargin != 0 || state.canvasRotation != 0
         }
@@ -820,7 +873,12 @@ struct LayoutPanel: View {
             VStack(spacing: 10) {
                 LabeledSlider(label: "Columns", value: Binding(
                     get: { Double(min(state.numCols, state.maxSelectableCols)) },
-                    set: { v in state.numCols = Int(v); state.rebuildLayout(resetGrows: true) }
+                    // (Picking a column count leaves a strip.)
+                    set: { v in
+                        state.currentPage.style.isStrip = false
+                        state.numCols = Int(v)
+                        state.rebuildLayout(resetGrows: true)
+                    }
                 ), range: 1...Double(state.maxSelectableCols), step: 1, format: "%.0f", resetValue: 2,
                    reservesSwatchSlot: true, customLabel: AnyView(LanesSwitch()),
                    compactValue: true)

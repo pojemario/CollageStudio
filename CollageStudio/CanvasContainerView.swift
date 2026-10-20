@@ -31,14 +31,26 @@ struct CanvasContainerView: View {
                 width: geo.size.width - padding * 2,
                 height: geo.size.height - padding * 2
             )
-            let fitScale = min(available.width / max(state.canvasSize.width, 1),
+            // A carousel strip zoomed to one slide shows that slide with a
+            // bit of its neighbours; otherwise the whole canvas fits.
+            let focus = state.focusedSlide
+            let slideW = state.slideSize.width
+            let shownW = focus == nil ? state.canvasSize.width : min(state.canvasSize.width, slideW * 1.2)
+            let fitScale = min(available.width / max(shownW, 1),
                                available.height / max(state.canvasSize.height, 1))
             // The canvas is fit-to-screen and static: it is never zoomed or
             // rotated by gesture — only the images inside it are.
             let scale = fitScale
             let displayW = state.canvasSize.width * scale
             let displayH = state.canvasSize.height * scale
-            let contentW = max(displayW + padding * 2, geo.size.width)
+            // The part of the canvas on screen, and how far it's slid left.
+            let windowW = min(displayW, available.width)
+            let windowX: CGFloat = {
+                guard let focus else { return 0 }
+                let center = (CGFloat(focus) + 0.5) * slideW * scale
+                return min(max(center - windowW / 2, 0), displayW - windowW)
+            }()
+            let contentW = max(windowW + padding * 2, geo.size.width)
             let contentH = max(displayH + padding * 2, geo.size.height)
             // Room above the collage for the page bar (shown with more than
             // one page), taken from the space left under it: all of the
@@ -116,8 +128,26 @@ struct CanvasContainerView: View {
                             }
                         }
                         .animation(.easeOut(duration: 0.12), value: state.dropInsertTarget)
+                        // Where the slides are cut (never exported).
+                        .overlay {
+                            if state.slides > 1 && state.hasAnyImages && !state.toolbarHidden {
+                                SlideCuts(slides: state.slides)
+                            }
+                        }
                         .animation(.spring(response: 0.4), value: state.canvasSize)
                         .animation(.spring(response: 0.4), value: state.numCols)
+                        // Only the zoomed-to slide (and its edges) shows.
+                        .offset(x: -windowX)
+                        .frame(width: windowW, height: displayH, alignment: .leading)
+                        .clipped()
+                        .animation(.spring(response: 0.4, dampingFraction: 0.9), value: state.focusedSlide)
+                        // Slide to slide, or the whole strip.
+                        .overlay(alignment: .bottom) {
+                            if state.slides > 1 && state.hasAnyImages && !state.toolbarHidden {
+                                SlideNavigator()
+                                    .offset(y: 50)
+                            }
+                        }
                         .padding(.top, pagerReserve)
                         .animation(.easeInOut(duration: 0.25), value: pagerReserve)
                 }
@@ -305,5 +335,89 @@ private struct CompareButton: View {
             .accessibilityLabel("Compare with original")
             .accessibilityHint("Touch and hold to see the photos without edits, effects and filter")
             .accessibilityAddTraits(.isButton)
+    }
+}
+
+/// The cuts between a carousel's slides: dashed lines over the canvas, with
+/// each slide's number at its top. Only on screen.
+struct SlideCuts: View {
+    let slides: Int
+
+    var body: some View {
+        GeometryReader { g in
+            let w = g.size.width / CGFloat(max(slides, 1))
+            ZStack(alignment: .topLeading) {
+                Path { p in
+                    for i in 1..<slides {
+                        let x = (w * CGFloat(i)).rounded()
+                        p.move(to: CGPoint(x: x, y: 0))
+                        p.addLine(to: CGPoint(x: x, y: g.size.height))
+                    }
+                }
+                // White under dark: reads on light and dark photos alike.
+                .stroke(Color.white.opacity(0.9), style: StrokeStyle(lineWidth: 1.5, dash: [6, 4]))
+                .shadow(color: .black.opacity(0.45), radius: 1)
+
+                ForEach(0..<slides, id: \.self) { i in
+                    Text("\(i + 1)")
+                        .font(.system(size: 10, weight: .bold, design: .rounded))
+                        .foregroundStyle(.white)
+                        .padding(.horizontal, 6)
+                        .padding(.vertical, 2)
+                        .background(Capsule().fill(Color.black.opacity(0.45)))
+                        .position(x: w * (CGFloat(i) + 0.5), y: 12)
+                }
+            }
+        }
+        .allowsHitTesting(false)
+        .accessibilityHidden(true)
+    }
+}
+
+/// Under a carousel strip: step from slide to slide, or see them all.
+struct SlideNavigator: View {
+    @EnvironmentObject var state: CollageState
+
+    var body: some View {
+        let focus = state.focusedSlide
+        HStack(spacing: 2) {
+            if let focus {
+                button("chevron.left", label: "Previous slide", enabled: focus > 0) { state.slideFocus = focus - 1 }
+                Text("Slide \(focus + 1) of \(state.slides)")
+                    .font(.footnote.weight(.semibold).monospacedDigit())
+                    .frame(minWidth: 96)
+                    .contentTransition(.numericText())
+                button("chevron.right", label: "Next slide", enabled: focus < state.slides - 1) { state.slideFocus = focus + 1 }
+                Divider().frame(height: 18).padding(.horizontal, 4)
+                button("rectangle.split.3x1", label: "All slides", enabled: true) { state.slideFocus = nil }
+            } else {
+                Text("All \(state.slides) slides")
+                    .font(.footnote.weight(.semibold))
+                    .padding(.leading, 12)
+                Divider().frame(height: 18).padding(.horizontal, 6)
+                button("plus.magnifyingglass", label: "Zoom to slide 1", enabled: true) { state.slideFocus = 0 }
+            }
+        }
+        .padding(.horizontal, 4)
+        .frame(height: 36)
+        .background(.ultraThinMaterial, in: Capsule())
+        .overlay(Capsule().strokeBorder(ColorManager.glassStroke, lineWidth: 0.8))
+        .shadow(color: .black.opacity(0.12), radius: 8, y: 3)
+        .animation(.easeInOut(duration: 0.2), value: focus)
+    }
+
+    private func button(_ sf: String, label: String, enabled: Bool, action: @escaping () -> Void) -> some View {
+        Button {
+            withAnimation(.spring(response: 0.4, dampingFraction: 0.9)) { action() }
+        } label: {
+            Image(systemName: sf)
+                .font(.system(size: 14, weight: .semibold))
+                .frame(width: 36, height: 36)
+                .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
+        .foregroundStyle(enabled ? Color.primary : Color.secondary.opacity(0.4))
+        .disabled(!enabled)
+        .accessibilityLabel(label)
     }
 }

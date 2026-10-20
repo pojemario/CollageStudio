@@ -96,6 +96,13 @@ struct ExportOptionsView: View {
     var body: some View {
         NavigationStack {
             Form {
+                if state.slides > 1 {
+                    Section {
+                        Label("Each page goes out as \(state.slides) pictures, numbered in order. Post them together as one carousel and they line up when swiped.",
+                              systemImage: "rectangle.split.3x1")
+                            .font(.footnote)
+                    }
+                }
                 if exportablePages > 1 {
                     Section {
                         Picker("Pages", selection: $allPages) {
@@ -156,8 +163,9 @@ struct ExportOptionsView: View {
     }
 
     private func detail(for size: ExportSettings.Size) -> String {
-        let px = settings.withSize(size).pixelSize(for: state.canvasSize)
-        return "\(Int(px.width)) × \(Int(px.height)) px · \(size.detail)"
+        let px = settings.withSize(size).pixelSize(for: state.slideSize)
+        let each = state.slides > 1 ? "\(state.slides) slides of " : ""
+        return "\(each)\(Int(px.width)) × \(Int(px.height)) px · \(size.detail)"
     }
 
     /// Social feeds crop other shapes; say which canvas ratios fit.

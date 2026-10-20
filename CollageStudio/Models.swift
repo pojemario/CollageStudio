@@ -480,6 +480,9 @@ struct PageStyle: Equatable {
     var numCols: Int = 2
     /// The lanes run across as rows instead of down as columns.
     var isRows: Bool = false
+    /// Strip: every photo side by side in one row, each as wide as its own
+    /// shape allows (a carousel strip). Overrides columns and rows.
+    var isStrip: Bool = false
     var gap: Double = 5
     var cornerRadius: Double = 8
     var backgroundColor: Color = .white
@@ -1987,12 +1990,12 @@ struct CollageLayout {
     var colGrows: [CGFloat] = []
     var boxGrows: [[CGFloat]] = []
 
-    mutating func rebuild(images: [CollageImage], order: [UUID], numCols: Int) {
+    mutating func rebuild(images: [CollageImage], order: [UUID], numCols: Int, strip: Bool = false) {
         let n = order.count
         guard n > 0 else { columns = []; return }
 
-        // Never more columns than images.
-        let cols = max(1, min(numCols, n))
+        // Never more columns than images; a strip is one column per photo.
+        let cols = strip ? n : max(1, min(numCols, n))
         var cols2D: [[ColumnItem]] = Array(repeating: [], count: cols)
 
         // Round-robin assignment for balance
@@ -2006,9 +2009,12 @@ struct CollageLayout {
 
         columns = cols2D
 
-        // Reset colGrows if column count changed
+        // Reset colGrows if column count changed: a strip's photos get
+        // widths by their shapes, so all stand the same height uncropped.
         if colGrows.count != cols {
-            colGrows = Array(repeating: 1.0, count: cols)
+            colGrows = strip
+                ? cols2D.map { col in col.first.map { 1 / max($0.aspectRatio, 0.05) } ?? 1 }
+                : Array(repeating: 1.0, count: cols)
         }
 
         // Set boxGrows to equal shares for each image in a column

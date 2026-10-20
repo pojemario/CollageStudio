@@ -348,7 +348,8 @@ struct ContentView: View {
                     HStack(spacing: 5) {
                         Image(systemName: "aspectratio")
                             .font(.system(size: 15, weight: .medium))
-                        Text(state.ratio.rawValue.replacingOccurrences(of: ":", with: "×"))
+                        Text(state.ratio.rawValue.replacingOccurrences(of: ":", with: "×")
+                             + (state.slides > 1 ? " · \(state.slides)" : ""))
                             .font(.footnote.weight(.bold))
                             .lineLimit(1)
                     }
@@ -360,7 +361,7 @@ struct ContentView: View {
                     .contentShape(Rectangle())
                 }
                 .buttonStyle(.plain)
-                .accessibilityLabel("Canvas ratio, \(state.ratio.rawValue.replacingOccurrences(of: ":", with: " by "))")
+                .accessibilityLabel("Canvas ratio, \(state.ratio.rawValue.replacingOccurrences(of: ":", with: " by "))\(state.slides > 1 ? ", \(state.slides) slides" : "")")
                 .background(
                     GeometryReader { g in
                         Color.clear.onChange(of: g.frame(in: .global), initial: true) { _, f in

@@ -16,6 +16,12 @@ struct FramesPanel: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: 10) {
+            if state.slides > 1 {
+                Label("Frames are off while the canvas has slides. Set Slides to 1 (ratio button) to see them.",
+                      systemImage: "rectangle.split.3x1")
+                    .font(.footnote)
+                    .foregroundStyle(.secondary)
+            }
             ScrollView(.horizontal, showsIndicators: false) {
                 HStack(spacing: 8) {
                     ForEach(CollageState.framePacks) { pack in
