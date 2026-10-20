@@ -21,7 +21,7 @@ struct CanvasContainerView: View {
     @State private var replaceItems: [PhotosPickerItem] = []
     @State private var showAddPicker = false
     /// The page bar's height over the canvas (PageTabBar plus its margin).
-    static let pagerHeight: CGFloat = 44
+    static let pagerHeight: CGFloat = 50
 
     var body: some View {
         GeometryReader { geo in
@@ -34,7 +34,7 @@ struct CanvasContainerView: View {
             // A carousel strip zoomed to one slide shows that slide with a
             // bit of its neighbours; otherwise the whole canvas fits.
             let focus = state.focusedSlide
-            let slideW = state.slideSize.width
+            let slideW = state.pictureSize.width
             let shownW = focus == nil ? state.canvasSize.width : min(state.canvasSize.width, slideW * 1.2)
             let fitScale = min(available.width / max(shownW, 1),
                                available.height / max(state.canvasSize.height, 1))
@@ -56,7 +56,7 @@ struct CanvasContainerView: View {
             // one page), taken from the space left under it: all of the
             // bar's height if there's that much, else what there is (a tall
             // 9:16 collage keeps the bar floating over its top edge).
-            let pagerReserve: CGFloat = state.pages.count > 1 && !state.toolbarHidden
+            let pagerReserve: CGFloat = state.pictureCount > 1 && !state.toolbarHidden
                 ? min(Self.pagerHeight, max(geo.size.height - displayH, 0)) : 0
 
             // While a text box is edited, the canvas slides up just enough to
@@ -141,13 +141,6 @@ struct CanvasContainerView: View {
                         .frame(width: windowW, height: displayH, alignment: .leading)
                         .clipped()
                         .animation(.spring(response: 0.4, dampingFraction: 0.9), value: state.focusedSlide)
-                        // Slide to slide, or the whole strip.
-                        .overlay(alignment: .bottom) {
-                            if state.slides > 1 && state.hasAnyImages && !state.toolbarHidden {
-                                SlideNavigator()
-                                    .offset(y: 50)
-                            }
-                        }
                         .padding(.top, pagerReserve)
                         .animation(.easeInOut(duration: 0.25), value: pagerReserve)
                 }
@@ -371,53 +364,5 @@ struct SlideCuts: View {
         }
         .allowsHitTesting(false)
         .accessibilityHidden(true)
-    }
-}
-
-/// Under a carousel strip: step from slide to slide, or see them all.
-struct SlideNavigator: View {
-    @EnvironmentObject var state: CollageState
-
-    var body: some View {
-        let focus = state.focusedSlide
-        HStack(spacing: 2) {
-            if let focus {
-                button("chevron.left", label: "Previous slide", enabled: focus > 0) { state.slideFocus = focus - 1 }
-                Text("Slide \(focus + 1) of \(state.slides)")
-                    .font(.footnote.weight(.semibold).monospacedDigit())
-                    .frame(minWidth: 96)
-                    .contentTransition(.numericText())
-                button("chevron.right", label: "Next slide", enabled: focus < state.slides - 1) { state.slideFocus = focus + 1 }
-                Divider().frame(height: 18).padding(.horizontal, 4)
-                button("rectangle.split.3x1", label: "All slides", enabled: true) { state.slideFocus = nil }
-            } else {
-                Text("All \(state.slides) slides")
-                    .font(.footnote.weight(.semibold))
-                    .padding(.leading, 12)
-                Divider().frame(height: 18).padding(.horizontal, 6)
-                button("plus.magnifyingglass", label: "Zoom to slide 1", enabled: true) { state.slideFocus = 0 }
-            }
-        }
-        .padding(.horizontal, 4)
-        .frame(height: 36)
-        .background(.ultraThinMaterial, in: Capsule())
-        .overlay(Capsule().strokeBorder(ColorManager.glassStroke, lineWidth: 0.8))
-        .shadow(color: .black.opacity(0.12), radius: 8, y: 3)
-        .animation(.easeInOut(duration: 0.2), value: focus)
-    }
-
-    private func button(_ sf: String, label: String, enabled: Bool, action: @escaping () -> Void) -> some View {
-        Button {
-            withAnimation(.spring(response: 0.4, dampingFraction: 0.9)) { action() }
-        } label: {
-            Image(systemName: sf)
-                .font(.system(size: 14, weight: .semibold))
-                .frame(width: 36, height: 36)
-                .contentShape(Rectangle())
-        }
-        .buttonStyle(.plain)
-        .foregroundStyle(enabled ? Color.primary : Color.secondary.opacity(0.4))
-        .disabled(!enabled)
-        .accessibilityLabel(label)
     }
 }

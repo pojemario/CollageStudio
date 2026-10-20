@@ -92,13 +92,17 @@ struct ExportOptionsView: View {
     @State private var allPages = true
 
     private var exportablePages: Int { state.pages.filter { !$0.images.isEmpty }.count }
+    /// Pictures those pages make (wide pages make several).
+    private var exportablePictures: Int {
+        state.pages.filter { !$0.images.isEmpty }.reduce(0) { $0 + min(max($1.style.slides, 1), CollageState.maxSlides) }
+    }
 
     var body: some View {
         NavigationStack {
             Form {
-                if state.slides > 1 {
+                if exportablePictures > exportablePages {
                     Section {
-                        Label("Each page goes out as \(state.slides) pictures, numbered in order. Post them together as one carousel and they line up when swiped.",
+                        Label("A wide page goes out as several pictures, numbered in order. Post them together and they join up when swiped.",
                               systemImage: "rectangle.split.3x1")
                             .font(.footnote)
                     }
@@ -106,8 +110,8 @@ struct ExportOptionsView: View {
                 if exportablePages > 1 {
                     Section {
                         Picker("Pages", selection: $allPages) {
-                            Text("This page").tag(false)
-                            Text("All \(exportablePages) pages").tag(true)
+                            Text(state.slides > 1 ? "This page (\(state.slides))" : "This page").tag(false)
+                            Text("All \(exportablePictures) pictures").tag(true)
                         }
                         .pickerStyle(.segmented)
                     } footer: {
@@ -163,8 +167,8 @@ struct ExportOptionsView: View {
     }
 
     private func detail(for size: ExportSettings.Size) -> String {
-        let px = settings.withSize(size).pixelSize(for: state.slideSize)
-        let each = state.slides > 1 ? "\(state.slides) slides of " : ""
+        let px = settings.withSize(size).pixelSize(for: state.pictureSize)
+        let each = exportablePictures > 1 ? "each picture " : ""
         return "\(each)\(Int(px.width)) × \(Int(px.height)) px · \(size.detail)"
     }
 

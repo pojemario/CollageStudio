@@ -31,6 +31,9 @@ class CollageState: ObservableObject {
             pageSlideEdge = currentPageIndex > oldValue ? .trailing : .leading
             // Highlight maps belong to the previous page's picture
             if currentPageIndex != oldValue { effectMaps.clear() }
+            // goToPicture picks the picture before the page changes.
+            if currentPageIndex != oldValue && !isExporting && !pictureFocusSet { slideFocus = 0 }
+            pictureFocusSet = false
             // Tracked box frames belong to the previous page's boxes — but
             // only drop them when a different page is actually shown. didSet
             // also runs when the index is re-assigned or the current page just
@@ -68,7 +71,7 @@ class CollageState: ObservableObject {
         }
     }
 
-    private var safePageIndex: Int {
+    var safePageIndex: Int {
         min(max(currentPageIndex, 0), pages.count - 1)
     }
 
@@ -91,25 +94,57 @@ class CollageState: ObservableObject {
 
     // MARK: - Canvas
     @Published var ratio: CanvasRatio = .square
-    @Published var canvasSize: CGSize = CGSize(width: 1024, height: 1024)
-    /// A seamless carousel: the canvas is this many slides of the chosen
-    /// ratio side by side, exported as one picture per slide that line up
-    /// when swiped. 1 = a single picture.
-    @Published var slides: Int = 1
+    /// One picture of the collage's ratio. A page is one picture, or
+    /// several side by side (a wide page, see PageStyle.slides).
+    @Published var pictureSize: CGSize = CGSize(width: 1024, height: 1024)
+    /// The current page's canvas: its pictures side by side.
+    var canvasSize: CGSize { Self.stripSize(pictureSize, slides: slides) }
+    /// How many pictures wide the current page is.
+    var slides: Int { min(max(currentPage.style.slides, 1), Self.maxSlides) }
     static let maxSlides = 10
-    /// The slide the canvas is zoomed to, or nil for the whole strip (only
-    /// on screen; with one slide it means nothing).
+    /// The picture of a wide page the canvas is zoomed to, or nil for the
+    /// whole page (only on screen; a single-picture page ignores it).
     @Published var slideFocus: Int? = 0
-    /// The zoomed-to slide, kept within the strip (nil: the whole strip).
+    /// The zoomed-to picture, kept within the page (nil: the whole page).
     var focusedSlide: Int? {
         guard slides > 1, let f = slideFocus else { return nil }
         return min(max(f, 0), slides - 1)
     }
 
-    /// One slide of the canvas (the whole canvas with a single slide).
-    var slideSize: CGSize {
-        CGSize(width: canvasSize.width / CGFloat(max(slides, 1)), height: canvasSize.height)
+    // MARK: Pictures (every page's, in order — what a post is made of)
+
+    /// Pictures in the whole collage: one per page, more for wide pages.
+    var pictureCount: Int { pages.reduce(0) { $0 + min(max($1.style.slides, 1), Self.maxSlides) } }
+    /// Where each page's pictures start in that count.
+    func firstPicture(ofPage index: Int) -> Int {
+        pages.prefix(index).reduce(0) { $0 + min(max($1.style.slides, 1), Self.maxSlides) }
     }
+    /// The picture on screen (the first one while a wide page is shown whole).
+    var currentPicture: Int { firstPicture(ofPage: safePageIndex) + (focusedSlide ?? 0) }
+
+    /// Set by goToPicture so the page change keeps its picture.
+    private var pictureFocusSet = false
+
+    /// Shows picture `k`: its page, zoomed to it if the page is wide.
+    func goToPicture(_ k: Int) {
+        var first = 0
+        for (i, page) in pages.enumerated() {
+            let n = min(max(page.style.slides, 1), Self.maxSlides)
+            if k < first + n {
+                let slide = k - first
+                if i == safePageIndex {
+                    withAnimation(.spring(response: 0.4, dampingFraction: 0.9)) { slideFocus = slide }
+                } else {
+                    slideFocus = slide
+                    pictureFocusSet = true
+                    goToPage(i)
+                }
+                return
+            }
+            first += n
+        }
+    }
+
     @Published var customWidth: String = "1200"
     @Published var customHeight: String = "900"
     @Published var customUnit: CustomUnit = .px
@@ -269,7 +304,10 @@ class CollageState: ObservableObject {
     func applyStyleToAllPages() {
         let source = currentPage.style
         for pi in pages.indices where pi != safePageIndex {
+            // (Each page keeps its own width.)
+            let slides = pages[pi].style.slides
             pages[pi].style = source
+            pages[pi].style.slides = slides
             // Columns may have changed, so rebuild that page's layout
             pages[pi].layout.resetGrows()
             pages[pi].layout.rebuild(images: pages[pi].images,
@@ -430,6 +468,14 @@ class CollageState: ObservableObject {
 
     /// Layers to draw under or over the frame, in stacking order. The preview
     /// sits on top of its group — exactly where it lands once added.
+    /// The part of a canvas of `size` an overlay fills: its slide on a
+    /// strip, else all of it.
+    func overlayRegion(_ layer: OverlayLayer, in size: CGSize) -> CGRect {
+        guard slides > 1, let s = layer.slide else { return CGRect(origin: .zero, size: size) }
+        let w = size.width / CGFloat(slides)
+        return CGRect(x: CGFloat(min(max(s, 0), slides - 1)) * w, y: 0, width: w, height: size.height)
+    }
+
     func visibleOverlays(aboveFrame: Bool) -> [OverlayLayer] {
         var layers = overlayLayers.filter { $0.aboveFrame == aboveFrame }
         if let preview = overlayPreview, preview.aboveFrame == aboveFrame, !isExporting {
@@ -444,7 +490,9 @@ class CollageState: ObservableObject {
     func addOverlayLayer(asset: String, kind: OverlayKind) {
         guard canAddOverlay else { return }
         overlayPreview = nil
-        let layer = OverlayLayer(asset: asset, kind: kind)
+        var layer = OverlayLayer(asset: asset, kind: kind)
+        // On a strip it goes on the slide in view (all of it when they all are).
+        layer.slide = slides > 1 ? focusedSlide : nil
         overlayLayers.append(layer)
         selectedOverlayId = layer.id
     }
@@ -517,7 +565,7 @@ class CollageState: ObservableObject {
     func transformEditedOverlay(scaleBy: CGFloat = 1, rotateBy: CGFloat = 0, translation: CGSize = .zero) {
         updateEditedOverlay { layer in
             layer = layer.applying(scaleBy: scaleBy, rotateBy: rotateBy,
-                                   translation: translation, canvasSize: canvasSize)
+                                   translation: translation, canvasSize: overlayRegion(layer, in: canvasSize).size)
         }
     }
 
@@ -1552,7 +1600,7 @@ class CollageState: ObservableObject {
             guard !remaining.isEmpty else { break }
             guard pages.count < Self.maxPages else { break }
             // Spill pages inherit the style of the page being filled
-            pages.append(CollagePage(style: pages[pi].style, look: pages[pi].look))
+            pages.append(CollagePage(style: pages[pi].style.single, look: pages[pi].look))
             pi = pages.count - 1
         }
 
@@ -1583,7 +1631,7 @@ class CollageState: ObservableObject {
         let shared = pendingSharedImages
         pendingSharedImages = []
         guard !shared.isEmpty, pages.count < Self.maxPages else { return }
-        pages.append(CollagePage(style: currentPage.style, look: currentPage.look))
+        pages.append(CollagePage(style: currentPage.style.single, look: currentPage.look))
         currentPageIndex = pages.count - 1
         addImages(shared)
     }
@@ -1661,7 +1709,7 @@ class CollageState: ObservableObject {
     func addPage() {
         guard pages.count < Self.maxPages else { return }
         // New pages start with the current page's style
-        pages.append(CollagePage(style: currentPage.style, look: currentPage.look))
+        pages.append(CollagePage(style: currentPage.style.single, look: currentPage.look))
         currentPageIndex = pages.count - 1
     }
 
@@ -1721,7 +1769,7 @@ class CollageState: ObservableObject {
 
     func moveImageToNewPage(id: UUID) {
         guard pages.count < Self.maxPages else { return }
-        pages.append(CollagePage(style: currentPage.style, look: currentPage.look))
+        pages.append(CollagePage(style: currentPage.style.single, look: currentPage.look))
         moveImage(id: id, toPage: pages.count - 1)
     }
 
@@ -1737,7 +1785,7 @@ class CollageState: ObservableObject {
             i.lastBoxSize = .zero
             return i
         }
-        var page = CollagePage(style: currentPage.style, look: currentPage.look)
+        var page = CollagePage(style: currentPage.style.single, look: currentPage.look)
         page.images = Array(allImages)
         page.order = allImages.map(\.id)
         page.style.numCols = max(1, min(allImages.count, 6))
@@ -1806,7 +1854,7 @@ class CollageState: ObservableObject {
         var idx = 0
         for p in 0..<pageCount {
             let perPage = min(Self.maxImagesPerPage, base + (p < extra ? 1 : 0))
-            var page = CollagePage(style: styleTemplate, look: lookTemplate)
+            var page = CollagePage(style: styleTemplate.single, look: lookTemplate)
             var chunk: [CollageImage] = []
             while chunk.count < perPage && idx < images.count {
                 var img = images[idx]
@@ -1853,7 +1901,7 @@ class CollageState: ObservableObject {
             img.framedByUser = false
             img.zoom = 1.0
             img.lastBoxSize = .zero
-            var page = CollagePage(style: styleTemplate, look: lookTemplate)
+            var page = CollagePage(style: styleTemplate.single, look: lookTemplate)
             page.style.numCols = 1
             page.images = [img]
             page.order = [img.id]
@@ -2011,11 +2059,6 @@ class CollageState: ObservableObject {
         }
         selectedOverlayId = nil
         overlayPreview = nil
-        if !currentPageOnly && slides != 1 {
-            canvasSize = slideSize
-            slides = 1
-            resetAllImagePositions()
-        }
         if !currentPageOnly && ratio != Self.defaultRatio {
             setRatio(Self.defaultRatio)
         } else {
@@ -2034,7 +2077,7 @@ class CollageState: ObservableObject {
     func setRatio(_ r: CanvasRatio) {
         ratio = r
         if r != .custom {
-            canvasSize = Self.stripSize(r.canvasSize(base: 1024), slides: slides)
+            pictureSize = r.canvasSize(base: 1024)
         }
         resetAllImagePositions()
         rebuildAllPages()
@@ -2048,16 +2091,21 @@ class CollageState: ObservableObject {
         return CGSize(width: max(100, min(6000, w)), height: max(100, min(6000, h)))
     }
 
-    /// Cuts the canvas into `n` slides of the current ratio (1 = one picture).
+    /// Makes the current page `n` pictures wide (1 = a single picture).
     func setSlides(_ n: Int) {
         let n = min(max(n, 1), Self.maxSlides)
         guard n != slides else { return }
-        canvasSize = Self.stripSize(slideSize, slides: n)
-        slides = n
+        currentPage.style.slides = n
         if let f = slideFocus { slideFocus = min(f, n - 1) }
-        Diagnostics.log("slides \(n) · canvas \(Int(canvasSize.width))x\(Int(canvasSize.height))")
-        resetAllImagePositions()
-        rebuildAllPages()
+        Diagnostics.log("page \(safePageIndex + 1) \(n) pictures wide · canvas \(Int(canvasSize.width))x\(Int(canvasSize.height))")
+        for i in currentPage.images.indices {
+            currentPage.images[i].panOffset = .zero
+            currentPage.images[i].framedByUser = false
+            currentPage.images[i].zoom = 1.0
+            currentPage.images[i].rotation = 0
+            currentPage.images[i].lastBoxSize = .zero
+        }
+        rebuildLayout()
     }
 
     /// `slides` slides of `slide` side by side.
@@ -2066,7 +2114,7 @@ class CollageState: ObservableObject {
     }
 
     func applyCustomSize() {
-        canvasSize = Self.stripSize(customCanvasSize, slides: slides)
+        pictureSize = customCanvasSize
         ratio = .custom
         resetAllImagePositions()
         rebuildAllPages()
@@ -2089,8 +2137,7 @@ class CollageState: ObservableObject {
     /// Gives the (new) collage the ratio last picked, 9:16 at first.
     private func useLastRatio() {
         ratio = CanvasRatio(rawValue: UserDefaults.standard.string(forKey: DefaultsKey.lastRatio) ?? "") ?? Self.defaultRatio
-        canvasSize = ratio == .custom ? customCanvasSize : ratio.canvasSize(base: 1024)
-        slides = 1
+        pictureSize = ratio == .custom ? customCanvasSize : ratio.canvasSize(base: 1024)
     }
 
     init() {
@@ -2779,11 +2826,12 @@ class CollageState: ObservableObject {
 
         var urls: [URL] = []
         var failed: [Int] = []
-        // A carousel's canvas goes out one picture per slide.
-        let slideCount = max(slides, 1)
-        let pictures = targets.count * slideCount
+        // A wide page goes out as one picture per slide, numbered straight
+        // through with the other pages' pictures.
+        let pictures = targets.reduce(0) { $0 + min(max(pages[$1].style.slides, 1), Self.maxSlides) }
         for (n, pi) in targets.enumerated() {
             currentPageIndex = pi
+            let slideCount = slides
             refreshEffectMaps(force: true)
             defer {
                 // Each page's full-size graded photos go before the next.
@@ -2791,7 +2839,7 @@ class CollageState: ObservableObject {
                 exportProgress = Double(n + 1) / Double(targets.count)
             }
             for slide in 0..<slideCount {
-                guard let image = renderCurrentPage(scale: settings.scale(for: slideSize),
+                guard let image = renderCurrentPage(scale: settings.scale(for: pictureSize),
                                                     slide: slideCount > 1 ? slide : nil),
                       let data = settings.encode(image) else {
                     if failed.last != pi + 1 { failed.append(pi + 1) }
@@ -2843,11 +2891,11 @@ class CollageState: ObservableObject {
     private func renderCurrentPage(scale: CGFloat = 2, slide: Int? = nil) -> PlatformImage? {
         // One slide: the whole canvas laid out as on screen, shifted and
         // cut to that slide — so neighbouring slides meet exactly.
-        let size = slide == nil ? canvasSize : slideSize
+        let size = slide == nil ? canvasSize : pictureSize
         let gridView = CollageGridView_Grid(scale: 1.0)
             .frame(width: canvasSize.width, height: canvasSize.height)
             .environmentObject(self)
-            .offset(x: -CGFloat(slide ?? 0) * slideSize.width)
+            .offset(x: -CGFloat(slide ?? 0) * pictureSize.width)
             .frame(width: size.width, height: size.height, alignment: .leading)
             .clipped()
 

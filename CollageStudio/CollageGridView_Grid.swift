@@ -192,8 +192,11 @@ struct CollageGridView_Grid: View {
                                    rotateBy: CGFloat(overlayPinchAngle.radians))
                 let shown = live
                     ? layer.applying(scaleBy: overlayPinchScale, rotateBy: snap.rotateBy,
-                                     translation: snap.translation, canvasSize: state.canvasSize)
+                                     translation: snap.translation,
+                                     canvasSize: state.overlayRegion(layer, in: state.canvasSize).size)
                     : layer
+                // Its slide on a strip, else the whole canvas.
+                let region = state.overlayRegion(layer, in: canvasSize)
                 Group {
                     #if canImport(UIKit)
                     Image(uiImage: image).resizable()
@@ -202,13 +205,15 @@ struct CollageGridView_Grid: View {
                     #endif
                 }
                 .scaledToFill()
-                .frame(width: canvasSize.width, height: canvasSize.height)
+                .frame(width: region.width, height: region.height)
                 .scaleEffect(shown.scale)
                 .rotationEffect(.radians(shown.rotation))
                 .offset(x: shown.offset.width * scale, y: shown.offset.height * scale)
                 .blur(radius: layer.blurRadius * scale)
-                .frame(width: canvasSize.width, height: canvasSize.height)
+                .frame(width: region.width, height: region.height)
                 .clipped()
+                .offset(x: region.minX)
+                .frame(width: canvasSize.width, height: canvasSize.height, alignment: .topLeading)
                 .opacity(layer.opacity / 100)
                 .blendMode(layer.kind.blendMode)
                 .allowsHitTesting(false)
@@ -237,14 +242,18 @@ struct CollageGridView_Grid: View {
 
     /// Center lines shown while a dragged overlay is snapped to them.
     private func snapGuides(canvasSize: CGSize) -> some View {
-        ZStack {
+        // Center lines of the edited overlay's slide (or of the canvas).
+        let region = state.editedOverlay.map { state.overlayRegion($0, in: canvasSize) }
+            ?? CGRect(origin: .zero, size: canvasSize)
+        return ZStack {
             if snappedX {
                 Rectangle().fill(Color.accentColor).frame(width: 1.5, height: canvasSize.height)
             }
             if snappedY {
-                Rectangle().fill(Color.accentColor).frame(width: canvasSize.width, height: 1.5)
+                Rectangle().fill(Color.accentColor).frame(width: region.width, height: 1.5)
             }
         }
+        .offset(x: region.midX - canvasSize.width / 2)
         .shadow(color: .black.opacity(0.3), radius: 1)
         .allowsHitTesting(false)
     }

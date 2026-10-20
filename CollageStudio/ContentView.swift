@@ -68,35 +68,59 @@ struct PageTabBar: View {
     @EnvironmentObject var state: CollageState
 
     var body: some View {
-        if state.pages.count > 1 {
-            HStack(spacing: 12) {
-                stepButton(system: "chevron.left", enabled: state.currentPageIndex > 0) {
-                    select(state.currentPageIndex - 1)
+        if state.pictureCount > 1 {
+            let count = state.pictureCount
+            let first = state.firstPicture(ofPage: state.safePageIndex)
+            let whole = state.slides > 1 && state.focusedSlide == nil
+            let current = state.currentPicture
+            HStack(spacing: 10) {
+                stepButton(system: "chevron.left", enabled: whole ? first > 0 : current > 0) {
+                    step(whole ? first - 1 : current - 1)
                 }
-                .accessibilityLabel("Previous page")
-                // Tap the page number for the page menu.
+                .accessibilityLabel("Previous picture")
+                // Tap the number for the page menu.
                 Menu { pageMenu } label: {
-                    Text("\(state.currentPageIndex + 1) / \(state.pages.count)")
-                        .font(.subheadline.weight(.semibold).monospacedDigit())
-                        .foregroundColor(.primary)
-                        .padding(.vertical, 4)
-                        .contentShape(Rectangle())
+                    VStack(spacing: 3) {
+                        Text(whole ? "\(first + 1)–\(first + state.slides) / \(count)" : "\(current + 1) / \(count)")
+                            .font(.subheadline.weight(.semibold).monospacedDigit())
+                            .foregroundColor(.primary)
+                            .contentTransition(.numericText())
+                            .lineLimit(1)
+                        if count <= 24 { PictureDots(whole: whole) }
+                    }
+                    .fixedSize()
+                    .padding(.vertical, 2)
+                    .contentShape(Rectangle())
                 }
-                .accessibilityLabel("Page \(state.currentPageIndex + 1) of \(state.pages.count)")
+                .accessibilityLabel(whole
+                    ? "Pictures \(first + 1) to \(first + state.slides) of \(count), page \(state.safePageIndex + 1)"
+                    : "Picture \(current + 1) of \(count), page \(state.safePageIndex + 1)")
                 .accessibilityHint("Opens the page menu")
-                stepButton(system: "chevron.right", enabled: state.currentPageIndex < state.pages.count - 1) {
-                    select(state.currentPageIndex + 1)
+                stepButton(system: "chevron.right",
+                           enabled: whole ? first + state.slides < count : current < count - 1) {
+                    step(whole ? first + state.slides : current + 1)
                 }
-                .accessibilityLabel("Next page")
+                .accessibilityLabel("Next picture")
+                // A wide page: all its pictures at once, or one at a time.
+                if state.slides > 1 {
+                    Divider().frame(height: 18)
+                    stepButton(system: whole ? "plus.magnifyingglass" : "rectangle.split.3x1", enabled: true) {
+                        withAnimation(.spring(response: 0.4, dampingFraction: 0.9)) {
+                            state.slideFocus = whole ? 0 : nil
+                        }
+                    }
+                    .accessibilityLabel(whole ? "One picture at a time" : "Whole page")
+                }
             }
             .padding(.horizontal, 14)
-            .padding(.vertical, 7)
+            .padding(.vertical, 5)
             .background(
                 Capsule(style: .continuous)
                     .fill(.ultraThinMaterial)
                     .overlay(Capsule(style: .continuous).strokeBorder(ColorManager.glassStroke, lineWidth: 1))
                     .shadow(color: .black.opacity(0.15), radius: 8, y: 2)
             )
+            .animation(.easeInOut(duration: 0.2), value: current)
             // Long-press works too.
             .contextMenu { pageMenu }
         }
@@ -144,14 +168,45 @@ struct PageTabBar: View {
         .disabled(!enabled)
     }
 
-    private func select(_ index: Int) {
-        guard state.pages.indices.contains(index) else { return }
-        // Choosing a page from the top bar also dismisses the bottom panel.
-        state.collapsePanel()
-        state.goToPage(index)
+    private func step(_ picture: Int) {
+        guard picture >= 0, picture < state.pictureCount else { return }
+        // Moving to another page also dismisses the bottom panel.
+        let page = state.pages.indices.last { state.firstPicture(ofPage: $0) <= picture } ?? 0
+        if page != state.safePageIndex { state.collapsePanel() }
+        state.goToPicture(picture)
         #if canImport(UIKit)
         UISelectionFeedbackGenerator().selectionChanged()
         #endif
+    }
+}
+
+/// Under the picture count: a dot per picture, a wide page's dots joined on
+/// one bar, the one on screen (or the whole page shown) in the accent.
+struct PictureDots: View {
+    @EnvironmentObject var state: CollageState
+    let whole: Bool
+
+    var body: some View {
+        let current = state.currentPicture
+        HStack(spacing: 5) {
+            ForEach(Array(state.pages.enumerated()), id: \.element.id) { pi, page in
+                let first = state.firstPicture(ofPage: pi)
+                let n = min(max(page.style.slides, 1), CollageState.maxSlides)
+                HStack(spacing: 3) {
+                    ForEach(0..<n, id: \.self) { k in
+                        let on = pi == state.safePageIndex && (whole || first + k == current)
+                        Circle()
+                            .fill(on ? Color.accentColor : Color.primary.opacity(0.35))
+                            .frame(width: 5, height: 5)
+                    }
+                }
+                .padding(n > 1 ? 1.5 : 0)
+                .background {
+                    if n > 1 { Capsule().fill(Color.primary.opacity(0.15)) }
+                }
+            }
+        }
+        .accessibilityHidden(true)
     }
 }
 
@@ -348,8 +403,7 @@ struct ContentView: View {
                     HStack(spacing: 5) {
                         Image(systemName: "aspectratio")
                             .font(.system(size: 15, weight: .medium))
-                        Text(state.ratio.rawValue.replacingOccurrences(of: ":", with: "×")
-                             + (state.slides > 1 ? " · \(state.slides)" : ""))
+                        Text(state.ratio.rawValue.replacingOccurrences(of: ":", with: "×"))
                             .font(.footnote.weight(.bold))
                             .lineLimit(1)
                     }
@@ -361,7 +415,7 @@ struct ContentView: View {
                     .contentShape(Rectangle())
                 }
                 .buttonStyle(.plain)
-                .accessibilityLabel("Canvas ratio, \(state.ratio.rawValue.replacingOccurrences(of: ":", with: " by "))\(state.slides > 1 ? ", \(state.slides) slides" : "")")
+                .accessibilityLabel("Canvas ratio, \(state.ratio.rawValue.replacingOccurrences(of: ":", with: " by "))")
                 .background(
                     GeometryReader { g in
                         Color.clear.onChange(of: g.frame(in: .global), initial: true) { _, f in
@@ -507,12 +561,12 @@ struct ContentView: View {
                     PageTabBar().padding(.top, 2)
                         .onGeometryChange(for: CGRect.self) { $0.frame(in: .global) } action: { f in
                             pagerBottomY = f.maxY
-                            let frame = state.pages.count > 1 ? f : .zero
+                            let frame = state.pictureCount > 1 ? f : .zero
                             guard frame.differs(from: state.pagerFrame) else { return }
                             Diagnostics.count("pagerFrame")
                             state.pagerFrame = frame
                         }
-                        .onChange(of: state.pages.count > 1) { _, shown in
+                        .onChange(of: state.pictureCount > 1) { _, shown in
                             if !shown { state.pagerFrame = .zero }
                         }
                 }

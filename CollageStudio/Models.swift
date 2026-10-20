@@ -483,6 +483,10 @@ struct PageStyle: Equatable {
     /// Strip: every photo side by side in one row, each as wide as its own
     /// shape allows (a carousel strip). Overrides columns and rows.
     var isStrip: Bool = false
+    /// How many pictures wide the page is: 1 is a single picture; more make
+    /// a wide page, exported as that many pictures that join up seamlessly
+    /// when swiped (each of the collage's ratio).
+    var slides: Int = 1
     var gap: Double = 5
     var cornerRadius: Double = 8
     var backgroundColor: Color = .white
@@ -552,6 +556,15 @@ extension Color {
     init?(srgbComponents c: [Double]) {
         guard c.count == 4 else { return nil }
         self.init(.sRGB, red: c[0], green: c[1], blue: c[2], opacity: c[3])
+    }
+}
+
+extension PageStyle {
+    /// For a page made from this one: a single picture wide.
+    var single: PageStyle {
+        var s = self
+        s.slides = 1
+        return s
     }
 }
 
@@ -709,6 +722,9 @@ struct OverlayLayer: Identifiable, Equatable {
     var scale: CGFloat = 1
     var rotation: CGFloat = 0       // radians
     var offset: CGSize = .zero
+    /// On a carousel strip, the slide it fills (and is cut to); nil: the
+    /// whole canvas.
+    var slide: Int? = nil
 
     /// Drawn long edge limits, in canvas pixels — the failsafe that keeps a
     /// texture from being pinched into a speck or blown up past recognition.

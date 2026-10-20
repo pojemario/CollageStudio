@@ -176,23 +176,22 @@ struct RatioPanelView: View {
             if state.ratio == .custom {
                 CustomSizeRow()
             }
-            SlidesRow()
         }
     }
 }
 
-/// Slides: the canvas as several slides of the chosen ratio side by side —
-/// one wide collage, posted as a carousel that lines up when swiped.
-struct SlidesRow: View {
+/// Width: how many pictures wide the page is. A wide page is one collage
+/// posted as several pictures that join up when swiped.
+struct PageWidthRow: View {
     @EnvironmentObject var state: CollageState
 
     var body: some View {
         VStack(alignment: .leading, spacing: 4) {
             HStack(spacing: 10) {
-                Image(systemName: "rectangle.split.3x1")
+                Image(systemName: "arrow.left.and.right.square")
                     .font(.system(size: 15, weight: .medium))
                     .frame(width: 22)
-                Text("Slides")
+                Text("Width")
                     .font(.system(size: 14, weight: .medium))
                 Spacer()
                 stepButton("minus", enabled: state.slides > 1) { state.setSlides(state.slides - 1) }
@@ -206,8 +205,8 @@ struct SlidesRow: View {
             .padding(.vertical, 6)
             .appButtonBackground(prominent: false)
             Text(state.slides > 1
-                 ? "One wide collage, exported as \(state.slides) pictures that line up when swiped."
-                 : "Add slides for a seamless carousel: photos can run across the cuts.")
+                 ? "This page is \(state.slides) pictures wide. Photos can run from one picture into the next."
+                 : "Pictures this page is wide. More than 1 makes a seamless carousel.")
                 .font(.caption)
                 .foregroundStyle(.secondary)
                 .padding(.horizontal, 4)
@@ -227,7 +226,7 @@ struct SlidesRow: View {
         .buttonStyle(.plain)
         .foregroundStyle(enabled ? Color.accentColor : Color.secondary.opacity(0.5))
         .disabled(!enabled)
-        .accessibilityLabel(sf == "plus" ? "More slides" : "Fewer slides")
+        .accessibilityLabel(sf == "plus" ? "Wider page" : "Narrower page")
     }
 }
 
@@ -712,10 +711,14 @@ struct LanesSwitch: View {
         Picker("Lanes", selection: Binding(
             get: { state.lanes },
             set: { l in withAnimation(.spring(response: 0.35)) { state.setLanes(l) } })) {
-            Text("Cols").tag(CollageState.Lanes.columns)
-            Text("Rows").tag(CollageState.Lanes.rows)
-            // One row of photos at their own shapes — for carousel strips.
-            Text("Strip").tag(CollageState.Lanes.strip)
+            // Icons: three words don't fit beside the slider.
+            Image(systemName: "square.split.2x1").accessibilityLabel("Columns")
+                .tag(CollageState.Lanes.columns)
+            Image(systemName: "square.split.1x2").accessibilityLabel("Rows")
+                .tag(CollageState.Lanes.rows)
+            // One row of photos at their own shapes — for wide pages.
+            Image(systemName: "rectangle.split.3x1").accessibilityLabel("Strip")
+                .tag(CollageState.Lanes.strip)
         }
         .pickerStyle(.segmented)
         .labelsHidden()
@@ -899,6 +902,8 @@ struct LayoutPanel: View {
                 state.backgroundColor = .white
             }
             .popoverTip(ResetSwipeTip(), arrowEdge: .bottom)
+
+            PageWidthRow()
 
             // Shuffle is hidden for now: ShuffleButton().panelChrome(state, keep: "Shuffle")
             // Apply to All only means something with more than one page.

@@ -5,7 +5,7 @@ import Combine
 
 extension PageStyle: Codable {
     private enum CodingKeys: String, CodingKey {
-        case numCols, isRows, isStrip, gap, cornerRadius, backgroundColor, borderColor, borderThickness
+        case numCols, isRows, isStrip, slides, gap, cornerRadius, backgroundColor, borderColor, borderThickness
         case borderStyle, borderPlacement, linkBorderToBackground, backgroundKind, backgroundColor2
     }
 
@@ -16,6 +16,7 @@ extension PageStyle: Codable {
         numCols = max(1, try c.decodeIfPresent(Int.self, forKey: .numCols) ?? numCols)
         isRows = try c.decodeIfPresent(Bool.self, forKey: .isRows) ?? isRows
         isStrip = try c.decodeIfPresent(Bool.self, forKey: .isStrip) ?? isStrip
+        slides = min(max(try c.decodeIfPresent(Int.self, forKey: .slides) ?? slides, 1), CollageState.maxSlides)
         gap = try c.decodeIfPresent(Double.self, forKey: .gap) ?? gap
         cornerRadius = try c.decodeIfPresent(Double.self, forKey: .cornerRadius) ?? cornerRadius
         if let v = try c.decodeIfPresent([Double].self, forKey: .backgroundColor), let col = Color(srgbComponents: v) { backgroundColor = col }
@@ -33,6 +34,7 @@ extension PageStyle: Codable {
         try c.encode(numCols, forKey: .numCols)
         try c.encode(isRows, forKey: .isRows)
         if isStrip { try c.encode(isStrip, forKey: .isStrip) }
+        if slides > 1 { try c.encode(slides, forKey: .slides) }
         try c.encode(gap, forKey: .gap)
         try c.encode(cornerRadius, forKey: .cornerRadius)
         try c.encode(backgroundColor.srgbComponents, forKey: .backgroundColor)
@@ -198,7 +200,8 @@ struct ProjectFile: Codable {
     var calibration: [Double]
     var filter: String
     var filterStrength: Double
-    /// Slides the canvas is cut into (missing in older files: 1).
+    /// Build 89 only: every page this many pictures wide, with the canvas
+    /// size above that wide. (Pages now keep their own width.)
     var slides: Int? = nil
 
     struct Page: Codable {
@@ -265,6 +268,8 @@ struct ProjectFile: Codable {
         var scale: Double
         var rotation: Double
         var offset: [Double]
+        /// The slide of a carousel strip it fills (missing: the whole canvas).
+        var slide: Int? = nil
     }
 
     var imageCount: Int { pages.reduce(0) { $0 + $1.images.count } }
@@ -277,7 +282,7 @@ extension PageLook {
             overlays: overlayLayers.map {
                 ProjectFile.Overlay(asset: $0.asset, kind: $0.kind.rawValue, opacity: $0.opacity, blur: $0.blur,
                                     aboveFrame: $0.aboveFrame, scale: Double($0.scale), rotation: Double($0.rotation),
-                                    offset: [Double($0.offset.width), Double($0.offset.height)])
+                                    offset: [Double($0.offset.width), Double($0.offset.height)], slide: $0.slide)
             },
             effects: effects.storage, hsl: hsl.storage, calibration: calibration.storage,
             filter: colorFilter.storageKey, filterStrength: filterStrength)
@@ -298,6 +303,7 @@ extension PageLook {
                 layer.scale = CGFloat(o.scale)
                 layer.rotation = CGFloat(o.rotation)
                 if o.offset.count == 2 { layer.offset = CGSize(width: o.offset[0], height: o.offset[1]) }
+                layer.slide = o.slide.map { max($0, 0) }
                 return layer
             },
             effects: effectsFromStorage(f.effects), hsl: HSLAdjustments(storage: f.hsl),
@@ -577,12 +583,11 @@ extension CollageState {
         let file = ProjectFile(
             id: currentProjectId, name: existing?.name, created: existing?.created ?? Date(), modified: Date(),
             currentPageIndex: currentPageIndex, pages: pagesOut,
-            ratio: ratio.rawValue, canvasWidth: Double(canvasSize.width), canvasHeight: Double(canvasSize.height),
+            ratio: ratio.rawValue, canvasWidth: Double(pictureSize.width), canvasHeight: Double(pictureSize.height),
             customWidth: customWidth, customHeight: customHeight, customUnit: customUnit.rawValue,
             canvasMargin: look.canvasMargin, canvasRotation: look.canvasRotation, frame: look.frame,
             overlays: look.overlays, effects: look.effects, hsl: look.hsl, calibration: look.calibration,
-            filter: look.filter, filterStrength: look.filterStrength,
-            slides: slides > 1 ? slides : nil)
+            filter: look.filter, filterStrength: look.filterStrength)
         let thumb = hasAnyImages ? renderThumbnail() : nil
         Diagnostics.log("saved collage \(currentProjectId.uuidString.prefix(8)) thumb \(thumb.map { "\(Int($0.size.width))x\(Int($0.size.height))" } ?? "none")")
         UserDefaults.standard.set(currentProjectId.uuidString, forKey: Self.lastProjectKey)
@@ -734,8 +739,11 @@ extension CollageState {
             if file.version < 2, let f = look.effects[.fade] { look.effects[.fade] = (f / 2).rounded() }
         }
         halveFade(&collageLook)
+        // Build 89 made every page equally wide, kept at the top level.
+        let legacySlides = min(max(file.slides ?? 1, 1), Self.maxSlides)
         let restoredPages: [CollagePage] = file.pages.map { p in
             var page = CollagePage(style: p.style, look: p.look.map { PageLook(file: $0) } ?? collageLook)
+            if legacySlides > 1 && page.style.slides == 1 { page.style.slides = legacySlides }
             if p.look != nil { halveFade(&page.look) }
             page.images = p.images.compactMap { images[$0.id] }
             let present = Set(page.images.map(\.id))
@@ -762,10 +770,9 @@ extension CollageState {
         let snapshot = CollageSnapshot(
             pages: restoredPages, currentPageIndex: file.currentPageIndex,
             ratio: CanvasRatio(rawValue: file.ratio) ?? .square,
-            canvasSize: CGSize(width: file.canvasWidth, height: file.canvasHeight),
+            pictureSize: CGSize(width: file.canvasWidth / Double(legacySlides), height: file.canvasHeight),
             customWidth: file.customWidth, customHeight: file.customHeight,
-            customUnit: CustomUnit(rawValue: file.customUnit) ?? .px,
-            slides: min(max(file.slides ?? 1, 1), Self.maxSlides))
+            customUnit: CustomUnit(rawValue: file.customUnit) ?? .px)
         applyDocument(snapshot)
         Diagnostics.log("opened collage \(diagnosticsSummary)")
         // The pictures already on disk aren't written again.
@@ -1076,13 +1083,21 @@ extension CollageState {
                 self.setSlides(n)
                 if args.contains("-strip") { self.setLanes(.strip) }
                 if args.contains("-allSlides") { self.slideFocus = nil }
+                if args.contains("-addOverlay"), let pack = CollageState.overlayPacks.first,
+                   let asset = pack.assets.first {
+                    self.slideFocus = 1
+                    self.addOverlayLayer(asset: asset, kind: pack.kind)
+                }
                 if args.contains("-openRatio") { self.openRatio() }
             }
+        }
+        if let t = args.firstIndex(of: "-picture"), t + 1 < args.count, let k = Int(args[t + 1]) {
+            DispatchQueue.main.asyncAfter(deadline: .now() + 3.5) { self.goToPicture(k) }
         }
         if args.contains("-exportTest") {
             DispatchQueue.main.asyncAfter(deadline: .now() + 4) {
                 Task {
-                    await self.exportPages(allPages: false, settings: ExportSettings(size: .instagram, format: .jpeg))
+                    await self.exportPages(allPages: true, settings: ExportSettings(size: .instagram, format: .jpeg))
                     for url in self.exportedFiles {
                         let img = UIImage(contentsOfFile: url.path)
                         Diagnostics.log("exported \(url.lastPathComponent) \(Int(img?.size.width ?? 0))x\(Int(img?.size.height ?? 0))")

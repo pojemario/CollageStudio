@@ -136,6 +136,15 @@ struct OverlayPanel: View {
             Text(layer.label)
                 .font(.system(size: 12, weight: .medium))
                 .lineLimit(1)
+            // Which slide of a strip it's on.
+            if state.slides > 1, let slide = layer.slide {
+                Text("\(min(slide, state.slides - 1) + 1)")
+                    .font(.system(size: 10, weight: .bold, design: .rounded))
+                    .padding(.horizontal, 5)
+                    .padding(.vertical, 1)
+                    .background(Capsule().fill(isSelected ? Color.white.opacity(0.25) : Color.primary.opacity(0.1)))
+                    .accessibilityLabel("slide \(min(slide, state.slides - 1) + 1)")
+            }
             if isSelected {
                 Button {
                     state.removeOverlay(id: layer.id)
@@ -158,6 +167,10 @@ struct OverlayPanel: View {
             // also hands the canvas back to the collage).
             state.selectedOverlayId = isSelected ? nil : layer.id
             state.cancelOverlayPreview()
+            // A layer on another slide brings its slide into view.
+            if !isSelected, state.slides > 1, let slide = layer.slide, state.focusedSlide != slide {
+                withAnimation(.spring(response: 0.4, dampingFraction: 0.9)) { state.slideFocus = slide }
+            }
         }
     }
 
