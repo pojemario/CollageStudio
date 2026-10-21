@@ -1149,6 +1149,21 @@ extension CollageState {
                 if !photos.isEmpty { self.selectImage(photos[min(n, photos.count - 1)].id) }
             }
         }
+        // `-photoBWTest` (after `-selectPhoto`): Edit on the selected photo,
+        // Saturation all the way down.
+        if args.contains("-photoBWTest") {
+            DispatchQueue.main.asyncAfter(deadline: .now() + 5) {
+                guard let id = self.selectedImageId else { return }
+                // `-withFilter`: under a page filter, as on a styled collage.
+                if args.contains("-withFilter") { self.colorFilter = .amber }
+                self.beginPhotoEdit(id: id)
+                self.editEffects = [:]
+                DispatchQueue.main.asyncAfter(deadline: .now() + 3) {
+                    self.editEffects[.saturation] = -100
+                    Diagnostics.log("test: saturation −100 on \(id.uuidString.prefix(8))")
+                }
+            }
+        }
         // `-pagerTour` steps through every picture and back, like the arrows.
         if args.contains("-pagerTour") {
             DispatchQueue.main.asyncAfter(deadline: .now() + 4) {
@@ -1288,10 +1303,6 @@ extension CollageState {
                 self.beginPhotoEdit(id: id)
                 self.editEffects = [.exposure: 40, .temperature: 70, .contrast: 30]
             }
-        }
-                // `-selectPhoto`: selects the first photo (its tools in the tab bar).
-        if args.contains("-selectPhoto") {
-            DispatchQueue.main.asyncAfter(deadline: .now() + 2) { self.selectImage(self.images.first?.id) }
         }
                 if args.contains("-showProjects") {
             DispatchQueue.main.asyncAfter(deadline: .now() + 2.5) { self.goToCollages() }

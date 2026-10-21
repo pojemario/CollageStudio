@@ -759,7 +759,8 @@ class CollageState: ObservableObject {
     }
 
     func beginPhotoEdit(id: UUID) {
-        Diagnostics.log("photo edit")
+        let img = images.first { $0.id == id }
+        Diagnostics.log("photo edit · \(img.map { "\(Int($0.naturalSize.width))x\(Int($0.naturalSize.height)) proxy \(Int($0.proxy.size.width)) sharp \(sharpCopies[id].map { "\(Int($0.edge))" } ?? "-") page grade \(fullGrade.isIdentity ? "none" : "on")" } ?? "not on page")")
         closeRatio()
         textEditTargetId = nil
         protrusionTargetId = nil
@@ -822,6 +823,7 @@ class CollageState: ObservableObject {
     /// box keeps showing its last grade until the next one lands.
     @Published private(set) var gradedProxies: [UUID: [Graded]] = [:]
     private var gradeInFlight: Set<UUID> = []
+    private var gradeStarted: [UUID: Date] = [:]
     /// Grades finished in the last moment, shown together (one canvas
     /// update) instead of picture by picture.
     private var gradesToShow: [UUID: Graded] = [:]
@@ -902,17 +904,32 @@ class CollageState: ObservableObject {
             grades.append(filterBypass ? full : without)
         }
         let source = img.proxy, id = img.id
-        guard !img.isPlaceholder, !gradeInFlight.contains(id) else { return }
+        guard !img.isPlaceholder else { return }
+        if gradeInFlight.contains(id) {
+            // A grade takes well under a second; one still out after a few
+            // is lost (logged, to find out why): let a new one start.
+            guard let started = gradeStarted[id], Date().timeIntervalSince(started) > 4 else { return }
+            Diagnostics.log("grade stuck \(String(format: "%.0f", Date().timeIntervalSince(started)))s, retrying")
+            gradeInFlight.remove(id)
+        }
         let cached = (gradedProxies[id] ?? []).filter { $0.source === source }
         guard let grade = grades.first(where: { g in
             !g.isIdentity && !cached.contains { $0.grade == g }
         }) else { return }
         gradeInFlight.insert(id)
+        gradeStarted[id] = Date()
+        let photoEdit = grade.photo != nil
         Task.detached(priority: .userInitiated) {
             let graded = ContentGrader.apply(grade, to: source)
+            let unchanged = graded === source
             await MainActor.run {
                 self.gradeInFlight.remove(id)
-                guard self.needsGrading else { return }
+                // Diagnostics: a photo's own edit that came back untouched.
+                if photoEdit, unchanged { Diagnostics.log("photo grade failed (picture unchanged)") }
+                guard self.needsGrading else {
+                    if photoEdit { Diagnostics.log("photo grade dropped (no grading needed)") }
+                    return
+                }
                 self.gradesToShow[id] = Graded(source: source, grade: grade, image: graded)
                 self.scheduleGradeFlush()
             }
@@ -1042,6 +1059,7 @@ class CollageState: ObservableObject {
                 sharpInFlight.insert(id)
                 Self.sharpQueue.async {
                     let graded = ContentGrader.apply(grade, to: base)
+                    if graded === base { Diagnostics.log("sharp grade failed (picture unchanged)") }
                     DispatchQueue.main.async {
                         self.sharpInFlight.remove(id)
                         guard var cur = self.sharpCopies[id], cur.image === base else { return }
@@ -1325,28 +1343,26 @@ class CollageState: ObservableObject {
     }
 
     /// Selects a box (nil: none). Its tools take the panel's place; letting
-    /// it go brings back the panel that was open before, unless `reopenPanel`
-    /// is false (a tap on the canvas, another page).
+    /// it go brings back the chosen tab's panel, unless `reopenPanel` is
+    /// false (a tap on the canvas, another page).
     func selectImage(_ id: UUID?, reopenPanel: Bool = true) {
         lastBoxTap = Date()
         guard id != selectedImageId else { return }
         if id != nil {
-            if selectedImageId == nil { panelOpenBeforeSelection = isPanelOpen }
             endTextEditing()
             endProtrusionEditing()
+            // Editing another photo ends too: its tools come back for this one.
+            endPhotoEditing()
             closeRatio()
             collapsePanel()
         }
         withAnimation(.spring(response: 0.3, dampingFraction: 0.85)) { selectedImageId = id }
-        if id == nil {
-            if reopenPanel && panelOpenBeforeSelection && panelTabShown {
-                withAnimation(.easeInOut(duration: 0.25)) { isPanelOpen = true }
-            }
-            panelOpenBeforeSelection = false
+        // Letting go brings back the panel of the tab still marked in the
+        // tab bar.
+        if id == nil, reopenPanel, panelTabShown {
+            withAnimation(.easeInOut(duration: 0.25)) { isPanelOpen = true }
         }
     }
-    /// Whether the panel was up when the first box was selected.
-    private var panelOpenBeforeSelection = false
 
     // MARK: - Shared import (Share Extension)
     @Published var pendingSharedImages: [PlatformImage] = []
