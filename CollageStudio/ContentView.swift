@@ -435,34 +435,20 @@ struct ContentView: View {
                     UndoRedoButtons(size: 34, compact: true)
                 }
                 if state.hasAnyImages {
-                    ResetSettingsButton()
-                }
-                if state.hasAnyImages {
-                    // One button, three states: editing → full-screen preview
-                    // (no tab bar or panel) → only the collage (see
-                    // toolbarHidden), where a tap anywhere returns to editing.
+                    // Full screen: only the collage — no status bar, toolbar,
+                    // tab bar or panel. A swipe on it steps through the
+                    // posts, a tap goes back to editing.
                     Button {
-                        withAnimation(.easeInOut(duration: 0.25)) {
-                            if state.chromeHidden {
-                                state.closeRatio()
-                                state.toolbarHidden = true
-                            } else {
-                                state.chromeHidden = true
-                                state.collapsePanel()
-                            }
-                        }
+                        state.enterFullScreen()
                     } label: {
-                        Image(systemName: state.chromeHidden
-                              ? "arrow.up.and.down.and.arrow.left.and.right"
-                              : "arrow.up.left.and.arrow.down.right")
+                        Image(systemName: "arrow.up.left.and.arrow.down.right")
                             .font(.system(size: 16, weight: .medium))
-                            .foregroundColor(state.chromeHidden ? .accentColor : .primary)
+                            .foregroundColor(.primary)
                             .frame(width: 34, height: 40)
                             .contentShape(Rectangle())
-                            .contentTransition(.symbolEffect(.replace))
                     }
                     .buttonStyle(.plain)
-                    .accessibilityLabel(state.chromeHidden ? "Show only the collage" : "Full screen preview")
+                    .accessibilityLabel("Full screen")
 
                     Button {
                         state.showExportOptions = true
@@ -683,18 +669,25 @@ struct ContentView: View {
                 }
             }
         }
-        // Only the collage: a tap anywhere goes back to editing, and
-        // nothing underneath reacts.
+        // Full screen: a sideways swipe steps to the previous / next post,
+        // a tap goes back to editing; nothing underneath reacts.
         .overlay {
             if state.toolbarHidden {
                 Color.black.opacity(0.001)
                     .ignoresSafeArea()
-                    .onTapGesture {
-                        withAnimation(.easeInOut(duration: 0.25)) {
-                            state.toolbarHidden = false
-                            state.chromeHidden = false
-                        }
-                    }
+                    .gesture(
+                        DragGesture(minimumDistance: 0)
+                            .onEnded { g in
+                                let dx = g.translation.width, dy = g.translation.height
+                                if abs(dx) < 10 && abs(dy) < 10 {
+                                    state.exitFullScreen()
+                                } else if abs(dx) > 40 && abs(dx) > abs(dy) {
+                                    state.stepPost(dx < 0 ? 1 : -1)
+                                }
+                            }
+                    )
+                    .accessibilityAddTraits(.isButton)
+                    .accessibilityLabel("Exit full screen")
             }
         }
         .statusBarHidden(state.toolbarHidden)
@@ -728,50 +721,3 @@ struct ContentView: View {
     }
 }
 
-/// Clears every setting of the open collage back to its default; the
-/// photos stay. No confirmation — Undo brings the settings back. With
-/// several pages it's a menu: all pages, or just the one on screen.
-/// Dimmed while nothing differs.
-struct ResetSettingsButton: View {
-    @EnvironmentObject var state: CollageState
-
-    var body: some View {
-        let enabled = state.hasSettingsChanges
-        Group {
-            if state.pages.count > 1 {
-                Menu {
-                    Button("Reset All Pages", systemImage: "square.stack") { reset(currentPageOnly: false) }
-                    Button("Reset Page \(state.currentPageIndex + 1) Only", systemImage: "square") { reset(currentPageOnly: true) }
-                } label: { icon(enabled) }
-            } else {
-                Button { reset(currentPageOnly: false) } label: { icon(enabled) }
-            }
-        }
-        .buttonStyle(.plain)
-        .disabled(!enabled)
-        .accessibilityLabel("Reset all settings")
-    }
-
-    /// Sliders with a turn-back arrow: settings back to default (iOS 18+;
-    /// plain sliders before that).
-    private static let symbol: String = {
-        let name = "slider.horizontal.2.arrow.trianglehead.counterclockwise"
-        #if canImport(UIKit)
-        return UIImage(systemName: name) != nil ? name : "slider.horizontal.3"
-        #else
-        return name
-        #endif
-    }()
-
-    private func icon(_ enabled: Bool) -> some View {
-        Image(systemName: Self.symbol)
-            .font(.system(size: 15, weight: .medium))
-            .foregroundColor(enabled ? .primary : .secondary.opacity(0.35))
-            .frame(width: 34, height: 40)
-            .contentShape(Rectangle())
-    }
-
-    private func reset(currentPageOnly: Bool) {
-        withAnimation(.easeInOut(duration: 0.25)) { state.resetAllSettings(currentPageOnly: currentPageOnly) }
-    }
-}

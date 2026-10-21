@@ -1173,12 +1173,30 @@ class CollageState: ObservableObject {
     /// Measured full height of the panel (incl. a buffer for the safe area),
     /// used as the fully-hidden offset.
     @Published var panelHeight: CGFloat = 320
-    /// Full-screen preview: the floating tab bar (and panel) get out of the
-    /// way so nothing but the collage is on screen.
+    /// Full screen: the floating tab bar (and panel) are out of the way.
     @Published var chromeHidden: Bool = false
-    /// The full-screen button's second step: the toolbar and status bar go
-    /// too, leaving only the collage; a tap anywhere goes back to editing.
+    /// Full screen: the toolbar and status bar are gone too, leaving only
+    /// the collage. Always set together with chromeHidden.
     @Published var toolbarHidden: Bool = false
+
+    /// Only the collage on screen: no status bar, toolbar, tab bar or
+    /// panel, and nothing selected.
+    func enterFullScreen() {
+        closeRatio()
+        if selectedImageId != nil { selectImage(nil, reopenPanel: false) }
+        withAnimation(.easeInOut(duration: 0.25)) {
+            collapsePanel()
+            chromeHidden = true
+            toolbarHidden = true
+        }
+    }
+
+    func exitFullScreen() {
+        withAnimation(.easeInOut(duration: 0.25)) {
+            toolbarHidden = false
+            chromeHidden = false
+        }
+    }
     /// Top edge of the open panel card in global coordinates (0 while
     /// closed) — how much of the screen bottom the panel (and the keyboard
     /// pushing it up) covers, for keeping an edited text box in view.
@@ -2243,29 +2261,6 @@ class CollageState: ObservableObject {
         useLastRatio()
         imageFrames.removeAll()
         clearSwapDrag()
-    }
-
-    /// Whether any setting of the open collage differs from its default:
-    /// ratio, or any page's Layout, canvas, frame, overlays, edits, filter.
-    var hasSettingsChanges: Bool {
-        ratio != Self.defaultRatio || slides != 1 || pages.contains { $0.style != PageStyle() || $0.look != PageLook() }
-    }
-
-    /// Puts every setting back to its default — on every page, or only the
-    /// one on screen. The photos (and how they are framed) stay; undo
-    /// brings the settings back.
-    func resetAllSettings(currentPageOnly: Bool = false) {
-        for i in pages.indices where !currentPageOnly || i == currentPageIndex {
-            pages[i].style = PageStyle()
-            pages[i].look = PageLook()
-        }
-        selectedOverlayId = nil
-        overlayPreview = nil
-        if !currentPageOnly && ratio != Self.defaultRatio {
-            setRatio(Self.defaultRatio)
-        } else {
-            rebuildAllPages()
-        }
     }
 
     // MARK: - Layout

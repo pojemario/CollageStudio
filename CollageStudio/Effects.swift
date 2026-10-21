@@ -893,7 +893,15 @@ struct FilterControls: View {
         let shape = RoundedRectangle(cornerRadius: ButtonStyleGuide.cornerRadius, style: .continuous)
         return VStack(spacing: 5) {
             Group {
-                if let image = previews[filter] {
+                if filter == .none {
+                    // No filter: an icon, like the Frames' None.
+                    ZStack {
+                        ColorManager.systemFill
+                        Image(systemName: "slash.circle")
+                            .font(.system(size: 20))
+                            .foregroundColor(.secondary)
+                    }
+                } else if let image = previews[filter] {
                     #if canImport(UIKit)
                     Image(uiImage: image).resizable().scaledToFill()
                     #else

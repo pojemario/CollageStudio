@@ -41,7 +41,12 @@ struct FloatingTabBar: View {
     /// is open; the pill itself never moves.
     static let openLift: CGFloat = 0
     /// Corner radius of the pill, and of the card it merges into.
-    static let cornerRadius: CGFloat = 24
+    static let cornerRadius: CGFloat = 18
+    /// Inset of the tabs (and so the lens) from the pill's top and bottom.
+    private static let rowInset: CGFloat = 5
+    /// The selection lens follows the pill's corners: concentric, its
+    /// radius the pill's less its inset.
+    private static let lensRadius: CGFloat = cornerRadius - rowInset
     /// Horizontal travel before a touch becomes a scrub instead of a tap.
     private static let scrubThreshold: CGFloat = 8
     private static let rowSpace = "FloatingTabBar.row"
@@ -78,14 +83,14 @@ struct FloatingTabBar: View {
                     .background {
                         RoundedRectangle(cornerRadius: Self.cornerRadius, style: .continuous)
                             .fill(PhotoToolsRow.background)
-                            .padding(.vertical, -5)
+                            .padding(.vertical, -Self.rowInset)
                             .padding(.horizontal, -10)
                     }
                     .transition(.offset(y: 12).combined(with: .opacity))
             }
         }
         .animation(.spring(response: 0.3, dampingFraction: 0.85), value: photoTools)
-        .padding(.vertical, 5)
+        .padding(.vertical, Self.rowInset)
         .padding(.horizontal, 10)
         .contentShape(Rectangle())
         // (Off while the photo tools show: their buttons take the touches.)
@@ -160,7 +165,7 @@ struct FloatingTabBar: View {
     /// reads at a glance over any canvas; lifted, larger clear glass while
     /// scrubbing, tracking the finger.
     private var lens: some View {
-        let shape = RoundedRectangle(cornerRadius: ButtonStyleGuide.cornerRadius, style: .continuous)
+        let shape = RoundedRectangle(cornerRadius: Self.lensRadius, style: .continuous)
         let center = scrubX.map { min(max($0, tabWidth / 2), rowWidth - tabWidth / 2) }
             ?? (CGFloat(activeTab) + 0.5) * tabWidth
         return ZStack {

@@ -1248,13 +1248,9 @@ extension CollageState {
                 }
             }
         }
-        // `-full 1` / `-full 2`: the full-screen preview / only the collage.
-        if let t = args.firstIndex(of: "-full"), t + 1 < args.count, let n = Int(args[t + 1]) {
-            DispatchQueue.main.asyncAfter(deadline: .now() + 4) {
-                self.collapsePanel()
-                self.chromeHidden = n >= 1
-                self.toolbarHidden = n >= 2
-            }
+        // `-full`: full screen (only the collage).
+        if args.contains("-full") {
+            DispatchQueue.main.asyncAfter(deadline: .now() + 4) { self.enterFullScreen() }
         }
         // `-frame <asset>`: a pack frame on the page.
         if let t = args.firstIndex(of: "-frame"), t + 1 < args.count {
