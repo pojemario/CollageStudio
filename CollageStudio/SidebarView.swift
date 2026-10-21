@@ -184,21 +184,21 @@ struct PageWidthRow: View {
         // Reads as a sentence: Spread across [−] 2 [+] posts.
         HStack(spacing: 8) {
             Image(systemName: "arrow.left.and.right.square")
-                .font(.system(size: 15, weight: .medium))
+                .font(.system(size: 14, weight: .medium))
                 .frame(width: 22)
             Text("Spread across")
-                .font(.system(size: 14, weight: .medium))
+                .font(.panelLabel)
                 .lineLimit(1)
                 .padding(.trailing, 4)
             stepButton("minus", enabled: state.slides > 1) { state.setSlides(state.slides - 1) }
             Text("\(state.slides)")
-                .font(.system(size: 17, weight: .bold, design: .rounded))
+                .font(.system(size: 15, weight: .bold, design: .rounded))
                 .monospacedDigit()
                 .frame(minWidth: 22)
                 .contentTransition(.numericText())
             stepButton("plus", enabled: state.slides < CollageState.maxSlides && state.canAddPost) { state.setSlides(state.slides + 1) }
             Text("posts.")
-                .font(.system(size: 14, weight: .medium))
+                .font(.panelLabel)
                 .lineLimit(1)
                 .lineLimit(1)
                 .padding(.leading, 4)
@@ -572,7 +572,7 @@ struct LabeledSlider: View {
     /// Double-tap reset value, forwarded to the slider.
     var resetValue: Double? = nil
     /// Wide enough for the longest label ("Temperature") on one line.
-    var labelWidth: CGFloat = 92
+    var labelWidth: CGFloat = 80
     /// Optional color bound to a swatch circle right after the label.
     var swatchColor: Binding<Color>? = nil
     /// Keeps an empty swatch-sized slot on rows without a swatch, so they
@@ -589,6 +589,10 @@ struct LabeledSlider: View {
     var compactValue = false
     /// Two monospaced digits ("70"); "100" shrinks a little to fit.
     static let twoDigitValueWidth: CGFloat = 20
+    /// Spacing between stacked rows: icon rows (name over slider) sit
+    /// closer than inline ones, which are a single line.
+    static let iconRowSpacing: CGFloat = 4
+    static let inlineRowSpacing: CGFloat = 6
     /// An icon for the row (Edit, Effects): the name then sits above the
     /// slider, the icon to its left.
     var icon: String? = nil
@@ -605,9 +609,10 @@ struct LabeledSlider: View {
                 .contentShape(Rectangle())
                 .onTapGesture(count: 2) { resetToDefault() }
                 .accessibilityHidden(true)
-            VStack(alignment: .leading, spacing: 0) {
+            // The slider's frame has room above its knob: the name sits into it.
+            VStack(alignment: .leading, spacing: -3) {
                 Text(label)
-                    .font(.subheadline)
+                    .font(.panelLabel)
                     .foregroundColor(.primary)
                     .lineLimit(1)
                     .contentShape(Rectangle())
@@ -619,7 +624,6 @@ struct LabeledSlider: View {
                 }
             }
         }
-        .padding(.vertical, 2)
         .background { focusGlass(active: state.activeAdjustment == label) }
         .opacity(state.chromeVisible(for: label) ? 1 : 0)
         .animation(.easeInOut(duration: 0.2), value: state.activeAdjustment)
@@ -678,7 +682,7 @@ struct LabeledSlider: View {
                     .frame(width: labelWidth, alignment: .leading)
             } else {
                 Text(label)
-                    .font(.subheadline)
+                    .font(.panelLabel)
                     .foregroundColor(.primary)
                     .lineLimit(1)
                     .minimumScaleFactor(0.85)
@@ -996,7 +1000,7 @@ struct LayoutPanel: View {
     var spacingRange: ClosedRange<Double> = 0...70
 
     var body: some View {
-        VStack(spacing: 12) {
+        VStack(spacing: 10) {
             Picker("Layout", selection: $state.layoutPage) {
                 ForEach(Page.allCases, id: \.self) { Text($0.rawValue).tag($0) }
             }
@@ -1046,8 +1050,8 @@ struct LayoutPanel: View {
     }
 
     private var layoutPage: some View {
-        VStack(spacing: 10) {
-            VStack(spacing: 10) {
+        VStack(spacing: 8) {
+            VStack(spacing: LabeledSlider.inlineRowSpacing) {
                 LabeledSlider(label: "Columns", value: Binding(
                     get: { Double(min(state.numCols, state.maxSelectableCols)) },
                     // (Picking a column count leaves a strip.)
@@ -1086,7 +1090,7 @@ struct LayoutPanel: View {
     }
 
     private var canvasPage: some View {
-        VStack(spacing: 12) {
+        VStack(spacing: LabeledSlider.inlineRowSpacing) {
             LabeledSlider(label: "Margin", value: $state.canvasMargin, range: -100...100, step: 1, format: "%.0f",
                           resetValue: 0)
             LabeledSlider(label: "Rotation", value: $state.canvasRotation, range: -15...15, step: 0.1, format: "%.1f°",
@@ -1106,7 +1110,7 @@ struct BorderPanel: View {
 
     var body: some View {
         let off = state.borderThickness <= 0
-        VStack(spacing: 10) {
+        VStack(spacing: 8) {
             LabeledSlider(label: "Size", value: $state.borderThickness, range: 0...40, step: 1, format: "%.0f",
                           resetValue: 0, reservesSwatchSlot: true, compactValue: true)
             // Color first, then the line style.
@@ -1140,7 +1144,7 @@ struct BorderPanel: View {
     private func row<Content: View>(_ label: String, @ViewBuilder _ content: () -> Content) -> some View {
         HStack(spacing: 8) {
             Text(label)
-                .font(.subheadline)
+                .font(.panelLabel)
                 .foregroundColor(.primary)
                 .frame(width: 92, alignment: .leading)
             content()
@@ -1439,7 +1443,7 @@ struct ShuffleButton: View {
             set: { state.shuffleOptions[keyPath: keyPath] = $0 }
         ))
         .toggleStyle(.switch)
-        .font(.subheadline)
+        .font(.panelLabel)
         .padding(.horizontal, 12)
         .padding(.vertical, 4)
     }

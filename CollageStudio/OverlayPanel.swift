@@ -21,14 +21,15 @@ struct OverlayPanel: View {
     }
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 10) {
+        VStack(alignment: .leading, spacing: 8) {
             Group {
-                ScrollView(.horizontal, showsIndicators: false) {
+                SelectionScroller(selection: selectedPackId) {
                     HStack(spacing: 8) {
                         ForEach(CollageState.overlayPacks) { pack in
                             PackChip(title: pack.name, isActive: selectedPackId == pack.id) {
                                 selectedPackId = pack.id
                             }
+                            .id(pack.id)
                         }
                     }
                 }
@@ -51,6 +52,11 @@ struct OverlayPanel: View {
         .animation(.easeInOut(duration: 0.2), value: state.overlayPreview?.id)
         .onAppear {
             if inSidebar { state.overlaySidebarShowing = true } else { state.overlayTabMode = true }
+            // Open on the pack of the selected (or newest) layer.
+            if let asset = (state.editedOverlay ?? state.overlayLayers.last)?.asset,
+               let pack = CollageState.overlayPacks.first(where: { $0.assets.contains(asset) }) {
+                selectedPackId = pack.id
+            }
         }
         // Leaving the tab ends overlay mode and drops an unconfirmed preview.
         // Merely hiding the panel does neither — that's how the canvas gets
@@ -69,12 +75,13 @@ struct OverlayPanel: View {
     // highlighted)
 
     private func textureRow(pack: OverlayPack) -> some View {
-        ScrollView(.horizontal, showsIndicators: false) {
+        SelectionScroller(selection: state.editedOverlay?.asset) {
             HStack(alignment: .top, spacing: 10) {
                 ForEach(pack.assets, id: \.self) { asset in
                     let isPreviewed = state.editedOverlay?.asset == asset
                     VStack(spacing: 5) {
-                        OverlayThumbnail(asset: asset, height: 72)
+                        // 64 with its selection inset: as tall as the filter tiles.
+                        OverlayThumbnail(asset: asset, height: 60)
                             .padding(2)
                             .overlay(
                                 RoundedRectangle(cornerRadius: 8)
@@ -94,10 +101,12 @@ struct OverlayPanel: View {
                             .font(.system(size: 11, weight: isPreviewed ? .bold : .regular))
                             .foregroundColor(isPreviewed ? .accentColor : .primary.opacity(0.75))
                     }
+                    .id(asset)
                 }
             }
             .padding(.bottom, 2)
         }
+        .id(pack.id)
         .disabled(!state.canAddOverlay)
         .opacity(state.canAddOverlay ? 1 : 0.4)
     }
@@ -107,7 +116,7 @@ struct OverlayPanel: View {
     private var layerRow: some View {
         HStack(spacing: 8) {
             Text("Layers")
-                .font(.subheadline)
+                .font(.panelLabel)
                 .foregroundColor(.primary)
                 .frame(width: 76, alignment: .leading)
             if state.overlayLayers.isEmpty {
@@ -116,10 +125,10 @@ struct OverlayPanel: View {
                     .foregroundColor(.secondary)
                     .frame(maxWidth: .infinity, minHeight: 40, alignment: .leading)
             } else {
-                ScrollView(.horizontal, showsIndicators: false) {
+                SelectionScroller(selection: state.editedOverlayId) {
                     HStack(spacing: 8) {
                         ForEach(state.overlayLayers) { layer in
-                            layerChip(layer)
+                            layerChip(layer).id(layer.id)
                         }
                     }
                 }

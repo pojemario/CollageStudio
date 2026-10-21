@@ -534,7 +534,7 @@ struct EffectsPanel: View {
 
     var body: some View {
         let page = only ?? self.page
-        VStack(spacing: 10) {
+        VStack(spacing: 8) {
             // All pages fit on one line: tight spacing, equal widths.
             if only == nil {
             HStack(spacing: 4) {
@@ -579,13 +579,15 @@ struct EffectsPanel: View {
     }
 
     private func sliders(_ group: [CollageEffect]) -> some View {
-        ForEach(group) { effect in
-            LabeledSlider(label: effect.title,
-                          value: Binding(
-                            get: { state.editEffects[effect] ?? 0 },
-                            set: { state.editEffects[effect] = $0 }),
-                          range: effect.range, step: 1, format: "%.0f", resetValue: 0,
-                          trackColors: effect.trackColors, icon: effect.icon)
+        VStack(spacing: LabeledSlider.iconRowSpacing) {
+            ForEach(group) { effect in
+                LabeledSlider(label: effect.title,
+                              value: Binding(
+                                get: { state.editEffects[effect] ?? 0 },
+                                set: { state.editEffects[effect] = $0 }),
+                              range: effect.range, step: 1, format: "%.0f", resetValue: 0,
+                              trackColors: effect.trackColors, icon: effect.icon)
+            }
         }
     }
 
@@ -599,7 +601,7 @@ struct EffectsPanel: View {
 
     /// Looks: fade, halation, glow, vignette, grain.
     private var effectControls: some View {
-        VStack(spacing: 10) {
+        VStack(spacing: 8) {
             sliders(CollageEffect.looks)
                 .swipeNumbersToReset(canReset: state.editHasEffects(in: CollageEffect.looks)) {
                     state.editResetEffects(in: CollageEffect.looks)
@@ -612,7 +614,7 @@ struct EffectsPanel: View {
     }
 
     private var hslControls: some View {
-        VStack(spacing: 10) {
+        VStack(spacing: 8) {
             // Band picker: a dot per color; a ring marks the selected one,
             // a small mark under it any band that has been adjusted.
             HStack(spacing: 0) {
@@ -645,7 +647,7 @@ struct EffectsPanel: View {
             }
             .panelChrome(state)
 
-            VStack(spacing: 10) {
+            VStack(spacing: LabeledSlider.iconRowSpacing) {
                 LabeledSlider(label: "Hue", value: shift(\.hue),
                               range: -100...100, step: 1, format: "%.0f", resetValue: 0,
                               trackColors: band.hueSweep, icon: "paintpalette")
@@ -666,7 +668,7 @@ struct EffectsPanel: View {
         // direction kept, brightened to match the app's other tracks).
         func c(_ r: Double, _ g: Double, _ b: Double) -> Color { Color(red: r / 255, green: g / 255, blue: b / 255) }
         let gray = Color(white: 0.6)
-        return VStack(spacing: 10) {
+        return VStack(spacing: LabeledSlider.iconRowSpacing) {
             calSlider("Shadow Tint", \.shadowsTint, [c(130, 219, 107), c(170, 160, 170), c(202, 96, 210)], "moon")
             calSlider("Red Hue", \.redHue, [c(235, 57, 156), c(240, 60, 90), c(226, 146, 86)], "paintpalette")
             calSlider("Red Sat", \.redSaturation, [gray, c(200, 70, 65)], "drop")
@@ -761,7 +763,7 @@ struct LooksPanel: View {
     enum Page: String, CaseIterable { case filter = "Filter", effects = "Effects", edit = "Edit" }
 
     var body: some View {
-        VStack(spacing: 12) {
+        VStack(spacing: 10) {
             Picker("Looks", selection: $state.looksPage) {
                 ForEach(Page.allCases, id: \.self) { Text($0.rawValue).tag($0) }
             }
@@ -826,30 +828,33 @@ struct FilterControls: View {
     }
 
     var body: some View {
-        VStack(spacing: 10) {
+        VStack(spacing: 8) {
             // Group chips, like the frame packs; a dot marks the group of
             // the active filter.
             if groups.count > 1 {
-                ScrollView(.horizontal, showsIndicators: false) {
+                SelectionScroller(selection: shownGroup?.name) {
                     HStack(spacing: 8) {
                         ForEach(groups) { g in
                             PackChip(title: g.name, isActive: g.name == shownGroup?.name,
                                      marked: g.filters.contains(state.colorFilter)) {
                                 groupName = g.name
                             }
+                            .id(g.name)
                         }
                     }
                 }
                 .panelChrome(state)
             }
-            ScrollView(.horizontal, showsIndicators: false) {
+            // Another group's row opens on its own start (or selection).
+            SelectionScroller(selection: state.colorFilter) {
                 HStack(spacing: 10) {
                     ForEach(shownFilters) { filter in
-                        tile(filter)
+                        tile(filter).id(filter)
                     }
                 }
                 .padding(.vertical, 2)
             }
+            .id(shownGroup?.name)
             .panelChrome(state)
 
             if state.colorFilter != .none {
@@ -1062,7 +1067,7 @@ struct EffectShuffleButton: View {
                                 else { state.effectShuffleOptions.remove(effect) }
                             }))
                             .toggleStyle(.switch)
-                            .font(.subheadline)
+                            .font(.panelLabel)
                             .padding(.horizontal, 12)
                             .padding(.vertical, 4)
                     }

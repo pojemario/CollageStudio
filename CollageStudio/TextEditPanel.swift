@@ -103,7 +103,7 @@ struct TextEditPanel: View {
     // MARK: - Font
 
     private var fontRow: some View {
-        ScrollView(.horizontal, showsIndicators: false) {
+        SelectionScroller(selection: style.wrappedValue.fontChoice) {
             HStack(spacing: 8) {
                 ForEach(TextBoxStyle.FontChoice.allCases) { choice in
                     let isActive = style.wrappedValue.fontChoice == choice
@@ -119,6 +119,7 @@ struct TextEditPanel: View {
                             .appButtonBackground(prominent: isActive)
                     }
                     .buttonStyle(.plain)
+                    .id(choice)
                 }
             }
         }
@@ -148,11 +149,11 @@ struct TextEditPanel: View {
     private var colorRow: some View {
         HStack(spacing: 8) {
             Text("Text")
-                .font(.subheadline)
+                .font(.panelLabel)
             ColorSwatchButton(color: style.textColor, depth: 0.55)
             Spacer()
             Text("Background")
-                .font(.subheadline)
+                .font(.panelLabel)
             ColorSwatchButton(color: style.backgroundColor,
                               presetTitle: "Transparent", presetColor: { .clear },
                               depth: 0.55, accessibilityTitle: "Background color")

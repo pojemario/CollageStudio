@@ -22,12 +22,13 @@ struct FramesPanel: View {
                     .font(.footnote)
                     .foregroundStyle(.secondary)
             }
-            ScrollView(.horizontal, showsIndicators: false) {
+            SelectionScroller(selection: selectedPackId) {
                 HStack(spacing: 8) {
                     ForEach(CollageState.framePacks) { pack in
                         PackChip(title: pack.title, isActive: selectedPackId == pack.id) {
                             selectedPackId = pack.id
                         }
+                        .id(pack.id)
                     }
                 }
             }
@@ -40,6 +41,46 @@ struct FramesPanel: View {
                let pack = CollageState.framePacks.first(where: { $0.frames.contains(frame) }) {
                 selectedPackId = pack.id
             }
+        }
+    }
+}
+
+extension Font {
+    /// Panel labels: chips (Light, Color, HSL…), slider names, row labels.
+    static let panelLabel = Font.system(size: 12, weight: .medium)
+}
+
+/// A horizontal picker row that keeps its selected item in view: it opens
+/// scrolled to it, and follows when the selection changes (a tap on a
+/// visible item doesn't move the row). Items carry their selection value
+/// as `.id(_:)`.
+struct SelectionScroller<ID: Hashable, Content: View>: View {
+    let selection: ID?
+    @ViewBuilder let content: () -> Content
+
+    var body: some View {
+        ScrollViewReader { proxy in
+            ScrollView(.horizontal, showsIndicators: false) {
+                content()
+            }
+            .onAppear {
+                // After the first layout, so the item has a place to scroll to.
+                DispatchQueue.main.async { scroll(proxy, anchor: .center) }
+            }
+            .onChange(of: selection) {
+                // Next pass too: a selection set as the row first appears
+                // lands before the row has its layout.
+                DispatchQueue.main.async { scroll(proxy, anchor: nil, animated: true) }
+            }
+        }
+    }
+
+    private func scroll(_ proxy: ScrollViewProxy, anchor: UnitPoint?, animated: Bool = false) {
+        guard let selection else { return }
+        if animated {
+            withAnimation(.easeInOut(duration: 0.25)) { proxy.scrollTo(selection, anchor: anchor) }
+        } else {
+            proxy.scrollTo(selection, anchor: anchor)
         }
     }
 }
@@ -59,7 +100,7 @@ struct PackChip: View {
     var body: some View {
         Button(action: action) {
             Text(title)
-                .font(.system(size: 12, weight: .medium))
+                .font(.panelLabel)
                 .lineLimit(1)
                 .minimumScaleFactor(0.8)
                 .padding(.horizontal, horizontalPadding)
@@ -92,21 +133,30 @@ struct FramePickerRow: View {
     @EnvironmentObject var state: CollageState
     var pack: FramePack? = nil
 
-    /// Cell size: square for the adaptive sets, the pack's format otherwise.
+    private static let noneId = "none"
+
+    /// Cell size: square for the adaptive sets, the pack's format otherwise;
+    /// 64 tall with its inset, like the filter tiles.
     private var cellSize: CGSize {
-        guard let pack else { return CGSize(width: 56, height: 56) }
-        return pack.ratio.canvasSize(base: 88)
+        let height: CGFloat = 56
+        guard let pack else { return CGSize(width: height, height: height) }
+        let r = pack.ratio.canvasSize(base: 1)
+        return CGSize(width: (height * r.width / r.height).rounded(), height: height)
     }
 
     var body: some View {
-        ScrollView(.horizontal, showsIndicators: false) {
+        // Keyed by pack too: another pack's row opens on its own selection.
+        SelectionScroller(selection: state.canvasFrame?.id ?? Self.noneId) {
             HStack(alignment: .top, spacing: 10) {
                 frameOption(set: nil, label: "None")
+                    .id(Self.noneId)
                 ForEach(pack?.frames ?? CollageState.availableFrames) { set in
                     frameOption(set: set, label: set.displayName)
+                        .id(set.id)
                 }
             }
         }
+        .id(pack?.id)
     }
 
     @ViewBuilder

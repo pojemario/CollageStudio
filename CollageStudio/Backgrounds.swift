@@ -87,7 +87,7 @@ struct BackgroundKindRow: View {
     var body: some View {
         HStack(spacing: 8) {
             Text("Fill")
-                .font(.subheadline)
+                .font(.panelLabel)
                 .foregroundColor(.primary)
                 .frame(width: 92, alignment: .leading)
             // The gradient's bottom color, in the swatch column.
@@ -110,7 +110,7 @@ struct BackgroundKindRow: View {
                     Image(systemName: state.backgroundKind.symbol)
                         .font(.system(size: 13, weight: .medium))
                     Text(state.backgroundKind.title)
-                        .font(.subheadline)
+                        .font(.panelLabel)
                     Spacer(minLength: 4)
                     Image(systemName: "chevron.up.chevron.down")
                         .font(.system(size: 11, weight: .semibold))

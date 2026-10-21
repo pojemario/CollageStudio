@@ -721,8 +721,8 @@ struct BottomPanelView: View {
                 .shadow(color: .white.opacity(scrolls ? 0.85 : 0), radius: 0.3, x: 0.6, y: 1)
                 .frame(width: 36, height: scrolls ? 7 : 5)
                 .animation(.easeInOut(duration: 0.2), value: scrolls)
-                .padding(.top, 8)
-                .padding(.bottom, 8)
+                .padding(.top, 7)
+                .padding(.bottom, 6)
                 .frame(maxWidth: .infinity)
                 .contentShape(Rectangle())
                 // A taller touch area, reaching over the content's top padding.
@@ -826,7 +826,7 @@ struct BottomPanelView: View {
             }
         }
         .padding(.horizontal, 12)
-        .padding(.top, 8)
+        .padding(.top, 6)
         .padding(.bottom, 6)
     }
 

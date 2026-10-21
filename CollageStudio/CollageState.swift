@@ -414,14 +414,6 @@ class CollageState: ObservableObject {
             "Analog916_HP5_m58415841_r9x16",
             "Analog916_Delta100_m56435643_r9x16",
         ]),
-        FramePack(name: "Film", ratio: .portrait916, assets: [
-            "Film916_Thin_m31313131_r9x16",
-            "Film916_Nicked_m32323232_r9x16",
-            "Film916_Scuffed_m33333333_r9x16",
-            "Film916_Uneven_m30363236_r9x16",
-            "Film916_Corner_m32323232_r9x16",
-            "Film916_Hairline_m30303030_r9x16",
-        ]),
         FramePack(name: "Instant", ratio: .portrait45, assets: [
             "Polaroid45_Classic_m080084080104_r4x5",
             "Polaroid45_Cream_m080084080104_r4x5",
@@ -429,6 +421,14 @@ class CollageState: ObservableObject {
             "Polaroid45_Taped_m080084080104_r4x5",
             "Polaroid45_Blush_m080084080104_r4x5",
             "Polaroid45_Mint_m080084080104_r4x5",
+        ]),
+        FramePack(name: "Film", ratio: .portrait916, assets: [
+            "Film916_Thin_m31313131_r9x16",
+            "Film916_Nicked_m32323232_r9x16",
+            "Film916_Scuffed_m33333333_r9x16",
+            "Film916_Uneven_m30363236_r9x16",
+            "Film916_Corner_m32323232_r9x16",
+            "Film916_Hairline_m30303030_r9x16",
         ]),
     ]
 
