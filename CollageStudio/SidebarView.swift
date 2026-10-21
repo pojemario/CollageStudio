@@ -180,37 +180,39 @@ struct RatioPanelView: View {
     }
 }
 
-/// Spread across: how many pictures the page spreads across. A wide page is one collage
-/// posted as several pictures that join up when swiped.
+/// Spread across: how many posts the page spreads across. A spread page is
+/// one collage posted as several pictures that join up when swiped.
 struct PageWidthRow: View {
     @EnvironmentObject var state: CollageState
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 4) {
-            HStack(spacing: 10) {
-                Image(systemName: "arrow.left.and.right.square")
-                    .font(.system(size: 15, weight: .medium))
-                    .frame(width: 22)
-                Text("Spread across")
-                    .font(.system(size: 14, weight: .medium))
-                Spacer()
-                stepButton("minus", enabled: state.slides > 1) { state.setSlides(state.slides - 1) }
-                Text("\(state.slides)")
-                    .font(.system(size: 15, weight: .semibold, design: .monospaced))
-                    .frame(minWidth: 26)
-                    .contentTransition(.numericText())
-                stepButton("plus", enabled: state.slides < CollageState.maxSlides) { state.setSlides(state.slides + 1) }
-            }
-            .padding(.horizontal, 12)
-            .padding(.vertical, 6)
-            .appButtonBackground(prominent: false)
-            Text(state.slides > 1
-                 ? "This page spreads across \(state.slides) posts. Photos can run from one post into the next."
-                 : "Posts this page spreads across. More than 1 makes a seamless carousel.")
-                .font(.caption)
-                .foregroundStyle(.secondary)
-                .padding(.horizontal, 4)
+        // Reads as a sentence: Spread across (−) 2 (+) posts
+        HStack(spacing: 8) {
+            Image(systemName: "arrow.left.and.right.square")
+                .font(.system(size: 15, weight: .medium))
+                .frame(width: 22)
+            Text("Spread across")
+                .font(.system(size: 14, weight: .medium))
+                .lineLimit(1)
+                .padding(.trailing, 4)
+            stepButton("minus", enabled: state.slides > 1) { state.setSlides(state.slides - 1) }
+            Text("\(state.slides)")
+                .font(.system(size: 17, weight: .bold, design: .rounded))
+                .monospacedDigit()
+                .frame(minWidth: 22)
+                .contentTransition(.numericText())
+            stepButton("plus", enabled: state.slides < CollageState.maxSlides) { state.setSlides(state.slides + 1) }
+            Text(state.slides == 1 ? "post" : "posts")
+                .font(.system(size: 14, weight: .medium))
+                .lineLimit(1)
+                .lineLimit(1)
+                .padding(.leading, 4)
+            Spacer(minLength: 0)
         }
+        .padding(.leading, 12)
+        .padding(.trailing, 8)
+        .padding(.vertical, 6)
+        .appButtonBackground(prominent: false)
         .accessibilityElement(children: .contain)
     }
 
@@ -219,12 +221,13 @@ struct PageWidthRow: View {
             withAnimation(.easeInOut(duration: 0.2)) { action() }
         } label: {
             Image(systemName: sf)
-                .font(.system(size: 14, weight: .bold))
-                .frame(width: 36, height: 32)
-                .contentShape(Rectangle())
+                .font(.system(size: 15, weight: .heavy))
+                .foregroundStyle(enabled ? Color.white : Color.secondary.opacity(0.6))
+                .frame(width: 34, height: 34)
+                .background(Circle().fill(enabled ? Color.accentColor : Color.secondary.opacity(0.15)))
+                .contentShape(Circle())
         }
         .buttonStyle(.plain)
-        .foregroundStyle(enabled ? Color.accentColor : Color.secondary.opacity(0.5))
         .disabled(!enabled)
         .accessibilityLabel(sf == "plus" ? "Spread across more posts" : "Spread across fewer posts")
     }
