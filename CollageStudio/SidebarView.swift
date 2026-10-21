@@ -383,9 +383,10 @@ struct ModernSlider: View {
             let fraction = min(max(CGFloat((value - range.lowerBound) / span), 0), 1)
             let thumbX = thumbBase / 2 + fraction * usable
 
-            // One inset track pressed into the panel, with a hairline rim,
-            // filled with flat accent from its start to the knob, and a
-            // slim glowing knob.
+            // One track pressed into the panel along its whole length, filled
+            // part included: shaded inside from the top, a hairline rim, and
+            // a light lip along its lower edge. Flat gray from its start to
+            // the knob, and a slim glowing knob.
             let trackH: CGFloat = 10
             let track = Capsule(style: .continuous)
             let trackShadow = ShadowStyle.inner(color: .black.opacity(isDark ? 0.6 : 0.28), radius: 1.5, y: 1)
@@ -401,21 +402,28 @@ struct ModernSlider: View {
                 }
                 .overlay(track.strokeBorder(isDark ? Color.white.opacity(0.14) : Color.black.opacity(0.14),
                                             lineWidth: 0.5))
+                // The lip: light caught by the groove's lower edge.
+                .background(track.fill(Color.white.opacity(isDark ? 0.10 : 0.85)).offset(y: 0.9))
                 .frame(height: trackH)
 
-                // Accent from the start to the knob.
+                // Flat neutral gray from the start to the knob, clearly
+                // darker (lighter on dark) than the empty groove.
                 if trackColors == nil {
                     let fillW = max(thumbX, trackH)
-                    // One flat color, no gradient or gloss.
                     track
-                        .fill(Color.accentColor)
-                        .overlay(track.strokeBorder(Color.black.opacity(0.12), lineWidth: 0.5))
+                        .fill(Color(white: isDark ? 0.62 : 0.56)
+                            .shadow(.inner(color: .black.opacity(isDark ? 0.55 : 0.35), radius: 1.5, y: 1)))
+                        .overlay(track.strokeBorder(Color.black.opacity(0.14), lineWidth: 0.5))
                         .frame(width: fillW, height: trackH)
                 }
 
-                // Soft glow around the knob.
+                // Soft glow around the knob: accent once the value is off its
+                // default (the double-tap reset value), neutral gray at it.
+                let target = min(max(resetValue ?? 0, range.lowerBound), range.upperBound)
+                let modified = abs(value - target) > 1e-6
+                let glow = modified ? Color.accentColor : Color(white: isDark ? 0.75 : 0.35)
                 Circle()
-                    .fill(Color.accentColor.opacity(isDragging ? 0.45 : 0.28))
+                    .fill(glow.opacity(isDragging ? 0.45 : 0.28))
                     .frame(width: 24, height: 24)
                     .blur(radius: 7)
                     .offset(x: thumbX - 12)
@@ -424,11 +432,13 @@ struct ModernSlider: View {
                 // A round knob, a little bigger while dragged.
                 let knob: CGFloat = isDragging ? 26 : 22
                 Circle()
-                    .fill(LinearGradient(colors: [Color(white: 1), Color(red: 1, green: 0.95, blue: 0.86)],
+                    // Warm cream when changed, plain white-gray at the default.
+                    .fill(LinearGradient(colors: [Color(white: 1),
+                                                  modified ? Color(red: 1, green: 0.95, blue: 0.86) : Color(white: 0.93)],
                                          startPoint: .top, endPoint: .bottom))
                     .overlay(Circle().strokeBorder(Color.black.opacity(0.12), lineWidth: 0.5))
                     .frame(width: knob, height: knob)
-                    .shadow(color: Color.accentColor.opacity(0.8), radius: isDragging ? 6 : 4)
+                    .shadow(color: glow.opacity(modified ? 0.8 : 0.5), radius: isDragging ? 6 : 4)
                     .shadow(color: .black.opacity(0.25), radius: 1.5, y: 1)
                     .offset(x: thumbX - knob / 2)
             }
@@ -576,6 +586,8 @@ struct LabeledSlider: View {
     var compactValue = false
     /// Two monospaced digits ("70"); "100" shrinks a little to fit.
     static let twoDigitValueWidth: CGFloat = 20
+    /// Between a slider's end and its number.
+    static let valueGap: CGFloat = 3
     /// Spacing between stacked rows: icon rows (name over slider) sit
     /// closer than inline ones, which are a single line.
     static let iconRowSpacing: CGFloat = 4
@@ -606,8 +618,11 @@ struct LabeledSlider: View {
                     .contentShape(Rectangle())
                     .onTapGesture(count: 2) { resetToDefault() }
                     .accessibilityHidden(true)
-                slider
-                valueBox(width: 46)
+                // The number right after its slider.
+                HStack(spacing: Self.valueGap) {
+                    slider
+                    valueBox(width: 36)
+                }
             }
         }
         .background { focusGlass(active: state.activeAdjustment == label) }
@@ -644,18 +659,17 @@ struct LabeledSlider: View {
             .accessibleSlider(value: $value, range: range, step: step, label: label)
     }
 
-    /// The value in a small framed box, signed on two-way sliders ("+12").
+    /// The value, signed on two-way sliders ("+12").
     private func valueBox(width: CGFloat) -> some View {
         let text = String(format: format, value)
         let signed = range.lowerBound < 0 && value > 0 && !text.hasPrefix("+") ? "+" + text : text
         return Text(signed)
             .font(.system(size: 13, weight: resetArmed ? .bold : .medium, design: .monospaced))
-            .foregroundColor(resetArmed ? .accentColor : .primary.opacity(0.85))
+            .foregroundColor(resetArmed ? .accentColor : .primary.opacity(0.55))
             .lineLimit(1)
             .minimumScaleFactor(0.6)
-            .frame(width: width, height: 24)
-            .background(RoundedRectangle(cornerRadius: 7, style: .continuous)
-                .strokeBorder(Color.primary.opacity(0.18), lineWidth: 1))
+            // No box: the number alone, just after the slider's end.
+            .frame(width: width, height: 24, alignment: .leading)
             // Double-tapping the value also resets to default
             .contentShape(Rectangle())
             .onTapGesture(count: 2) { resetToDefault() }
@@ -671,7 +685,6 @@ struct LabeledSlider: View {
                     .font(.panelLabel)
                     .foregroundColor(.primary)
                     .lineLimit(1)
-                    .minimumScaleFactor(0.85)
                     .frame(width: labelWidth, alignment: .leading)
                     // Double-tapping the label resets to default, like the value
                     .contentShape(Rectangle())
@@ -685,10 +698,12 @@ struct LabeledSlider: View {
             } else if reservesSwatchSlot {
                 Color.clear.frame(width: 24, height: 24)
             }
-            slider
-            // Compact rows (Layout) keep a narrow box: two digits.
-            valueBox(width: compactValue ? 30 : 44)
-                .padding(.trailing, compactValue ? 0 : 4)
+            HStack(spacing: Self.valueGap) {
+                slider
+                // Compact rows (Layout) keep a narrow box: two digits.
+                valueBox(width: compactValue ? 30 : 44)
+            }
+            .padding(.trailing, compactValue ? 0 : 4)
         }
         // A small "private" glass panel appears behind this row while it's the
         // one being adjusted, so its label stays readable over the canvas.
