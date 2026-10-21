@@ -1126,6 +1126,14 @@ extension CollageState {
                 }
             }
         }
+        // `-selectPhoto [N]` selects the current page's first (or Nth) photo.
+        if let t = args.firstIndex(of: "-selectPhoto") {
+            let n = t + 1 < args.count ? Int(args[t + 1]) ?? 0 : 0
+            DispatchQueue.main.asyncAfter(deadline: .now() + 3.5) {
+                let photos = self.currentPage.images.filter { !$0.isPlaceholder }
+                if !photos.isEmpty { self.selectImage(photos[min(n, photos.count - 1)].id) }
+            }
+        }
         // `-pagerTour` steps through every picture and back, like the arrows.
         if args.contains("-pagerTour") {
             DispatchQueue.main.asyncAfter(deadline: .now() + 4) {

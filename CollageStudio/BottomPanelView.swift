@@ -54,7 +54,7 @@ struct FloatingTabBar: View {
     /// A photo is selected (and no editor has the panel).
     private var photoTools: Bool {
         state.selectedImage != nil && state.textEditTargetId == nil && state.protrusionTargetId == nil
-            && state.photoEditTargetId == nil
+            && state.photoEditTargetId == nil && !CollageState.photoToolsAtTop && !CollageState.photoToolsNear
     }
     private var tabWidth: CGFloat { rowWidth / CGFloat(Self.tabs.count) }
 
@@ -103,6 +103,11 @@ struct FloatingTabBar: View {
                     .offset(y: -5)
             }
         }
+        // The open tab went away (the page became a spread): show Layout,
+        // where that's set.
+        .onChange(of: isAvailable(activeTab)) { _, available in
+            if !available { state.selectedPanelTab = 1 }
+        }
         .animation(.spring(response: 0.32, dampingFraction: 0.82), value: activeTab)
         .animation(.spring(response: 0.3, dampingFraction: 0.68), value: scrubbing)
         .animation(.easeInOut(duration: 0.25), value: merged)
@@ -141,6 +146,10 @@ struct FloatingTabBar: View {
         .animation(.spring(response: 0.25, dampingFraction: 0.7), value: hovered)
         .frame(maxWidth: .infinity)
         .frame(height: Self.tabHeight)
+        // Not available here: hidden, its place kept so the tabs never shift.
+        .opacity(isAvailable(i) ? 1 : 0)
+        .animation(.easeInOut(duration: 0.2), value: isAvailable(i))
+        .accessibilityHidden(!isAvailable(i))
         .accessibilityElement(children: .combine)
         .accessibilityValue(hasChanges(i) ? "Changed" : "")
         .accessibilityAddTraits(activeTab == i && state.panelTabShown ? [.isButton, .isSelected] : .isButton)
@@ -212,6 +221,7 @@ struct FloatingTabBar: View {
                 }
                 scrubX = v.location.x
                 let i = tab(at: v.location.x)
+                guard isAvailable(i) else { return }
                 if i != hoverTab {
                     hoverTab = i
                     #if canImport(UIKit)
@@ -223,10 +233,12 @@ struct FloatingTabBar: View {
                 let i = tab(at: v.location.x)
                 if scrubbing {
                     TabBarTip().invalidate(reason: .actionPerformed)
-                    select(i)
+                    // Let go over a hidden tab: the last one passed.
+                    if let pick = isAvailable(i) ? i : hoverTab { select(pick) }
                     scrubX = nil
                     hoverTab = nil
                 } else {
+                    guard isAvailable(i) else { return }
                     if i != activeTab || !state.panelTabShown { glide() }
                     select(i)
                 }
@@ -253,6 +265,12 @@ struct FloatingTabBar: View {
         case 4: return state.colorFilter != .none || state.hasEditChanges
         default: return false
         }
+    }
+
+    /// Whether a tab has anything to offer on this page: a spread page
+    /// has no frames.
+    private func isAvailable(_ i: Int) -> Bool {
+        i != 2 || state.slides <= 1
     }
 
     private func tab(at x: CGFloat) -> Int {
@@ -284,7 +302,7 @@ struct FloatingTabBar: View {
     }
 }
 
-/// The selected photo's tools, in the tab bar's place: Done, Cutout,
+/// The selected photo's tools, in the tab bar's place: Close, Cutout,
 /// Replace, Move, Reset, Remove. Move swaps the row for the pages it can
 /// go to.
 struct PhotoToolsRow: View {
@@ -313,30 +331,27 @@ struct PhotoToolsRow: View {
         .onChange(of: image.id) { _, _ in moving = false }
     }
 
+    /// Every tool keeps its place; one that doesn't apply to this box (a
+    /// text box can't be cut out, say) is hidden, so the others never move.
     private var tools: some View {
         HStack(spacing: 0) {
-            tool("Done", sf: "xmark") { state.selectImage(nil) }
-            if image.canProtrude {
-                tool("Cutout", sf: "person.crop.square") {
-                    state.selectImage(nil, reopenPanel: false)
-                    state.beginProtrusion(id: image.id)
-                }
+            tool("Close", sf: "xmark") { state.selectImage(nil) }
+            // Sets Close apart from the photo's tools.
+            Rectangle().fill(Color.primary.opacity(0.2)).frame(width: 1, height: 30)
+            tool("Cutout", sf: "person.crop.square", available: image.canProtrude) {
+                state.selectImage(nil, reopenPanel: false)
+                state.beginProtrusion(id: image.id)
             }
-            if !image.isText {
-                tool("Replace", sf: "photo.on.rectangle.angled") {
-                    state.boxActionTargetId = image.id
-                    state.showReplacePicker = true
-                }
+            tool("Replace", sf: "photo.on.rectangle.angled", available: !image.isText) {
+                state.boxActionTargetId = image.id
+                state.showReplacePicker = true
             }
-            if canMove {
-                tool("Move", sf: "arrow.up.right.square") { moving = true }
+            tool("Move", sf: "arrow.up.right.square", available: canMove) { moving = true }
+            let isPhoto = !image.isText && !image.isPlaceholder
+            tool("Reset", sf: "arrow.counterclockwise", available: isPhoto) {
+                withAnimation(.easeInOut(duration: 0.2)) { state.resetTransform(id: image.id) }
             }
-            if !image.isText && !image.isPlaceholder {
-                tool("Reset", sf: "arrow.counterclockwise") {
-                    withAnimation(.easeInOut(duration: 0.2)) { state.resetTransform(id: image.id) }
-                }
-                tool("Edit", sf: "slider.horizontal.3") { state.beginPhotoEdit(id: image.id) }
-            }
+            tool("Edit", sf: "slider.horizontal.3", available: isPhoto) { state.beginPhotoEdit(id: image.id) }
             tool("Remove", sf: "trash", tint: .red) {
                 state.selectImage(nil)
                 state.removeImage(id: image.id)
@@ -378,7 +393,7 @@ struct PhotoToolsRow: View {
         move()
     }
 
-    private func tool(_ title: String, sf: String, tint: Color = .primary,
+    private func tool(_ title: String, sf: String, tint: Color = .primary, available: Bool = true,
                       action: @escaping () -> Void) -> some View {
         Button {
             #if canImport(UIKit)
@@ -401,6 +416,230 @@ struct PhotoToolsRow: View {
             .contentShape(Rectangle())
         }
         .buttonStyle(.plain)
+        .opacity(available ? 1 : 0)
+        .disabled(!available)
+        .accessibilityHidden(!available)
+    }
+}
+
+/// Test layout (`-photoToolsNear`): the selected photo's tools as a small
+/// floating bar right next to it, never over it, so the photo stays free to
+/// pinch and rotate: horizontal above or below the photo if it fits there,
+/// else vertical at its right or left side.
+struct NearPhotoBar: View {
+    @EnvironmentObject var state: CollageState
+    let image: CollageImage
+    /// The overlay's own frame (global), to place the bar in it.
+    let container: CGRect
+
+    private static let cell: CGFloat = 42
+    /// The line after Close, with its space on both sides.
+    private static let separator: CGFloat = 7
+    private static let pad: CGFloat = 4
+    /// Callout triangle (base, height); the bar stands this far off the
+    /// photo, the triangle's tip almost touching it.
+    private static let arrowBase: CGFloat = 15.4
+    private static let arrowHeight: CGFloat = 7.7
+    private static let gap: CGFloat = arrowHeight + 1
+
+    private struct Item: Identifiable {
+        let title: String
+        let sf: String
+        var tint: Color = .primary
+        var available = true
+        var isMove = false
+        let action: () -> Void
+        var id: String { title }
+    }
+
+    private var movablePages: [Int] {
+        let source = state.pageIndex(containing: image.id)
+        return state.pages.indices.filter { pi in
+            pi != source && state.pages[pi].images.count < CollageState.maxImagesPerPage
+        }
+    }
+
+    /// Every tool keeps its place; one that doesn't apply to this box is
+    /// hidden.
+    private var items: [Item] {
+        let isPhoto = !image.isText && !image.isPlaceholder
+        return [
+            Item(title: "Close", sf: "xmark") { state.selectImage(nil) },
+            Item(title: "Cutout", sf: "person.crop.square", available: image.canProtrude) {
+                state.selectImage(nil, reopenPanel: false)
+                state.beginProtrusion(id: image.id)
+            },
+            Item(title: "Replace", sf: "photo.on.rectangle.angled", available: !image.isText) {
+                state.boxActionTargetId = image.id
+                state.showReplacePicker = true
+            },
+            Item(title: "Move", sf: "arrow.up.right.square",
+                 available: !movablePages.isEmpty || state.canAddPost, isMove: true) {},
+            Item(title: "Reset", sf: "arrow.counterclockwise", available: isPhoto) {
+                withAnimation(.easeInOut(duration: 0.2)) { state.resetTransform(id: image.id) }
+            },
+            Item(title: "Edit", sf: "slider.horizontal.3", available: isPhoto) { state.beginPhotoEdit(id: image.id) },
+            Item(title: "Remove", sf: "trash", tint: .red) {
+                state.selectImage(nil)
+                state.removeImage(id: image.id)
+            },
+        ]
+    }
+
+    /// Whether the bar runs across, and its centre (global).
+    private func placement(count: Int) -> (horizontal: Bool, center: CGPoint, edge: Edge) {
+        let box = state.selectedBoxFrame
+        let clear = state.canvasClearRect.isEmpty ? container : state.canvasClearRect
+        // Below the pager (and its compare button), above the open panel,
+        // on screen.
+        let obstacles = state.canvasObstacles.filter { $0.intersects(container) }
+        let top = max(container.minY, (obstacles.map(\.maxY).max() ?? container.minY) + 4)
+        let bounds = CGRect(x: container.minX + 4, y: top,
+                            width: container.width - 8, height: max(clear.maxY - top, 0))
+        let long = Self.length(count), thick = Self.cell + Self.pad * 2
+        let g = Self.gap
+
+        // Lined up with the photo: starting at its left edge when it's on
+        // the left, ending at its right edge when it's on the right.
+        let alignedX = box.midX <= container.midX ? box.minX + long / 2 : box.maxX - long / 2
+        let x = min(max(alignedX, bounds.minX + long / 2), bounds.maxX - long / 2)
+        let above = box.minY - g - thick / 2, below = box.maxY + g + thick / 2
+        if above - thick / 2 >= bounds.minY { return (true, CGPoint(x: x, y: above), .bottom) }
+        if below + thick / 2 <= bounds.maxY { return (true, CGPoint(x: x, y: below), .top) }
+
+        let alignedY = box.midY <= bounds.midY ? box.minY + long / 2 : box.maxY - long / 2
+        let y = min(max(alignedY, bounds.minY + long / 2), bounds.maxY - long / 2)
+        let right = box.maxX + g + thick / 2, left = box.minX - g - thick / 2
+        if right + thick / 2 <= bounds.maxX { return (false, CGPoint(x: right, y: y), .leading) }
+        if left - thick / 2 >= bounds.minX { return (false, CGPoint(x: left, y: y), .trailing) }
+
+        // Nowhere free: across the edge with more room, as far out as fits.
+        let up = box.minY - bounds.minY > bounds.maxY - box.maxY
+        let fy = up ? max(above, bounds.minY + thick / 2) : min(below, bounds.maxY - thick / 2)
+        return (true, CGPoint(x: x, y: fy), up ? .bottom : .top)
+    }
+
+    var body: some View {
+        let list = items
+        let place = placement(count: list.count)
+        let layout = place.horizontal ? AnyLayout(HStackLayout(spacing: 0)) : AnyLayout(VStackLayout(spacing: 0))
+        layout {
+            ForEach(list) { item in
+                if item.id == list.first?.id {
+                    // Close first, set apart by a thin line.
+                    Group {
+                        cellButton(item)
+                        Rectangle().fill(Color.primary.opacity(0.22))
+                            .frame(width: place.horizontal ? 1 : 26, height: place.horizontal ? 26 : 1)
+                            .padding(place.horizontal ? .horizontal : .vertical, (Self.separator - 1) / 2)
+                    }
+                } else if item.isMove {
+                    Menu {
+                        ForEach(movablePages, id: \.self) { pi in
+                            Button("Page \(pi + 1)") { state.selectImage(nil); state.moveImage(id: image.id, toPage: pi) }
+                        }
+                        if state.canAddPost {
+                            Button("New Page") { state.selectImage(nil); state.moveImageToNewPage(id: image.id) }
+                        }
+                    } label: { cell(item) }
+                    .buttonStyle(.plain)
+                    .disabled(!item.available)
+                } else {
+                    cellButton(item)
+                }
+            }
+        }
+        .padding(Self.pad)
+        .background {
+            let shape = CalloutShape(edge: place.edge, at: arrowSpot(place, count: list.count),
+                                     base: Self.arrowBase, height: Self.arrowHeight)
+            shape.fill(.ultraThinMaterial)
+                .overlay(shape.fill(PhotoToolsRow.background))
+                .overlay(shape.stroke(Color.white.opacity(0.6), lineWidth: 1))
+                .shadow(color: .black.opacity(0.22), radius: 8, y: 2)
+        }
+        .position(x: place.center.x - container.minX, y: place.center.y - container.minY)
+        .animation(.spring(response: 0.3, dampingFraction: 0.85), value: place.center)
+        .animation(.spring(response: 0.3, dampingFraction: 0.85), value: place.horizontal)
+        .transition(.opacity.combined(with: .scale(scale: 0.9)))
+    }
+
+    /// The bar's length for `count` buttons.
+    private static func length(_ count: Int) -> CGFloat {
+        CGFloat(count) * cell + separator + pad * 2
+    }
+
+    private func cellButton(_ item: Item) -> some View {
+        Button {
+            #if canImport(UIKit)
+            UIImpactFeedbackGenerator(style: .light).impactOccurred()
+            #endif
+            item.action()
+        } label: { cell(item) }
+        .buttonStyle(.plain)
+        .disabled(!item.available)
+    }
+
+    /// Where along its edge the triangle sits (bar coordinates): across
+    /// from the middle of the photo's part on screen, clear of the corners.
+    private func arrowSpot(_ place: (horizontal: Bool, center: CGPoint, edge: Edge), count: Int) -> CGFloat {
+        let long = Self.length(count)
+        let box = state.selectedBoxFrame.intersection(container)
+        let target = place.horizontal ? box.midX - (place.center.x - long / 2)
+                                      : box.midY - (place.center.y - long / 2)
+        let margin = CalloutShape.radius + Self.arrowBase / 2
+        return min(max(target, margin), long - margin)
+    }
+
+    private func cell(_ item: Item) -> some View {
+        VStack(spacing: 2) {
+            Image(systemName: item.sf).font(.system(size: 16))
+            Text(item.title).font(.system(size: 8.5, weight: .semibold)).lineLimit(1).minimumScaleFactor(0.8)
+        }
+        .foregroundStyle(item.tint == .primary ? Color.primary.opacity(0.85) : item.tint)
+        .frame(width: Self.cell, height: Self.cell)
+        .contentShape(Rectangle())
+        .opacity(item.available ? 1 : 0)
+        .allowsHitTesting(item.available)
+        .accessibilityElement(children: .ignore)
+        .accessibilityLabel(item.title)
+        .accessibilityHidden(!item.available)
+    }
+}
+
+/// A rounded bar with a small triangle on one edge pointing out of it.
+struct CalloutShape: Shape {
+    static let radius: CGFloat = 16
+    let edge: Edge
+    /// Along that edge, from its start (left or top).
+    let at: CGFloat
+    let base: CGFloat
+    let height: CGFloat
+
+    func path(in rect: CGRect) -> Path {
+        let body = Path(roundedRect: rect, cornerRadius: Self.radius, style: .continuous)
+        let b = base / 2, inset: CGFloat = 1     // overlap the bar so they join seamlessly
+        var tip = Path()
+        switch edge {
+        case .bottom:
+            tip.addLines([CGPoint(x: rect.minX + at - b, y: rect.maxY - inset),
+                          CGPoint(x: rect.minX + at, y: rect.maxY + height),
+                          CGPoint(x: rect.minX + at + b, y: rect.maxY - inset)])
+        case .top:
+            tip.addLines([CGPoint(x: rect.minX + at - b, y: rect.minY + inset),
+                          CGPoint(x: rect.minX + at, y: rect.minY - height),
+                          CGPoint(x: rect.minX + at + b, y: rect.minY + inset)])
+        case .leading:
+            tip.addLines([CGPoint(x: rect.minX + inset, y: rect.minY + at - b),
+                          CGPoint(x: rect.minX - height, y: rect.minY + at),
+                          CGPoint(x: rect.minX + inset, y: rect.minY + at + b)])
+        case .trailing:
+            tip.addLines([CGPoint(x: rect.maxX - inset, y: rect.minY + at - b),
+                          CGPoint(x: rect.maxX + height, y: rect.minY + at),
+                          CGPoint(x: rect.maxX - inset, y: rect.minY + at + b)])
+        }
+        tip.closeSubpath()
+        return body.union(tip)
     }
 }
 
@@ -643,11 +882,6 @@ struct BottomPanelView: View {
             HStack(spacing: 8) {
                 // Back to the Collages screen (the open one is saved).
                 ToolbarTile(sf: "square.stack", title: "Collages", prominent: false) { state.goToCollages() }
-                SpreadMenuButton(
-                    // No confirmation: Undo puts the pages back.
-                    onOnePerPage: { state.distributeOneImagePerPage() },
-                    onAllOnOne: { state.mergeAllOntoOnePage() },
-                    onBurstAll: { state.burstBalanced() })
 
                 AddPageTile { state.addPage() }
                     .disabled(!state.canAddPost)

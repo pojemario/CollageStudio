@@ -231,22 +231,31 @@ struct CanvasContainerView: View {
                 .animation(.easeInOut(duration: 0.12), value: state.compareOriginal)
                 .allowsHitTesting(false)
             }
-            // Hold to see the collage without its edits, effects and filter.
+            // Round buttons on the pager's line, filling in from the right:
+            // hold to see the collage without its edits, effects and filter;
+            // on a spread page, zoom out to the whole spread or in to a post.
             .overlay(alignment: .topTrailing) {
-                if state.hasAnyImages && state.hasLookEdits && !state.toolbarHidden {
-                    CompareButton()
-                        // Centered on the pager's line (pager: 40 tall, 2 down).
-                        .padding(.top, 3)
-                        .onGeometryChange(for: CGRect.self) { $0.frame(in: .global) } action: { f in
-                            guard f.differs(from: state.compareButtonFrame) else { return }
-                            Diagnostics.count("compareButtonFrame")
-                            state.compareButtonFrame = f
-                        }
-                        .onDisappear { state.compareButtonFrame = .zero }
-                        .padding(.trailing, 10)
-                        .transition(.opacity)
+                let photoToolsUp = CollageState.photoToolsAtTop && state.selectedImage != nil
+                let compare = state.hasAnyImages && state.hasLookEdits
+                let spread = state.hasAnyImages && state.slides > 1
+                if !state.toolbarHidden && !photoToolsUp && (compare || spread) {
+                    HStack(spacing: 8) {
+                        if spread { SpreadZoomButton().transition(.opacity) }
+                        if compare { CompareButton().transition(.opacity) }
+                    }
+                    // Centered on the pager's line (pager: 40 tall, 2 down).
+                    .padding(.top, 3)
+                    .onGeometryChange(for: CGRect.self) { $0.frame(in: .global) } action: { f in
+                        guard f.differs(from: state.compareButtonFrame) else { return }
+                        Diagnostics.count("compareButtonFrame")
+                        state.compareButtonFrame = f
+                    }
+                    .onDisappear { state.compareButtonFrame = .zero }
+                    .padding(.trailing, 10)
+                    .transition(.opacity)
                 }
             }
+            .animation(.easeInOut(duration: 0.2), value: state.slides > 1)
             .animation(.easeInOut(duration: 0.2), value: state.hasLookEdits)
             .onChange(of: photoItems) { _, newItems in
                 loadPhotos(newItems)
@@ -322,6 +331,31 @@ struct CanvasContainerView: View {
 
 
 /// Press and hold: the collage without its edits, effects and filter.
+/// On a spread page: the whole spread at once, or one post at a time.
+private struct SpreadZoomButton: View {
+    @EnvironmentObject var state: CollageState
+
+    var body: some View {
+        let whole = state.focusedSlide == nil
+        Button {
+            withAnimation(.spring(response: 0.4, dampingFraction: 0.9)) {
+                state.slideFocus = whole ? 0 : nil
+            }
+        } label: {
+            Image(systemName: whole ? "plus.magnifyingglass" : "minus.magnifyingglass")
+                .font(.system(size: 15, weight: .semibold))
+                .foregroundColor(.primary)
+                .frame(width: 38, height: 38)
+                .background(Circle().fill(.ultraThinMaterial))
+                .overlay(Circle().strokeBorder(ColorManager.glassStroke, lineWidth: 0.8))
+                .shadow(color: .black.opacity(0.15), radius: 6, y: 2)
+                .contentShape(Circle())
+        }
+        .buttonStyle(.plain)
+        .accessibilityLabel(whole ? "One post at a time" : "Whole spread")
+    }
+}
+
 private struct CompareButton: View {
     @EnvironmentObject var state: CollageState
     @GestureState private var holding = false

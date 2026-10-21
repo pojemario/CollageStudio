@@ -78,7 +78,7 @@ struct PageTabBar: View {
             let whole = state.slides > 1 && state.focusedSlide == nil
             let current = state.currentPicture
             HStack(spacing: 10) {
-                stepButton(system: "chevron.left", enabled: state.canStepPost(-1), quiet: true) { state.stepPost(-1) }
+                stepButton(system: "chevron.left", enabled: state.canStepPost(-1)) { state.stepPost(-1) }
                 .accessibilityLabel("Previous post")
                 // Dots, one per post: drag along them to step through
                 // (left = next, as on the canvas). Hold for the page menu.
@@ -103,18 +103,8 @@ struct PageTabBar: View {
                     .accessibilityAdjustableAction { d in
                         state.stepPost(d == .increment ? 1 : -1)
                     }
-                stepButton(system: "chevron.right", enabled: state.canStepPost(1), quiet: true) { state.stepPost(1) }
+                stepButton(system: "chevron.right", enabled: state.canStepPost(1)) { state.stepPost(1) }
                 .accessibilityLabel("Next post")
-                // A wide page: all its pictures at once, or one at a time.
-                if state.slides > 1 {
-                    Divider().frame(height: 18)
-                    stepButton(system: whole ? "plus.magnifyingglass" : "minus.magnifyingglass", enabled: true) {
-                        withAnimation(.spring(response: 0.4, dampingFraction: 0.9)) {
-                            state.slideFocus = whole ? 0 : nil
-                        }
-                    }
-                    .accessibilityLabel(whole ? "One post at a time" : "Whole page")
-                }
             }
             .padding(.horizontal, 14)
             .padding(.vertical, 5)
@@ -160,13 +150,12 @@ struct PageTabBar: View {
         }
     }
 
-    private func stepButton(system: String, enabled: Bool, quiet: Bool = false, action: @escaping () -> Void) -> some View {
+    private func stepButton(system: String, enabled: Bool, action: @escaping () -> Void) -> some View {
         Button(action: action) {
-            // The arrows are quiet, in the inactive dots' grey.
+            // Quiet, in the inactive dots' grey.
             Image(systemName: system)
-                .font(.system(size: quiet ? 11 : 14, weight: .bold))
-                .foregroundColor(quiet ? Color.primary.opacity(enabled ? 0.35 : 0.12)
-                                 : enabled ? .primary : .secondary.opacity(0.4))
+                .font(.system(size: 11, weight: .bold))
+                .foregroundColor(Color.primary.opacity(enabled ? 0.35 : 0.12))
                 .frame(width: 30, height: 26)
                 .contentShape(Rectangle())
         }
@@ -572,8 +561,35 @@ struct ContentView: View {
                     .ignoresSafeArea(edges: state.toolbarHidden ? .vertical : [])
             }
             // Floating page counter pill over the top of the canvas.
+            // Test layout: the selected photo's tools in a bar next to it.
+            .overlay {
+                if CollageState.photoToolsNear, !state.toolbarHidden, let image = state.selectedImage,
+                   !state.selectedBoxFrame.isEmpty,
+                   state.textEditTargetId == nil, state.protrusionTargetId == nil, state.photoEditTargetId == nil {
+                    GeometryReader { g in
+                        NearPhotoBar(image: image, container: g.frame(in: .global))
+                    }
+                    .id(image.id)
+                }
+            }
+            // Test layout: the selected photo's tools where the pager is.
             .overlay(alignment: .top) {
-                if !state.toolbarHidden {
+                if CollageState.photoToolsAtTop, !state.toolbarHidden, let image = state.selectedImage,
+                   state.textEditTargetId == nil, state.protrusionTargetId == nil, state.photoEditTargetId == nil {
+                    PhotoToolsRow(image: image)
+                        .padding(.vertical, 5)
+                        .padding(.horizontal, 10)
+                        .background(PhotoToolsRow.background,
+                                    in: RoundedRectangle(cornerRadius: FloatingTabBar.cornerRadius, style: .continuous))
+                        .shadow(color: .black.opacity(0.15), radius: 8, y: 2)
+                        .padding(.horizontal, 10)
+                        .padding(.top, 2)
+                        .transition(.offset(y: -12).combined(with: .opacity))
+                }
+            }
+            .animation(.spring(response: 0.3, dampingFraction: 0.85), value: state.selectedImageId)
+            .overlay(alignment: .top) {
+                if !state.toolbarHidden, !(CollageState.photoToolsAtTop && state.selectedImage != nil) {
                     PageTabBar().padding(.top, 2)
                         .onGeometryChange(for: CGRect.self) { $0.frame(in: .global) } action: { f in
                             pagerBottomY = f.maxY

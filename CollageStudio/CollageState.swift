@@ -1175,6 +1175,7 @@ class CollageState: ObservableObject {
     @Published var pagerFrame: CGRect = .zero
     /// The phone toolbar's Undo button, for the Redo bubble below it.
     @Published var undoButtonFrame: CGRect = .zero
+    /// The round buttons right of the pager (compare, spread zoom).
     @Published var compareButtonFrame: CGRect = .zero
 
     /// The part of the screen where a control on the collage can be seen
@@ -1293,6 +1294,19 @@ class CollageState: ObservableObject {
 
     /// The box tapped (or held) last; its tools replace the tabs.
     @Published var selectedImageId: UUID?
+    /// Test layout (`-photoToolsTop`, DEBUG): a selected photo's tools take
+    /// the pager's place at the top instead of covering the tabs.
+    /// Test layout (`-photoToolsNear`, DEBUG): a small bar right next to
+    /// the selected photo.
+    #if DEBUG
+    static let photoToolsAtTop = ProcessInfo.processInfo.arguments.contains("-photoToolsTop")
+    static let photoToolsNear = ProcessInfo.processInfo.arguments.contains("-photoToolsNear")
+    #else
+    static let photoToolsAtTop = false
+    static let photoToolsNear = false
+    #endif
+    /// The selected box on screen (global), for the bar next to it.
+    @Published var selectedBoxFrame: CGRect = .zero
     /// The box whose picture the Replace picker swaps.
     @Published var boxActionTargetId: UUID? = nil
     @Published var showReplacePicker: Bool = false

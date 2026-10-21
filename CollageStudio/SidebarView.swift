@@ -73,11 +73,6 @@ struct SidebarView: View {
             HStack(spacing: 8) {
                 // Back to the Collages screen (the open one is saved).
                 ToolbarTile(sf: "square.stack", title: "Collages", prominent: false) { state.goToCollages() }
-                SpreadMenuButton(
-                    // No confirmation: Undo puts the pages back.
-                    onOnePerPage: { state.distributeOneImagePerPage() },
-                    onAllOnOne: { state.mergeAllOntoOnePage() },
-                    onBurstAll: { state.burstBalanced() })
 
                 AddPageTile { state.addPage() }
                     .disabled(!state.canAddPost)
@@ -860,11 +855,143 @@ struct BorderStylePicker: View {
     }
 }
 
+/// One per Page's icon: a photo with more of the same size stacked out
+/// past its right edge.
+private struct PageStackIcon: View {
+    private static let size = CGSize(width: 22, height: 17)
+    private static let step: CGFloat = 4
+
+    var body: some View {
+        let w = Self.size.width, h = Self.size.height
+        ZStack(alignment: .leading) {
+            ForEach([2, 1], id: \.self) { k in
+                CardEdge(peek: CGFloat(k) * Self.step, corner: 3.5)
+                    .stroke(.primary, style: StrokeStyle(lineWidth: 1.6, lineCap: .round, lineJoin: .round))
+                    .frame(width: w + CGFloat(k) * Self.step, height: h - 1.6)
+                    .opacity(k == 1 ? 0.75 : 0.45)
+            }
+            Image(systemName: "photo")
+                .resizable()
+                .fontWeight(.medium)
+                .frame(width: w, height: h)
+        }
+        .frame(width: w + 2 * Self.step, height: h)
+        .offset(x: Self.step)       // centred on the photo, not the stack
+        .accessibilityHidden(true)
+    }
+
+    /// The part of a card behind the photo that shows past its right edge.
+    private struct CardEdge: Shape {
+        let peek: CGFloat
+        let corner: CGFloat
+
+        func path(in rect: CGRect) -> Path {
+            let start = rect.maxX - peek, r = min(corner, peek)
+            var p = Path()
+            p.move(to: CGPoint(x: start, y: rect.minY))
+            p.addLine(to: CGPoint(x: rect.maxX - r, y: rect.minY))
+            p.addArc(tangent1End: CGPoint(x: rect.maxX, y: rect.minY),
+                     tangent2End: CGPoint(x: rect.maxX, y: rect.minY + r), radius: r)
+            p.addLine(to: CGPoint(x: rect.maxX, y: rect.maxY - r))
+            p.addArc(tangent1End: CGPoint(x: rect.maxX, y: rect.maxY),
+                     tangent2End: CGPoint(x: rect.maxX - r, y: rect.maxY), radius: r)
+            p.addLine(to: CGPoint(x: start, y: rect.maxY))
+            return p
+        }
+    }
+}
+
+/// All on One's icon: one 9:16 collage of nine photos.
+private struct OneCollageIcon: View {
+    var body: some View {
+        let w: CGFloat = 15, h: CGFloat = 26.6, gap: CGFloat = 1.6
+        RoundedRectangle(cornerRadius: 2.5, style: .continuous)
+            .strokeBorder(.primary, lineWidth: 1.5)
+            .frame(width: w, height: h)
+            .overlay {
+                VStack(spacing: gap) {
+                    ForEach(0..<3, id: \.self) { _ in
+                        HStack(spacing: gap) {
+                            ForEach(0..<3, id: \.self) { _ in
+                                RoundedRectangle(cornerRadius: 0.6).fill(.primary)
+                            }
+                        }
+                    }
+                }
+                .padding(2.8)
+            }
+            .accessibilityHidden(true)
+    }
+}
+
+/// Layout → Arrange: deals all the photos out over the pages in one go.
+/// No confirmation: Undo puts the pages back. An option that doesn't fit
+/// the photos (some would be left out) is hidden, its place kept.
+struct ArrangePanel: View {
+    @EnvironmentObject var state: CollageState
+
+    var body: some View {
+        let n = state.totalImageCount
+        let pages = state.burstPageCount
+        let onePerPage = min(n, CollageState.maxPages)
+        VStack(spacing: 10) {
+            HStack(spacing: 8) {
+                option("Balanced", detail: "\(pages) page\(pages == 1 ? "" : "s")",
+                       icon: Image(systemName: "sparkles"),
+                       available: n >= 2) { state.burstBalanced() }
+                option("One per Page", detail: "\(onePerPage) pages", icon: PageStackIcon(),
+                       available: n >= 2 && n <= CollageState.maxPages + CollageState.maxImagesPerPage - 1) {
+                    state.distributeOneImagePerPage()
+                }
+                option("All on One", detail: "1 page", icon: OneCollageIcon(),
+                       available: n >= 2 && n <= CollageState.maxImagesPerPage) { state.mergeAllOntoOnePage() }
+            }
+            Text(n < 2 ? "Add another photo to arrange them over pages."
+                       : "Moves every photo to a new place. Undo puts them back.")
+                .font(.caption)
+                .foregroundStyle(.secondary)
+                .frame(maxWidth: .infinity, alignment: .leading)
+        }
+    }
+
+    private func option(_ title: String, detail: String, icon: some View, available: Bool,
+                        action: @escaping () -> Void) -> some View {
+        Button {
+            #if canImport(UIKit)
+            UIImpactFeedbackGenerator(style: .light).impactOccurred()
+            #endif
+            action()
+        } label: {
+            VStack(spacing: 4) {
+                icon
+                    .font(.system(size: 20, weight: .medium))
+                    .frame(height: 24)
+                Text(title)
+                    .font(.system(size: 12, weight: .semibold))
+                    .lineLimit(1)
+                    .minimumScaleFactor(0.8)
+                Text(detail)
+                    .font(.system(size: 10))
+                    .foregroundStyle(.secondary)
+            }
+            .frame(maxWidth: .infinity)
+            .padding(.vertical, 12)
+            .foregroundColor(.primary)
+            .appButtonBackground(prominent: false)
+        }
+        .buttonStyle(.plain)
+        .opacity(available ? 1 : 0)
+        .disabled(!available)
+        .accessibilityHidden(!available)
+        .accessibilityHint(detail)
+    }
+}
+
 /// The Layout tab: "Layout" (columns, spacing, rounding), "Border" (size,
 /// color, style, position) and "Canvas" (margin, rotation).
 struct LayoutPanel: View {
     @EnvironmentObject var state: CollageState
-    enum Page: String, CaseIterable { case layout = "Layout", border = "Border", canvas = "Canvas" }
+    enum Page: String, CaseIterable { case layout = "Layout", border = "Border", canvas = "Canvas", arrange = "Arrange" }
     /// Spacing's range (the iPad sidebar keeps a shorter one).
     var spacingRange: ClosedRange<Double> = 0...70
 
@@ -882,6 +1009,7 @@ struct LayoutPanel: View {
             case .layout: layoutPage
             case .border: BorderPanel()
             case .canvas: canvasPage
+            case .arrange: ArrangePanel()
             }
         }
     }
@@ -902,6 +1030,7 @@ struct LayoutPanel: View {
         case .canvas:
             state.canvasMargin = 0
             state.canvasRotation = 0
+        case .arrange: break        // actions, nothing to reset
         }
     }
 
@@ -912,6 +1041,7 @@ struct LayoutPanel: View {
             || state.backgroundColor != d.backgroundColor || state.isRows || state.isStrip || state.numCols != d.numCols
         case .border: return state.hasBorderChanges
         case .canvas: return state.canvasMargin != 0 || state.canvasRotation != 0
+        case .arrange: return false
         }
     }
 
@@ -1312,72 +1442,6 @@ struct ShuffleButton: View {
         .font(.subheadline)
         .padding(.horizontal, 12)
         .padding(.vertical, 4)
-    }
-}
-
-/// "Spread" button that opens a popover of page-distribution actions.
-/// A popover (not a system Menu) keeps the options single-line, wide, and in
-/// a fixed top-down order regardless of which way it opens.
-struct SpreadMenuButton: View {
-    @EnvironmentObject var state: CollageState
-    let onOnePerPage: () -> Void
-    let onAllOnOne: () -> Void
-    var onBurstAll: () -> Void = {}
-    @State private var show = false
-
-    var body: some View {
-        Button { show = true } label: {
-            ToolbarTileLabel(prominent: false, title: "Spread") {
-                HStack(spacing: 3) {
-                    Image(systemName: "rectangle.split.3x1")
-                    Image(systemName: "chevron.down")
-                        .font(.system(size: 8, weight: .semibold))
-                        .opacity(0.6)
-                }
-            }
-        }
-        .buttonStyle(.plain)
-        .disabled(state.totalImageCount < 2)
-        .opacity(state.totalImageCount < 2 ? 0.5 : 1)
-        .help("Requires more than 1 image")
-        .popover(isPresented: $show, arrowEdge: .bottom) {
-            VStack(alignment: .leading, spacing: 2) {
-                item("Spread across \(state.burstPageCount) page\(state.burstPageCount == 1 ? "" : "s")", "sparkles", onBurstAll)
-                // Not offered when the photos wouldn't fit (some would be left out).
-                item("One image per page", "photo.stack", onOnePerPage,
-                     fits: state.totalImageCount <= CollageState.maxPages + CollageState.maxImagesPerPage - 1)
-                item("All images on one page", "rectangle.stack", onAllOnOne,
-                     fits: state.totalImageCount <= CollageState.maxImagesPerPage)
-            }
-            .padding(.vertical, 6)
-            .frame(width: 270)
-            .fixedSize(horizontal: false, vertical: true)
-            .presentationCompactAdaptation(.popover)
-        }
-    }
-
-    private func item(_ title: String, _ sf: String, _ action: @escaping () -> Void,
-                      fits: Bool = true) -> some View {
-        Button {
-            show = false
-            // Let the popover dismiss before presenting the confirm alert.
-            DispatchQueue.main.asyncAfter(deadline: .now() + 0.15, execute: action)
-        } label: {
-            HStack(spacing: 12) {
-                Image(systemName: sf).frame(width: 22)
-                Text(title).lineLimit(1)
-                Spacer(minLength: 0)
-            }
-            .font(.subheadline)
-            .foregroundColor(.primary)
-            .padding(.horizontal, 14)
-            .padding(.vertical, 10)
-            .contentShape(Rectangle())
-        }
-        .buttonStyle(.plain)
-        .disabled(!fits)
-        .opacity(fits ? 1 : 0.4)
-        .accessibilityHint(fits ? "" : "Too many photos for this")
     }
 }
 

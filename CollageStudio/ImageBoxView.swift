@@ -128,6 +128,16 @@ struct ImageBoxView: View {
                                 shape.strokeBorder(Color.accentColor, style: StrokeStyle(lineWidth: 2, dash: [5, 4]))
                             }
                             .shadow(color: .black.opacity(0.25), radius: 1.5)
+                            // Test layout: the tools bar sits next to this box.
+                            .background {
+                                if CollageState.photoToolsNear {
+                                    GeometryReader { g in
+                                        Color.clear
+                                            .onAppear { state.selectedBoxFrame = g.frame(in: .global) }
+                                            .onChange(of: g.frame(in: .global)) { _, f in state.selectedBoxFrame = f }
+                                    }
+                                }
+                            }
                             .transition(.opacity)
                         }
                     }
