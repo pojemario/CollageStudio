@@ -68,7 +68,7 @@ struct PageTabBar: View {
     @EnvironmentObject var state: CollageState
     /// Posts stepped by the drag in progress.
     @State private var scrubbed = 0
-    /// Finger travel per post when dragging along the dots.
+    /// Finger travel per post when swiping along the pager.
     private static let scrubStep: CGFloat = 22
 
     var body: some View {
@@ -80,22 +80,9 @@ struct PageTabBar: View {
             HStack(spacing: 10) {
                 stepButton(system: "chevron.left", enabled: state.canStepPost(-1)) { state.stepPost(-1) }
                 .accessibilityLabel("Previous post")
-                // Dots, one per post: drag along them to step through
-                // (left = next, as on the canvas). Hold for the page menu.
+                // Dots, one per post.
                 PictureDots(whole: whole)
                     .frame(minWidth: 44, minHeight: 26)
-                    .contentShape(Rectangle())
-                    .gesture(DragGesture(minimumDistance: 6)
-                        .onChanged { v in
-                            let steps = Int((-v.translation.width / Self.scrubStep).rounded(.towardZero))
-                            guard steps != scrubbed else { return }
-                            // One post per event: the next waits for this
-                            // one to land.
-                            let dir = steps > scrubbed ? 1 : -1
-                            scrubbed += dir
-                            state.stepPost(dir)
-                        }
-                        .onEnded { _ in scrubbed = 0 })
                     .accessibilityElement()
                     .accessibilityLabel(whole
                         ? "Posts \(first + 1) to \(first + state.slides) of \(count), page \(state.safePageIndex + 1)"
@@ -115,6 +102,19 @@ struct PageTabBar: View {
                     .shadow(color: .black.opacity(0.15), radius: 8, y: 2)
             )
             .animation(.easeInOut(duration: 0.2), value: current)
+            // Swipe anywhere on the pager to step through the posts (left =
+            // next, as on the canvas); the arrows still take taps.
+            .contentShape(Capsule(style: .continuous))
+            .simultaneousGesture(DragGesture(minimumDistance: 6)
+                .onChanged { v in
+                    let steps = Int((-v.translation.width / Self.scrubStep).rounded(.towardZero))
+                    guard steps != scrubbed else { return }
+                    // One post per event: the next waits for this one to land.
+                    let dir = steps > scrubbed ? 1 : -1
+                    scrubbed += dir
+                    state.stepPost(dir)
+                }
+                .onEnded { _ in scrubbed = 0 })
             // Hold for the page menu.
             .contextMenu { pageMenu }
         }
