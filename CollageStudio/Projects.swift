@@ -1083,7 +1083,10 @@ extension CollageState {
                 self.setSlides(n)
                 if args.contains("-strip") { self.setLanes(.strip) }
                 if args.contains("-allSlides") { self.slideFocus = nil }
-                if args.contains("-addOverlay"), let pack = CollageState.overlayPacks.first,
+                // `-overlayPack Name` picks the pack (else the first).
+                let packName = args.firstIndex(of: "-overlayPack").flatMap { $0 + 1 < args.count ? args[$0 + 1] : nil }
+                if args.contains("-addOverlay"),
+                   let pack = CollageState.overlayPacks.first(where: { $0.name == packName }) ?? CollageState.overlayPacks.first,
                    let asset = pack.assets.first {
                     self.slideFocus = 1
                     self.addOverlayLayer(asset: asset, kind: pack.kind)
@@ -1093,6 +1096,35 @@ extension CollageState {
         }
         if let t = args.firstIndex(of: "-picture"), t + 1 < args.count, let k = Int(args[t + 1]) {
             DispatchQueue.main.asyncAfter(deadline: .now() + 3.5) { self.goToPicture(k) }
+        }
+        // `-sharpTest` puts a big, finely detailed test pattern in the biggest
+        // box, to see the sharp copy replace the proxy.
+        if args.contains("-sharpTest") {
+            DispatchQueue.main.asyncAfter(deadline: .now() + 2.5) {
+                let size = CGSize(width: 3000, height: 4000)
+                let format = UIGraphicsImageRendererFormat()
+                format.scale = 1
+                let pattern = UIGraphicsImageRenderer(size: size, format: format).image { ctx in
+                    UIColor.white.setFill()
+                    ctx.fill(CGRect(origin: .zero, size: size))
+                    UIColor.black.setFill()
+                    for x in stride(from: 0, to: size.width, by: 12) {
+                        ctx.fill(CGRect(x: x, y: 0, width: 3, height: size.height))
+                    }
+                    let attrs: [NSAttributedString.Key: Any] = [.font: UIFont.boldSystemFont(ofSize: 60),
+                                                                .foregroundColor: UIColor.systemRed,
+                                                                .backgroundColor: UIColor.white]
+                    for y in stride(from: 100, to: size.height, by: 300) {
+                        ("Sharp copy test 0123456789" as NSString).draw(at: CGPoint(x: 80, y: y), withAttributes: attrs)
+                    }
+                }
+                let pi = self.currentPageIndex
+                let boxes = self.pages[pi].images
+                if let k = boxes.indices.max(by: { boxes[$0].lastBoxSize.width * boxes[$0].lastBoxSize.height
+                                                   < boxes[$1].lastBoxSize.width * boxes[$1].lastBoxSize.height }) {
+                    self.pages[pi].images[k].setImage(pattern)
+                }
+            }
         }
         // `-pagerTour` steps through every picture and back, like the arrows.
         if args.contains("-pagerTour") {

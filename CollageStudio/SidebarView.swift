@@ -80,8 +80,8 @@ struct SidebarView: View {
                     onBurstAll: { state.burstBalanced() })
 
                 AddPageTile { state.addPage() }
-                    .disabled(state.pages.count >= CollageState.maxPages)
-                    .opacity(state.pages.count >= CollageState.maxPages ? 0.5 : 1)
+                    .disabled(!state.canAddPost)
+                    .opacity(!state.canAddPost ? 0.5 : 1)
 
                 // Adds a transparent placeholder — an intentional empty slot.
                 ToolbarTile(sf: "rectangle.dashed.badge.record", title: "Empty Box") { state.addEmptyImage() }
@@ -201,7 +201,7 @@ struct PageWidthRow: View {
                 .monospacedDigit()
                 .frame(minWidth: 22)
                 .contentTransition(.numericText())
-            stepButton("plus", enabled: state.slides < CollageState.maxSlides) { state.setSlides(state.slides + 1) }
+            stepButton("plus", enabled: state.slides < CollageState.maxSlides && state.canAddPost) { state.setSlides(state.slides + 1) }
             Text("posts.")
                 .font(.system(size: 14, weight: .medium))
                 .lineLimit(1)

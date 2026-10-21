@@ -7,6 +7,11 @@ class CollageState: ObservableObject {
     // MARK: - Pages
     static let maxImagesPerPage = 15
     static let maxPages = 20
+    /// Posts across all pages (a spread page is several): a carousel takes
+    /// at most 20.
+    static let maxPosts = 20
+    /// Room for one more post: a new page, or a page spread wider.
+    var canAddPost: Bool { pictureCount < Self.maxPosts }
 
     @Published var pages: [CollagePage] = [CollagePage()]
     /// Edge the incoming page slides in from — set from the navigation
@@ -462,7 +467,7 @@ class CollageState: ObservableObject {
         return (image, name)
     }
 
-    // MARK: - Overlays (dust, scratches, light leaks)
+    // MARK: - Overlays (dust, scratches, light leaks, flares)
 
     /// Overlay layers on the current page, bottom to top.
     var overlayLayers: [OverlayLayer] {
@@ -481,6 +486,11 @@ class CollageState: ObservableObject {
             "Leak916_Edge", "Leak916_Corner", "Leak916_Band",
             "Leak916_Burn", "Leak916_Magenta", "Leak916_Streaks",
             "Leak916_Blaze", "Leak916_Coral",
+        ]),
+        OverlayPack(name: "Flares", kind: .flare, assets: [
+            "Flare916_Glow", "Flare916_Sun", "Flare916_Dusk",
+            "Flare916_Haze", "Flare916_Orbs", "Flare916_Star",
+            "Flare916_Ghosts", "Flare916_Streak", "Flare916_Ring",
         ]),
         OverlayPack(name: "Dust & Scratches", kind: .dust, assets: [
             "Dust916_Fine", "Dust916_Heavy", "Dust916_Hairs",
@@ -854,6 +864,9 @@ class CollageState: ObservableObject {
     func gradedDisplayImage(for img: CollageImage) -> PlatformImage {
         let source = renderFullResolution ? img.image : img.proxy
         let grade = grade(for: img)
+        // Settled on screen: the sharp copy (see refreshSharpCopies).
+        if !isRenderingOffscreen, grade.isIdentity,
+           let s = sharpCopies[img.id], s.source === img.image { return s.image }
         guard !grade.isIdentity, !img.isPlaceholder else { return source }
         if renderFullResolution {
             if let g = gradeExportCache[img.id], g.source === source, g.grade == grade { return g.image }
@@ -861,6 +874,9 @@ class CollageState: ObservableObject {
             gradeExportCache[img.id] = Graded(source: source, grade: grade, image: graded)
             return graded
         }
+        // On screen and settled: the sharp copy, when it has this grade.
+        if !isRenderingOffscreen, let s = sharpCopies[img.id], s.source === img.image,
+           let g = s.graded, g.grade == grade { return g.image }
         let cached = (gradedProxies[img.id] ?? []).filter { $0.source === source }
         if let exact = cached.first(where: { $0.grade == grade }) { return exact.image }
         // Still grading (a slider is moving): keep showing the nearest
@@ -922,6 +938,133 @@ class CollageState: ObservableObject {
             }
             self.gradedProxies = all
             for img in self.currentPage.images where done[img.id] != nil { self.gradeIfNeeded(img) }
+        }
+    }
+
+    // MARK: Sharp copies
+    // The 800 px proxy keeps editing fast, but a photo filling most of the
+    // canvas is shown bigger than that and looks soft. Once nothing has
+    // changed for a moment, every box whose photo is drawn bigger than its
+    // proxy gets a copy made from the original at the size it's actually
+    // shown (graded too); it's drawn until the next change of grade, while
+    // the proxy keeps everything that moves fast.
+
+    struct Sharp {
+        /// The original it was made from (a replaced photo drops it).
+        let source: PlatformImage
+        let edge: CGFloat
+        let image: PlatformImage
+        var graded: Graded? = nil
+    }
+
+    /// Long-edge cap for a sharp copy; a phone screen is ~1300 px across,
+    /// so a pinched-in photo still has room.
+    static let sharpMaxEdge: CGFloat = 2560
+    /// Total pixels kept in sharp copies (~25 MB per copy at most).
+    static let sharpPixelBudget: CGFloat = 16_000_000
+
+    @Published private(set) var sharpCopies: [UUID: Sharp] = [:]
+    /// One copy at a time, off the shared task pool.
+    nonisolated static let sharpQueue = DispatchQueue(label: "sharp", qos: .utility)
+    private var sharpInFlight: Set<UUID> = []
+    private var sharpRefresh: AnyCancellable?
+    private var memoryWarning: AnyCancellable?
+
+    private func observeSharpness() {
+        sharpRefresh = objectWillChange
+            .debounce(for: .milliseconds(700), scheduler: RunLoop.main)
+            .sink { [weak self] _ in
+                MainActor.assumeIsolated { self?.refreshSharpCopies() }
+            }
+        #if canImport(UIKit)
+        memoryWarning = NotificationCenter.default
+            .publisher(for: UIApplication.didReceiveMemoryWarningNotification)
+            .sink { [weak self] _ in
+                MainActor.assumeIsolated {
+                    Diagnostics.log("sharp copies dropped (memory warning)")
+                    self?.sharpCopies = [:]
+                }
+            }
+        #endif
+    }
+
+    /// The long edge, in pixels, a box's photo is drawn at on screen
+    /// (rounded up to 256s, so small box changes don't remake it); nil when
+    /// the proxy is enough.
+    private func sharpEdge(for img: CollageImage) -> CGFloat? {
+        guard !img.isPlaceholder,
+              let placement = ImagePlacement.compute(natural: img.naturalSize, boxSize: img.lastBoxSize,
+                                                     zoom: img.zoom, rotation: img.rotation, pan: .zero)
+        else { return nil }
+        #if canImport(UIKit)
+        let screenScale = UIApplication.shared.connectedScenes
+            .compactMap { ($0 as? UIWindowScene)?.screen.scale }.first ?? 3
+        #else
+        let screenScale: CGFloat = 2
+        #endif
+        let shown = max(placement.size.width, placement.size.height) * max(screenScale, 1)
+        let original = max(img.naturalSize.width, img.naturalSize.height)
+        let edge = min((shown / 256).rounded(.up) * 256, Self.sharpMaxEdge, original)
+        return edge > CollageImage.proxyLongEdge * 1.15 ? edge : nil
+    }
+
+    /// Makes (and grades) the sharp copies the current page needs, biggest
+    /// first within the budget, and lets go of the rest.
+    func refreshSharpCopies() {
+        guard !isRenderingOffscreen, !isCanvasZooming, imageZoomingId == nil,
+              activeAdjustment == nil else { return }
+        let images = currentPage.images
+        var wanted: [UUID: CGFloat] = [:]
+        var budget = Self.sharpPixelBudget
+        let needs = images.compactMap { img in sharpEdge(for: img).map { (img, $0) } }
+            .sorted { $0.1 > $1.1 }
+        for (img, edge) in needs {
+            let aspect = min(img.naturalSize.width, img.naturalSize.height) / max(img.naturalSize.width, img.naturalSize.height)
+            let pixels = edge * edge * aspect
+            guard pixels <= budget else { continue }
+            budget -= pixels
+            wanted[img.id] = edge
+        }
+        // Let go of copies no longer needed (another page, smaller box,
+        // replaced photo).
+        let keep = sharpCopies.filter { id, s in
+            wanted[id] == s.edge && images.contains { $0.id == id && $0.image === s.source }
+        }
+        if keep.count != sharpCopies.count { sharpCopies = keep }
+
+        for img in images {
+            guard let edge = wanted[img.id], !sharpInFlight.contains(img.id) else { continue }
+            let grade = grade(for: img)
+            if let s = sharpCopies[img.id] {
+                // Made already: grade it for the current settings.
+                guard !grade.isIdentity, s.graded?.grade != grade else { continue }
+                let id = img.id, base = s.image
+                sharpInFlight.insert(id)
+                Self.sharpQueue.async {
+                    let graded = ContentGrader.apply(grade, to: base)
+                    DispatchQueue.main.async {
+                        self.sharpInFlight.remove(id)
+                        guard var cur = self.sharpCopies[id], cur.image === base else { return }
+                        cur.graded = Graded(source: base, grade: grade, image: graded)
+                        self.sharpCopies[id] = cur
+                    }
+                }
+            } else {
+                let id = img.id, original = img.image
+                sharpInFlight.insert(id)
+                Self.sharpQueue.async {
+                    let sharp = original.downsampled(longEdge: edge)
+                    let graded = grade.isIdentity ? nil
+                        : Graded(source: sharp, grade: grade, image: ContentGrader.apply(grade, to: sharp))
+                    DispatchQueue.main.async {
+                        self.sharpInFlight.remove(id)
+                        guard self.currentPage.images.contains(where: { $0.id == id && $0.image === original })
+                        else { return }
+                        Diagnostics.log("sharp copy \(Int(edge)) px")
+                        self.sharpCopies[id] = Sharp(source: original, edge: edge, image: sharp, graded: graded)
+                    }
+                }
+            }
         }
     }
 
@@ -1627,7 +1770,7 @@ class CollageState: ObservableObject {
                 remaining = remaining.dropFirst(chunk.count)
             }
             guard !remaining.isEmpty else { break }
-            guard pages.count < Self.maxPages else { break }
+            guard canAddPost else { break }
             // Spill pages inherit the style of the page being filled
             pages.append(CollagePage(style: pages[pi].style.single, look: pages[pi].look))
             pi = pages.count - 1
@@ -1659,7 +1802,7 @@ class CollageState: ObservableObject {
     func importPendingSharedAsNewPage() {
         let shared = pendingSharedImages
         pendingSharedImages = []
-        guard !shared.isEmpty, pages.count < Self.maxPages else { return }
+        guard !shared.isEmpty, canAddPost else { return }
         pages.append(CollagePage(style: currentPage.style.single, look: currentPage.look))
         currentPageIndex = pages.count - 1
         addImages(shared)
@@ -1736,7 +1879,7 @@ class CollageState: ObservableObject {
     }
 
     func addPage() {
-        guard pages.count < Self.maxPages else { return }
+        guard canAddPost else { return }
         // New pages start with the current page's style
         pages.append(CollagePage(style: currentPage.style.single, look: currentPage.look))
         currentPageIndex = pages.count - 1
@@ -1797,7 +1940,7 @@ class CollageState: ObservableObject {
     }
 
     func moveImageToNewPage(id: UUID) {
-        guard pages.count < Self.maxPages else { return }
+        guard canAddPost else { return }
         pages.append(CollagePage(style: currentPage.style.single, look: currentPage.look))
         moveImage(id: id, toPage: pages.count - 1)
     }
@@ -2122,7 +2265,8 @@ class CollageState: ObservableObject {
 
     /// Makes the current page `n` pictures wide (1 = a single picture).
     func setSlides(_ n: Int) {
-        let n = min(max(n, 1), Self.maxSlides)
+        // No wider than the posts left allow.
+        let n = min(max(n, 1), Self.maxSlides, slides + Self.maxPosts - pictureCount)
         guard n != slides else { return }
         let wasStrip = isStrip
         currentPage.style.slides = n
@@ -2175,6 +2319,7 @@ class CollageState: ObservableObject {
     init() {
         restoreSettings()
         observeEffectSources()
+        observeSharpness()
         observeHistory()
         #if DEBUG && canImport(UIKit)
         seedDemoImagesIfRequested()

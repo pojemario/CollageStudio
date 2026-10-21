@@ -303,7 +303,7 @@ struct PhotoToolsRow: View {
             pi != source && state.pages[pi].images.count < CollageState.maxImagesPerPage
         }
     }
-    private var canMove: Bool { !movablePages.isEmpty || state.pages.count < CollageState.maxPages }
+    private var canMove: Bool { !movablePages.isEmpty || state.canAddPost }
 
     var body: some View {
         Group {
@@ -358,7 +358,7 @@ struct PhotoToolsRow: View {
                         }
                         .frame(width: 62)
                     }
-                    if state.pages.count < CollageState.maxPages {
+                    if state.canAddPost {
                         tool("New Page", sf: "plus.square.on.square") {
                             moveTo { state.moveImageToNewPage(id: image.id) }
                         }
@@ -650,8 +650,8 @@ struct BottomPanelView: View {
                     onBurstAll: { state.burstBalanced() })
 
                 AddPageTile { state.addPage() }
-                    .disabled(state.pages.count >= CollageState.maxPages)
-                    .opacity(state.pages.count >= CollageState.maxPages ? 0.5 : 1)
+                    .disabled(!state.canAddPost)
+                    .opacity(!state.canAddPost ? 0.5 : 1)
 
                 // Adds a transparent placeholder — an intentional empty slot.
                 ToolbarTile(sf: "rectangle.dashed.badge.record", title: "Empty Box") { state.addEmptyImage() }

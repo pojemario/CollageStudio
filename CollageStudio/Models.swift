@@ -687,11 +687,12 @@ struct FramePack: Identifiable {
 enum OverlayKind: String {
     case dust = "Dust & Scratches"
     case leak = "Light Leaks"
+    case flare = "Flares"
 
-    /// Light leaks add light (screen), so dark areas of the picture pick up
-    /// their glow; dust and scratches simply sit on top.
+    /// Light leaks and flares add light (screen), so dark areas of the
+    /// picture pick up their glow; dust and scratches simply sit on top.
     var blendMode: BlendMode {
-        self == .leak ? .screen : .normal
+        self == .dust ? .normal : .screen
     }
 }
 

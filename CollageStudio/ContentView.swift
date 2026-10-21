@@ -66,6 +66,10 @@ struct OverlayModeLabel: View {
 /// with a light haptic tick per change.
 struct PageTabBar: View {
     @EnvironmentObject var state: CollageState
+    /// Posts stepped by the drag in progress.
+    @State private var scrubbed = 0
+    /// Finger travel per post when dragging along the dots.
+    private static let scrubStep: CGFloat = 22
 
     var body: some View {
         if state.pictureCount > 1 {
@@ -74,32 +78,37 @@ struct PageTabBar: View {
             let whole = state.slides > 1 && state.focusedSlide == nil
             let current = state.currentPicture
             HStack(spacing: 10) {
-                stepButton(system: "chevron.left", enabled: state.canStepPost(-1)) { state.stepPost(-1) }
+                stepButton(system: "chevron.left", enabled: state.canStepPost(-1), quiet: true) { state.stepPost(-1) }
                 .accessibilityLabel("Previous post")
-                // Tap the number for the page menu.
-                Menu { pageMenu } label: {
-                    VStack(spacing: 3) {
-                        Text(whole ? "\(first + 1)–\(first + state.slides) / \(count)" : "\(current + 1) / \(count)")
-                            .font(.subheadline.weight(.semibold).monospacedDigit())
-                            .foregroundColor(.primary)
-                            .contentTransition(.numericText())
-                            .lineLimit(1)
-                        if count <= 24 { PictureDots(whole: whole) }
-                    }
-                    .fixedSize()
-                    .padding(.vertical, 2)
+                // Dots, one per post: drag along them to step through
+                // (left = next, as on the canvas). Hold for the page menu.
+                PictureDots(whole: whole)
+                    .frame(minWidth: 44, minHeight: 26)
                     .contentShape(Rectangle())
-                }
-                .accessibilityLabel(whole
-                    ? "Posts \(first + 1) to \(first + state.slides) of \(count), page \(state.safePageIndex + 1)"
-                    : "Post \(current + 1) of \(count), page \(state.safePageIndex + 1)")
-                .accessibilityHint("Opens the page menu")
-                stepButton(system: "chevron.right", enabled: state.canStepPost(1)) { state.stepPost(1) }
+                    .gesture(DragGesture(minimumDistance: 6)
+                        .onChanged { v in
+                            let steps = Int((-v.translation.width / Self.scrubStep).rounded(.towardZero))
+                            guard steps != scrubbed else { return }
+                            // One post per event: the next waits for this
+                            // one to land.
+                            let dir = steps > scrubbed ? 1 : -1
+                            scrubbed += dir
+                            state.stepPost(dir)
+                        }
+                        .onEnded { _ in scrubbed = 0 })
+                    .accessibilityElement()
+                    .accessibilityLabel(whole
+                        ? "Posts \(first + 1) to \(first + state.slides) of \(count), page \(state.safePageIndex + 1)"
+                        : "Post \(current + 1) of \(count), page \(state.safePageIndex + 1)")
+                    .accessibilityAdjustableAction { d in
+                        state.stepPost(d == .increment ? 1 : -1)
+                    }
+                stepButton(system: "chevron.right", enabled: state.canStepPost(1), quiet: true) { state.stepPost(1) }
                 .accessibilityLabel("Next post")
                 // A wide page: all its pictures at once, or one at a time.
                 if state.slides > 1 {
                     Divider().frame(height: 18)
-                    stepButton(system: whole ? "plus.magnifyingglass" : "rectangle.split.3x1", enabled: true) {
+                    stepButton(system: whole ? "plus.magnifyingglass" : "minus.magnifyingglass", enabled: true) {
                         withAnimation(.spring(response: 0.4, dampingFraction: 0.9)) {
                             state.slideFocus = whole ? 0 : nil
                         }
@@ -116,7 +125,7 @@ struct PageTabBar: View {
                     .shadow(color: .black.opacity(0.15), radius: 8, y: 2)
             )
             .animation(.easeInOut(duration: 0.2), value: current)
-            // Long-press works too.
+            // Hold for the page menu.
             .contextMenu { pageMenu }
         }
     }
@@ -151,11 +160,13 @@ struct PageTabBar: View {
         }
     }
 
-    private func stepButton(system: String, enabled: Bool, action: @escaping () -> Void) -> some View {
+    private func stepButton(system: String, enabled: Bool, quiet: Bool = false, action: @escaping () -> Void) -> some View {
         Button(action: action) {
+            // The arrows are quiet, in the inactive dots' grey.
             Image(systemName: system)
-                .font(.system(size: 14, weight: .bold))
-                .foregroundColor(enabled ? .primary : .secondary.opacity(0.4))
+                .font(.system(size: quiet ? 11 : 14, weight: .bold))
+                .foregroundColor(quiet ? Color.primary.opacity(enabled ? 0.35 : 0.12)
+                                 : enabled ? .primary : .secondary.opacity(0.4))
                 .frame(width: 30, height: 26)
                 .contentShape(Rectangle())
         }
@@ -165,33 +176,53 @@ struct PageTabBar: View {
 
 }
 
-/// Under the picture count: a dot per picture, a wide page's dots joined on
-/// one bar, the one on screen (or the whole page shown) in the accent.
+/// A dot per post, Instagram style: the one on screen (or the whole page
+/// shown) bigger and in the accent, a spread page's dots joined on one bar.
+/// Past `window` posts only those around the current one show, the outer
+/// ones shrinking where more follow.
 struct PictureDots: View {
     @EnvironmentObject var state: CollageState
     let whole: Bool
+    static let window = 9
 
     var body: some View {
-        let current = state.currentPicture
+        let count = state.pictureCount
+        let first = state.firstPicture(ofPage: state.safePageIndex)
+        let onScreen = whole ? first..<(first + state.slides) : state.currentPicture..<(state.currentPicture + 1)
+        let shown: Range<Int> = {
+            guard count > Self.window else { return 0..<count }
+            let center = (onScreen.lowerBound + onScreen.upperBound - 1) / 2
+            let start = min(max(center - Self.window / 2, 0), count - Self.window)
+            return start..<(start + Self.window)
+        }()
         HStack(spacing: 5) {
-            ForEach(Array(state.pages.enumerated()), id: \.element.id) { pi, page in
-                let first = state.firstPicture(ofPage: pi)
-                let n = min(max(page.style.slides, 1), CollageState.maxSlides)
-                HStack(spacing: 3) {
-                    ForEach(0..<n, id: \.self) { k in
-                        let on = pi == state.safePageIndex && (whole || first + k == current)
-                        Circle()
-                            .fill(on ? Color.accentColor : Color.primary.opacity(0.35))
-                            .frame(width: 5, height: 5)
+            ForEach(Array(state.pages.indices), id: \.self) { pi in
+                let pageFirst = state.firstPicture(ofPage: pi)
+                let n = min(max(state.pages[pi].style.slides, 1), CollageState.maxSlides)
+                let lo = max(pageFirst, shown.lowerBound), hi = min(pageFirst + n, shown.upperBound)
+                let posts = lo < hi ? Array(lo..<hi) : []
+                if !posts.isEmpty {
+                    HStack(spacing: 4) {
+                        ForEach(posts, id: \.self) { k in
+                            let on = onScreen.contains(k)
+                            let edge = (k == shown.lowerBound && k > 0)
+                                || (k == shown.upperBound - 1 && k < count - 1)
+                            let d: CGFloat = on ? 8 : edge ? 3.5 : 5.5
+                            Circle()
+                                .fill(on ? Color.accentColor : Color.primary.opacity(0.35))
+                                .frame(width: d, height: d)
+                                .frame(width: 8, height: 8)
+                        }
                     }
-                }
-                .padding(n > 1 ? 1.5 : 0)
-                .background {
-                    if n > 1 { Capsule().fill(Color.primary.opacity(0.15)) }
+                    .padding(n > 1 ? 2 : 0)
+                    .background {
+                        if n > 1 { Capsule().fill(Color.primary.opacity(0.12)) }
+                    }
                 }
             }
         }
-        .accessibilityHidden(true)
+        .animation(.spring(response: 0.3, dampingFraction: 0.8), value: shown)
+        .animation(.spring(response: 0.3, dampingFraction: 0.8), value: onScreen)
     }
 }
 

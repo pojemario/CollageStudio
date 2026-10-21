@@ -34,6 +34,8 @@ enum FocusFinder {
 }
 
 extension CollageState {
+    static let focusQueue = DispatchQueue(label: "focus", qos: .utility)
+
     /// Finds the subject of every photo that hasn't been looked at yet, off
     /// the main thread; each box then crops around it.
     func detectFocusPoints() {
@@ -43,7 +45,10 @@ extension CollageState {
         for img in todo {
             focusChecked.insert(img.id)
             let id = img.id, proxy = img.proxy, source = img.image
-            Task.detached(priority: .utility) {
+            // Vision blocks its thread until done (in the Simulator, for
+            // good), so it runs on its own queue, never in the shared
+            // Swift task pool that grading needs.
+            Self.focusQueue.async {
                 var point = FocusFinder.focus(in: proxy)
                 #if DEBUG
                 // Vision's models don't run in the Simulator: `-fakeFocus`
@@ -53,7 +58,7 @@ extension CollageState {
                 }
                 #endif
                 let found = point
-                await MainActor.run {
+                DispatchQueue.main.async {
                     guard let point = found, let pi = self.pageIndex(containing: id),
                           let idx = self.pages[pi].images.firstIndex(where: { $0.id == id }),
                           self.pages[pi].images[idx].image === source else { return }
