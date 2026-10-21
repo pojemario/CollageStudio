@@ -1156,6 +1156,13 @@ extension CollageState {
                 guard let id = self.selectedImageId else { return }
                 // `-withFilter`: under a page filter, as on a styled collage.
                 if args.contains("-withFilter") { self.colorFilter = .amber }
+                // `-withPhoneLook`: a styled page as found on the phone.
+                if args.contains("-withPhoneLook") {
+                    self.colorFilter = .brownie
+                    self.filterStrength = 85
+                    self.effects = [.contrast: 54, .exposure: 32, .halation: 15, .fade: 5]
+                    self.calibration = CameraCalibration(storage: [0, 0, 0, 0, 0, -31, 0])
+                }
                 self.beginPhotoEdit(id: id)
                 self.editEffects = [:]
                 DispatchQueue.main.asyncAfter(deadline: .now() + 3) {

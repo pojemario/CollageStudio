@@ -370,7 +370,9 @@ extension ContentGrade {
         if let photo { c = photo.apply(c.r, c.g, c.b) }
         // Camera calibration first, like Lightroom's profile stage, then the
         // Basic tone controls.
-        if let m = calibrationMatrix { c = calibration.apply(r, g, b, matrix: m) }
+        // (On the photo's edited color: starting again from the original
+        // would undo the photo's own edits on any page with calibration.)
+        if let m = calibrationMatrix { c = calibration.apply(c.r, c.g, c.b, matrix: m) }
         if !tone.isColorIdentity { c = tone.apply(c.r, c.g, c.b) }
         if hasFilter {
             // k above 1 extrapolates past the filter (stronger look).
