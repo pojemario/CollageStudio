@@ -228,7 +228,7 @@ struct FloatingTabBar: View {
                     hoverTab = nil
                 } else {
                     if i != activeTab || !state.panelTabShown { glide() }
-                    select(i, tapped: true)
+                    select(i)
                 }
             }
     }
@@ -260,15 +260,14 @@ struct FloatingTabBar: View {
         return min(max(Int(x / tabWidth), 0), Self.tabs.count - 1)
     }
 
-    /// Opens a tab's panel. Tapping the tab that's already open closes its
-    /// panel, and tapping it again reopens it (a scrub always opens).
-    private func select(_ i: Int, tapped: Bool = false) {
+    /// Opens a tab's panel. A tap never closes it (double-tap the panel's
+    /// grabber to put it away).
+    private func select(_ i: Int) {
         Diagnostics.log("tab \(Self.tabs[i]) (row \(Int(rowWidth))) · \(state.diagnosticsSummary)")
         #if canImport(UIKit)
         UIImpactFeedbackGenerator(style: .light).impactOccurred()
         #endif
         state.closeRatio()
-        let wasShown = state.panelTabShown
         // Nothing chosen yet (a saved collage just opened): open this tab.
         state.panelTabShown = true
         if state.textEditTargetId != nil || state.protrusionTargetId != nil || state.photoEditTargetId != nil {
@@ -279,9 +278,8 @@ struct FloatingTabBar: View {
             state.selectImage(nil, reopenPanel: false)
             state.selectedPanelTab = i
         } else {
-            let flip = tapped && wasShown && i == state.selectedPanelTab
             state.selectedPanelTab = i
-            withAnimation(.easeInOut(duration: 0.25)) { state.isPanelOpen = flip ? !state.isPanelOpen : true }
+            withAnimation(.easeInOut(duration: 0.25)) { state.isPanelOpen = true }
         }
     }
 }
@@ -463,10 +461,27 @@ struct BottomPanelView: View {
         VStack(spacing: 0) {
             // Grabber: drag it to size the panel (it stays where it's left,
             // and the content scrolls when it doesn't all fit). It doesn't
-            // close the panel: a tap on the canvas does.
+            // close the panel on its own: a tap on the canvas does, and a
+            // double-tap here puts it away with no tab selected.
+            // Cut short (it can grow): inset like a slider's track, a hint
+            // there's more. At full height: the plain gray bar.
+            // Lit from the upper left (about 120°): the top-left inner edge
+            // falls in shadow, the bottom-right one and the rim below catch
+            // the light.
             Capsule()
-                .fill(Color.primary.opacity(0.22))
-                .frame(width: 36, height: 5)
+                .fill(scrolls
+                      ? AnyShapeStyle(Color.primary.opacity(0.2)
+                            .shadow(.inner(color: .black.opacity(0.6), radius: 1.2, x: 0.8, y: 1.4))
+                            .shadow(.inner(color: .white.opacity(0.35), radius: 0.8, x: -0.6, y: -1)))
+                      : AnyShapeStyle(Color.primary.opacity(0.22)))
+                .overlay {
+                    if scrolls {
+                        Capsule().strokeBorder(Color.black.opacity(0.22), lineWidth: 0.5)
+                    }
+                }
+                .shadow(color: .white.opacity(scrolls ? 0.85 : 0), radius: 0.3, x: 0.6, y: 1)
+                .frame(width: 36, height: scrolls ? 7 : 5)
+                .animation(.easeInOut(duration: 0.2), value: scrolls)
                 .padding(.top, 8)
                 .padding(.bottom, 8)
                 .frame(maxWidth: .infinity)
@@ -475,6 +490,14 @@ struct BottomPanelView: View {
                 .padding(.bottom, -6)
                 .panelChrome(state)
                 .gesture(resizeGesture)
+                .simultaneousGesture(TapGesture(count: 2).onEnded {
+                    Diagnostics.log("panel put away (grabber)")
+                    state.collapsePanel()
+                    withAnimation(.easeInOut(duration: 0.25)) { state.panelTabShown = false }
+                    #if canImport(UIKit)
+                    UIImpactFeedbackGenerator(style: .light).impactOccurred()
+                    #endif
+                })
                 .accessibilityHidden(true)
                 .zIndex(1)
 

@@ -388,52 +388,67 @@ struct ModernSlider: View {
             let fraction = min(max(CGFloat((value - range.lowerBound) / span), 0), 1)
             let thumbX = thumbBase / 2 + fraction * usable
 
-            // A scale of tick marks, lit in the accent from the slider's
-            // origin (its reset value) to the knob, with a slim glowing knob.
-            let origin = min(max(CGFloat(((resetValue ?? range.lowerBound) - range.lowerBound) / span), 0), 1)
-            let originX = thumbBase / 2 + origin * usable
-            // Rounded like the knob (a 12 pt capsule), not a full pill.
-            let bed = RoundedRectangle(cornerRadius: 6, style: .continuous)
+            // One inset track pressed into the panel, with a hairline rim,
+            // filled with a glossy accent from its start to the knob, and a
+            // slim glowing knob.
+            let trackH: CGFloat = 10
+            let track = Capsule(style: .continuous)
+            let trackShadow = ShadowStyle.inner(color: .black.opacity(isDark ? 0.6 : 0.28), radius: 1.5, y: 1)
             ZStack(alignment: .leading) {
-                // A solid bed under the scale, so it reads on any panel, light
-                // or dark; a color track also shows its colors faintly in it.
-                bed
-                    .fill(isDark ? Color.white.opacity(0.09) : Color.black.opacity(0.07))
-                    .overlay {
-                        if let trackColors {
-                            bed
-                                .fill(LinearGradient(colors: trackColors, startPoint: .leading, endPoint: .trailing))
-                                .opacity(isDark ? 0.28 : 0.35)
-                        }
+                Group {
+                    if let trackColors {
+                        // A color track shows its colors in the inset.
+                        track.fill(LinearGradient(colors: trackColors, startPoint: .leading, endPoint: .trailing)
+                            .shadow(trackShadow))
+                    } else {
+                        track.fill(Color.black.opacity(isDark ? 0.35 : 0.09).shadow(trackShadow))
                     }
-                    .overlay(bed.strokeBorder(isDark ? Color.white.opacity(0.08) : Color.black.opacity(0.06),
-                                                    lineWidth: 0.6))
-                    // Edge to edge: lines up with the name above it (two-line
-                    // rows) and the value box beside it.
-                    .frame(height: 20)
+                }
+                .overlay(track.strokeBorder(isDark ? Color.white.opacity(0.14) : Color.black.opacity(0.14),
+                                            lineWidth: 0.5))
+                .frame(height: trackH)
 
-                TickScale(from: thumbBase / 2, to: width - thumbBase / 2,
-                          litFrom: min(originX, thumbX), litTo: max(originX, thumbX),
-                          range: range, step: step, origin: resetValue ?? range.lowerBound,
-                          colors: trackColors, isDark: isDark)
-                    .frame(height: 14)
+                // Glossy accent from the start to the knob: a bright sheen on
+                // top, deeper toward the bottom edge.
+                if trackColors == nil {
+                    let fillW = max(thumbX, trackH)
+                    track
+                        .fill(LinearGradient(stops: [
+                            .init(color: Color.accentColor.opacity(0.75), location: 0),
+                            .init(color: Color.accentColor, location: 0.55),
+                            .init(color: Color.accentColor.opacity(0.85), location: 1)],
+                            startPoint: .top, endPoint: .bottom))
+                        .overlay(alignment: .top) {
+                            // The gloss: a soft white highlight on the upper half.
+                            track
+                                .fill(LinearGradient(colors: [Color.white.opacity(0.55), Color.white.opacity(0)],
+                                                     startPoint: .top, endPoint: .bottom))
+                                .frame(height: trackH * 0.5)
+                                .padding(.horizontal, 1.5)
+                                .padding(.top, 1)
+                        }
+                        .overlay(track.strokeBorder(Color.black.opacity(0.12), lineWidth: 0.5))
+                        .frame(width: fillW, height: trackH)
+                }
 
                 // Soft glow around the knob.
-                Capsule()
+                Circle()
                     .fill(Color.accentColor.opacity(isDragging ? 0.45 : 0.28))
-                    .frame(width: 30, height: 14)
+                    .frame(width: 24, height: 24)
                     .blur(radius: 7)
-                    .offset(x: thumbX - 15)
+                    .offset(x: thumbX - 12)
                     .allowsHitTesting(false)
 
-                Capsule()
+                // A round knob, a little bigger while dragged.
+                let knob: CGFloat = isDragging ? 26 : 22
+                Circle()
                     .fill(LinearGradient(colors: [Color(white: 1), Color(red: 1, green: 0.95, blue: 0.86)],
                                          startPoint: .top, endPoint: .bottom))
-                    .overlay(Capsule().strokeBorder(Color.black.opacity(0.12), lineWidth: 0.5))
-                    .frame(width: isDragging ? 16 : 12, height: isDragging ? 26 : 22)
+                    .overlay(Circle().strokeBorder(Color.black.opacity(0.12), lineWidth: 0.5))
+                    .frame(width: knob, height: knob)
                     .shadow(color: Color.accentColor.opacity(0.8), radius: isDragging ? 6 : 4)
                     .shadow(color: .black.opacity(0.25), radius: 1.5, y: 1)
-                    .offset(x: thumbX - (isDragging ? 8 : 6))
+                    .offset(x: thumbX - knob / 2)
             }
             .frame(maxHeight: .infinity, alignment: .leading)
             .contentShape(Rectangle())
@@ -803,7 +818,8 @@ struct BorderStylePicker: View {
         } label: {
             HStack(spacing: 4) {
                 BorderPatternPreview(style: state.borderStyle)
-                    .frame(width: 50, height: 16)
+                    .frame(maxWidth: .infinity)
+                    .frame(height: 16)
                 Image(systemName: "chevron.up.chevron.down")
                     .font(.system(size: 9, weight: .semibold))
                     .foregroundColor(.secondary)
@@ -859,12 +875,33 @@ struct LayoutPanel: View {
             }
             .pickerStyle(.segmented)
             .segmentDots(Page.allCases.map(\.rawValue), marked: Page.allCases.map(isChanged))
+            // Double-tapping a part puts its settings back to the defaults.
+            .doubleTapSegment(Page.allCases.count) { reset(Page.allCases[$0]) }
             .panelChrome(state)
             switch state.layoutPage {
             case .layout: layoutPage
             case .border: BorderPanel()
             case .canvas: canvasPage
             }
+        }
+    }
+
+    /// A part's settings back to the defaults. (Spread across stays: it
+    /// decides how many posts the page is, not how it looks.)
+    private func reset(_ page: Page) {
+        let d = PageStyle()
+        switch page {
+        case .layout:
+            state.setLanes(.columns)
+            state.numCols = d.numCols
+            state.gap = d.gap
+            state.cornerRadius = d.cornerRadius
+            state.backgroundColor = d.backgroundColor
+            state.rebuildLayout(resetGrows: true)
+        case .border: state.resetBorder()
+        case .canvas:
+            state.canvasMargin = 0
+            state.canvasRotation = 0
         }
     }
 
@@ -913,13 +950,8 @@ struct LayoutPanel: View {
             PageWidthRow()
 
             // Shuffle is hidden for now: ShuffleButton().panelChrome(state, keep: "Shuffle")
-            // Apply to All only means something with more than one page.
-            if state.pages.count > 1 {
-                ActionButton(label: "Apply to All", sf: "square.on.square") { state.applyStyleToAllPages() }
-                    .disabled(!state.canApplyToAll)
-                    .opacity(state.canApplyToAll ? 1 : 0.5)
-                    .panelChrome(state)
-            }
+            // Apply to All is hidden for now (with more than one page it was:
+            // ActionButton("Apply to All") { state.applyStyleToAllPages() }).
         }
     }
 
@@ -953,10 +985,12 @@ struct BorderPanel: View {
                                   presetTitle: "Same as Background color",
                                   presetColor: { state.backgroundColor },
                                   depth: 0.55, accessibilityTitle: "Border color")
+                // As wide as the sliders: up to the value column.
                 BorderStylePicker()
                     .disabled(off)
                     .opacity(off ? 0.4 : 1)
-                Spacer()
+                    .frame(maxWidth: .infinity)
+                Color.clear.frame(width: LabeledSlider.twoDigitValueWidth, height: 24)
             }
             row("Position") {
                 Color.clear.frame(width: 24, height: 24)   // the swatch column
@@ -1012,6 +1046,9 @@ struct ColorSwatchButton: View {
     var lockedMessage: String? = nil
     /// Scales how pronounced the recessed (inset) effect is. 1 = full.
     var depth: CGFloat = 1.0
+    /// Embossed instead: the swatch stands out of the panel like a 3D
+    /// button (lit on the light side, a shadow cast away from it).
+    var raised = true
     /// What VoiceOver calls the swatch.
     var accessibilityTitle = "Color"
     @State private var showPicker = false
@@ -1029,6 +1066,27 @@ struct ColorSwatchButton: View {
         return (dark, lit, into)
     }
 
+    /// The embossed swatch: a flat face of the color (no gloss), a bright
+    /// bevel on the lit edge and a faint one on the far side, and a shadow
+    /// cast away from the light.
+    private func raisedSwatch(_ shape: RoundedRectangle, _ g: (dark: UnitPoint, lit: UnitPoint, into: CGSize)) -> some View {
+        ZStack {
+            if supportsOpacity {
+                CheckerboardSwatch(cornerRadius: size * 0.3)
+            }
+            shape.fill(color)
+            // Bevel: bright edge facing the light, dark edge away from it.
+            shape.strokeBorder(
+                LinearGradient(colors: [.white.opacity(0.8), .black.opacity(0.08)],
+                               startPoint: g.dark, endPoint: g.lit),
+                lineWidth: 0.8)
+        }
+        .frame(width: size, height: size)
+        // Cast away from the light, plus a tight contact shadow.
+        .shadow(color: .black.opacity(0.3), radius: 2.5, x: g.into.width, y: g.into.height)
+        .shadow(color: .black.opacity(0.2), radius: 0.5, x: g.into.width * 0.3, y: g.into.height * 0.3)
+    }
+
     var body: some View {
         #if canImport(UIKit)
         Button {
@@ -1040,6 +1098,9 @@ struct ColorSwatchButton: View {
         } label: {
             let shape = RoundedRectangle(cornerRadius: size * 0.3, style: .continuous)
             let g = lightGeometry
+            if raised {
+                raisedSwatch(shape, g)
+            } else {
             ZStack {
                 if supportsOpacity {
                     CheckerboardSwatch(cornerRadius: size * 0.3)
@@ -1068,6 +1129,7 @@ struct ColorSwatchButton: View {
                 )
             }
             .frame(width: size, height: size)
+            }
         }
         .buttonStyle(.plain)
         .accessibilityLabel(accessibilityTitle)
@@ -1910,70 +1972,5 @@ extension Color {
         let g = Double((int >> 8)  & 0xFF) / 255
         let b = Double(int         & 0xFF) / 255
         self.init(red: r, green: g, blue: b)
-    }
-}
-
-
-/// The slider's scale: tick marks at the slider's values, accent between
-/// `litFrom` and `litTo` (or, with `colors`, the colors left to right:
-/// bright where lit, softer elsewhere).
-struct TickScale: View {
-    let from: CGFloat
-    let to: CGFloat
-    let litFrom: CGFloat
-    let litTo: CGFloat
-    let range: ClosedRange<Double>
-    let step: Double
-    /// The value the scale counts from (a taller tick).
-    let origin: Double
-    var colors: [Color]? = nil
-    var isDark: Bool
-
-    /// The value between ticks: one tick per step when they fit (Cols:
-    /// 1, 2, 3 …), otherwise a round multiple of it (5, 10 …) at least
-    /// `minGap` points apart.
-    static func tickInterval(range: ClosedRange<Double>, step: Double, width: CGFloat, minGap: CGFloat = 6) -> Double {
-        let span = max(range.upperBound - range.lowerBound, 0.0001)
-        let unit = step > 0 ? step : span / 40
-        for k in [1.0, 2, 5, 10, 20, 25, 50, 100, 200, 500] {
-            let interval = unit * k
-            if CGFloat(interval / span) * width >= minGap { return interval }
-        }
-        return span / 10
-    }
-
-    var body: some View {
-        Canvas { ctx, size in
-            let span = max(range.upperBound - range.lowerBound, 0.0001)
-            let width = to - from
-            let interval = Self.tickInterval(range: range, step: step, width: width)
-            // Few ticks (one per value): all the same, taller. Many: every
-            // fifth taller, like a ruler, counted from the origin.
-            let sparse = span / interval <= 12
-            var lit = Path(), unlit = Path()
-            var v = (range.lowerBound / interval).rounded(.up) * interval
-            while v <= range.upperBound + interval * 0.001 {
-                let x = from + CGFloat((v - range.lowerBound) / span) * width
-                let n = ((v - origin) / interval).rounded()
-                let major = sparse || abs(n.truncatingRemainder(dividingBy: 5)) < 0.5
-                let h: CGFloat = major ? 11 : 7
-                v += interval
-                let tick = Path(roundedRect: CGRect(x: x - 1, y: (size.height - h) / 2, width: 2, height: h),
-                                cornerRadius: 1)
-                if x >= litFrom - 0.5 && x <= litTo + 0.5 { lit.addPath(tick) } else { unlit.addPath(tick) }
-            }
-            if let colors {
-                let shading = GraphicsContext.Shading.linearGradient(
-                    Gradient(colors: colors), startPoint: CGPoint(x: from, y: 0), endPoint: CGPoint(x: to, y: 0))
-                ctx.opacity = 0.75
-                ctx.fill(unlit, with: shading)
-                ctx.opacity = 1
-                ctx.fill(lit, with: shading)
-            } else {
-                ctx.fill(unlit, with: .color(Color.primary.opacity(isDark ? 0.32 : 0.28)))
-                ctx.fill(lit, with: .color(Color.accentColor))
-            }
-        }
-        .allowsHitTesting(false)
     }
 }

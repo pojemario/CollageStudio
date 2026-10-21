@@ -699,6 +699,12 @@ extension View {
     /// Small accent dots beside the labels of a segmented switch, for the
     /// parts whose settings are changed (like the tab bar's dots). `titles`
     /// are the segment labels, in order, so each dot sits just after its text.
+    /// Double-tapping a segment of a segmented picker (`count` equal
+    /// segments) calls `reset` with its index; the first tap selects it.
+    func doubleTapSegment(_ count: Int, reset: @escaping (Int) -> Void) -> some View {
+        modifier(SegmentDoubleTap(count: count, reset: reset))
+    }
+
     func segmentDots(_ titles: [String], marked: [Bool]) -> some View {
         overlay {
             HStack(spacing: 0) {
@@ -725,12 +731,32 @@ extension View {
     }
 }
 
+private struct SegmentDoubleTap: ViewModifier {
+    let count: Int
+    let reset: (Int) -> Void
+    @State private var width: CGFloat = 0
+
+    func body(content: Content) -> some View {
+        content
+            .onGeometryChange(for: CGFloat.self) { $0.size.width } action: { width = $0 }
+            .simultaneousGesture(
+                SpatialTapGesture(count: 2).onEnded { t in
+                    guard width > 0, count > 0 else { return }
+                    let i = min(max(Int(t.location.x / (width / CGFloat(count))), 0), count - 1)
+                    withAnimation(.easeInOut(duration: 0.2)) { reset(i) }
+                    #if canImport(UIKit)
+                    UIImpactFeedbackGenerator(style: .light).impactOccurred()
+                    #endif
+                }
+            )
+    }
+}
+
 /// The Looks tab: a filter, then fine-tuning — "Filter" (the filter
 /// tiles) and "Edit" (light, color, HSL, calibration, detail, effects).
 struct LooksPanel: View {
     @EnvironmentObject var state: CollageState
     enum Page: String, CaseIterable { case filter = "Filter", effects = "Effects", edit = "Edit" }
-    @State private var switchWidth: CGFloat = 0
 
     var body: some View {
         VStack(spacing: 12) {
@@ -740,16 +766,9 @@ struct LooksPanel: View {
             .pickerStyle(.segmented)
             // A dot by each part whose settings are changed.
             .segmentDots(Page.allCases.map(\.rawValue), marked: Page.allCases.map(isChanged))
-            .onGeometryChange(for: CGFloat.self) { $0.size.width } action: { switchWidth = $0 }
-            // Double-tapping "Edit" resets everything under it (Light,
-            // Color, HSL, CC, Detail), like double-tapping a slider's name.
-            .simultaneousGesture(
-                SpatialTapGesture(count: 2).onEnded { t in
-                    guard switchWidth > 0 else { return }
-                    let i = min(Int(t.location.x / (switchWidth / CGFloat(Page.allCases.count))), Page.allCases.count - 1)
-                    if Page.allCases[i] == .edit { resetEdit() }
-                }
-            )
+            // Double-tapping a part resets it: Filter to none, Effects to
+            // zero, Edit everything under it (Light, Color, HSL, CC, Detail).
+            .doubleTapSegment(Page.allCases.count) { reset(Page.allCases[$0]) }
             .panelChrome(state)
             switch state.looksPage {
             case .filter: FilterControls()
@@ -769,17 +788,18 @@ struct LooksPanel: View {
         }
     }
 
-    private func resetEdit() {
-        let edits = Self.edits
-        guard state.hasEffects(in: edits) || !state.hsl.isIdentity || !state.calibration.isIdentity else { return }
-        withAnimation(.easeInOut(duration: 0.2)) {
-            state.resetEffects(in: edits)
+    private func reset(_ page: Page) {
+        switch page {
+        case .filter:
+            state.colorFilter = .none
+            state.filterStrength = PageLook().filterStrength
+        case .effects:
+            state.resetEffects(in: CollageEffect.looks)
+        case .edit:
+            state.resetEffects(in: Self.edits)
             state.resetHSL()
             state.calibration = CameraCalibration()
         }
-        #if canImport(UIKit)
-        UIImpactFeedbackGenerator(style: .light).impactOccurred()
-        #endif
     }
 }
 
@@ -1087,6 +1107,17 @@ private struct AutoChip: View {
             .frame(height: 30)
             .background(Capsule().fill(on ? Color.accentColor : Color.clear))
             .overlay(Capsule().strokeBorder(Color.accentColor, lineWidth: on ? 0 : 1.2))
+            // Applied: the same corner dot the page chips show when changed.
+            .overlay(alignment: .topTrailing) {
+                if on {
+                    Circle()
+                        .fill(Color.white)
+                        .frame(width: 6, height: 6)
+                        .padding(.top, 4)
+                        .padding(.trailing, 6)
+                        .transition(.scale.combined(with: .opacity))
+                }
+            }
             .contentShape(Capsule())
             .animation(.easeInOut(duration: 0.2), value: on)
         }
