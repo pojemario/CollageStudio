@@ -228,7 +228,7 @@ struct FloatingTabBar: View {
                     hoverTab = nil
                 } else {
                     if i != activeTab || !state.panelTabShown { glide() }
-                    select(i)
+                    select(i, tapped: true)
                 }
             }
     }
@@ -260,14 +260,15 @@ struct FloatingTabBar: View {
         return min(max(Int(x / tabWidth), 0), Self.tabs.count - 1)
     }
 
-    /// Opens a tab's panel. A tap never closes it (the grabber, a tap on
-    /// the canvas or working on the collage lower it).
-    private func select(_ i: Int) {
+    /// Opens a tab's panel. Tapping the tab that's already open closes its
+    /// panel, and tapping it again reopens it (a scrub always opens).
+    private func select(_ i: Int, tapped: Bool = false) {
         Diagnostics.log("tab \(Self.tabs[i]) (row \(Int(rowWidth))) · \(state.diagnosticsSummary)")
         #if canImport(UIKit)
         UIImpactFeedbackGenerator(style: .light).impactOccurred()
         #endif
         state.closeRatio()
+        let wasShown = state.panelTabShown
         // Nothing chosen yet (a saved collage just opened): open this tab.
         state.panelTabShown = true
         if state.textEditTargetId != nil || state.protrusionTargetId != nil || state.photoEditTargetId != nil {
@@ -278,8 +279,9 @@ struct FloatingTabBar: View {
             state.selectImage(nil, reopenPanel: false)
             state.selectedPanelTab = i
         } else {
+            let flip = tapped && wasShown && i == state.selectedPanelTab
             state.selectedPanelTab = i
-            withAnimation(.easeInOut(duration: 0.25)) { state.isPanelOpen = true }
+            withAnimation(.easeInOut(duration: 0.25)) { state.isPanelOpen = flip ? !state.isPanelOpen : true }
         }
     }
 }

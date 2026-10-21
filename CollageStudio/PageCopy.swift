@@ -58,11 +58,13 @@ extension CollageState {
                 let src = clip.style, look = clip.look
                 if parts.contains(.layout) {
                     let cols = max(1, min(src.numCols, max(1, min(6, page.images.count))))
+                    // A single-post page never takes a strip.
+                    let strip = src.isStrip && page.style.slides > 1
                     let relayout = cols != page.style.numCols || src.isRows != page.style.isRows
-                        || src.isStrip != page.style.isStrip
+                        || strip != page.style.isStrip
                     page.style.numCols = cols
                     page.style.isRows = src.isRows
-                    page.style.isStrip = src.isStrip
+                    page.style.isStrip = strip
                     page.style.gap = src.gap
                     page.style.cornerRadius = src.cornerRadius
                     if relayout {

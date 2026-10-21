@@ -145,6 +145,25 @@ struct CanvasContainerView: View {
                         .animation(.spring(response: 0.4, dampingFraction: 0.9), value: state.focusedSlide)
                         .padding(.top, pagerReserve)
                         .animation(.easeInOut(duration: 0.25), value: pagerReserve)
+
+                    // The empty space under the collage: a sideways swipe
+                    // there steps posts, like the pager's arrows.
+                    let freeBelow = contentH - (displayH + padding + pagerReserve)
+                    if !state.toolbarHidden && state.pictureCount > 1 && freeBelow > 40 {
+                        Color.clear
+                            .contentShape(Rectangle())
+                            .frame(height: freeBelow)
+                            .gesture(
+                                DragGesture(minimumDistance: 20)
+                                    .onEnded { v in
+                                        let dx = v.translation.width
+                                        guard abs(dx) > 50, abs(dx) > abs(v.translation.height) * 1.5 else { return }
+                                        state.stepPost(dx < 0 ? 1 : -1)
+                                    }
+                            )
+                            .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .bottom)
+                            .accessibilityHidden(true)
+                    }
                 }
                 .frame(width: contentW, height: contentH)
                 .offset(y: textShift)
@@ -350,18 +369,8 @@ struct SlideCuts: View {
                     }
                 }
                 // White under dark: reads on light and dark photos alike.
-                .stroke(Color.white.opacity(0.9), style: StrokeStyle(lineWidth: 1.5, dash: [6, 4]))
+                .stroke(Color.white.opacity(0.9), style: StrokeStyle(lineWidth: 2.25, dash: [6, 4]))
                 .shadow(color: .black.opacity(0.45), radius: 1)
-
-                ForEach(0..<slides, id: \.self) { i in
-                    Text("\(i + 1)")
-                        .font(.system(size: 10, weight: .bold, design: .rounded))
-                        .foregroundStyle(.white)
-                        .padding(.horizontal, 6)
-                        .padding(.vertical, 2)
-                        .background(Capsule().fill(Color.black.opacity(0.45)))
-                        .position(x: w * (CGFloat(i) + 0.5), y: 12)
-                }
             }
         }
         .allowsHitTesting(false)

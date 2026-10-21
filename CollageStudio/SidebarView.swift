@@ -186,7 +186,7 @@ struct PageWidthRow: View {
     @EnvironmentObject var state: CollageState
 
     var body: some View {
-        // Reads as a sentence: Spread across (−) 2 (+) posts
+        // Reads as a sentence: Spread across [−] 2 [+] posts.
         HStack(spacing: 8) {
             Image(systemName: "arrow.left.and.right.square")
                 .font(.system(size: 15, weight: .medium))
@@ -202,7 +202,7 @@ struct PageWidthRow: View {
                 .frame(minWidth: 22)
                 .contentTransition(.numericText())
             stepButton("plus", enabled: state.slides < CollageState.maxSlides) { state.setSlides(state.slides + 1) }
-            Text(state.slides == 1 ? "post" : "posts")
+            Text("posts.")
                 .font(.system(size: 14, weight: .medium))
                 .lineLimit(1)
                 .lineLimit(1)
@@ -220,12 +220,14 @@ struct PageWidthRow: View {
         Button {
             withAnimation(.easeInOut(duration: 0.2)) { action() }
         } label: {
+            let shape = RoundedRectangle(cornerRadius: 8, style: .continuous)
             Image(systemName: sf)
-                .font(.system(size: 15, weight: .heavy))
-                .foregroundStyle(enabled ? Color.white : Color.secondary.opacity(0.6))
-                .frame(width: 34, height: 34)
-                .background(Circle().fill(enabled ? Color.accentColor : Color.secondary.opacity(0.15)))
-                .contentShape(Circle())
+                .font(.system(size: 13, weight: .bold))
+                .foregroundStyle(enabled ? Color.accentColor : Color.secondary.opacity(0.4))
+                .frame(width: 32, height: 28)
+                .background(shape.fill(Color.primary.opacity(0.08)))
+                .overlay(shape.strokeBorder(Color.primary.opacity(0.06), lineWidth: 0.5))
+                .contentShape(shape)
         }
         .buttonStyle(.plain)
         .disabled(!enabled)
@@ -719,9 +721,11 @@ struct LanesSwitch: View {
                 .tag(CollageState.Lanes.columns)
             Image(systemName: "square.split.1x2").accessibilityLabel("Rows")
                 .tag(CollageState.Lanes.rows)
-            // One row of photos at their own shapes — for wide pages.
-            Image(systemName: "rectangle.split.3x1").accessibilityLabel("Strip")
-                .tag(CollageState.Lanes.strip)
+            // One row of photos at their own shapes — spread pages only.
+            if state.slides > 1 {
+                Image(systemName: "rectangle.split.3x1").accessibilityLabel("Strip")
+                    .tag(CollageState.Lanes.strip)
+            }
         }
         .pickerStyle(.segmented)
         .labelsHidden()

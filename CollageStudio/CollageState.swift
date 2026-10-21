@@ -146,6 +146,32 @@ class CollageState: ObservableObject {
         }
     }
 
+    /// The post one step back (-1) or on (+1) from what's shown; with a
+    /// spread page shown whole, the neighbouring pages'.
+    private func postTarget(_ dir: Int) -> Int {
+        let first = firstPicture(ofPage: safePageIndex)
+        if slides > 1 && focusedSlide == nil { return dir < 0 ? first - 1 : first + slides }
+        return currentPicture + dir
+    }
+
+    func canStepPost(_ dir: Int) -> Bool {
+        let k = postTarget(dir)
+        return k >= 0 && k < pictureCount
+    }
+
+    /// Previous / next post, as the pager's arrows (and a swipe under the
+    /// canvas) do. Moving to another page also lowers the bottom panel.
+    func stepPost(_ dir: Int) {
+        guard canStepPost(dir) else { return }
+        let k = postTarget(dir)
+        let page = pages.indices.last { firstPicture(ofPage: $0) <= k } ?? 0
+        if page != safePageIndex { collapsePanel() }
+        goToPicture(k)
+        #if canImport(UIKit)
+        UISelectionFeedbackGenerator().selectionChanged()
+        #endif
+    }
+
     @Published var customWidth: String = "1200"
     @Published var customHeight: String = "900"
     @Published var customUnit: CustomUnit = .px
@@ -309,11 +335,13 @@ class CollageState: ObservableObject {
             let slides = pages[pi].style.slides
             pages[pi].style = source
             pages[pi].style.slides = slides
+            // A single-post page never takes a strip, even later on.
+            pages[pi].style.isStrip = source.isStrip && slides > 1
             // Columns may have changed, so rebuild that page's layout
             pages[pi].layout.resetGrows()
             pages[pi].layout.rebuild(images: pages[pi].images,
                                      order: pages[pi].order,
-                                     numCols: source.numCols, strip: source.isStrip)
+                                     numCols: source.numCols, strip: pages[pi].style.isStrip)
         }
         lastAppliedStyle = source
     }
@@ -2096,7 +2124,10 @@ class CollageState: ObservableObject {
     func setSlides(_ n: Int) {
         let n = min(max(n, 1), Self.maxSlides)
         guard n != slides else { return }
+        let wasStrip = isStrip
         currentPage.style.slides = n
+        // Back to one post: Strip goes (it's for spread pages only).
+        if n == 1 { currentPage.style.isStrip = false }
         if let f = slideFocus { slideFocus = min(f, n - 1) }
         Diagnostics.log("page \(safePageIndex + 1) \(n) pictures wide · canvas \(Int(canvasSize.width))x\(Int(canvasSize.height))")
         for i in currentPage.images.indices {
@@ -2106,7 +2137,7 @@ class CollageState: ObservableObject {
             currentPage.images[i].rotation = 0
             currentPage.images[i].lastBoxSize = .zero
         }
-        rebuildLayout()
+        rebuildLayout(resetGrows: wasStrip != isStrip)
     }
 
     /// `slides` slides of `slide` side by side.

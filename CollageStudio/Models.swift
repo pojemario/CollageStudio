@@ -481,8 +481,14 @@ struct PageStyle: Equatable {
     /// The lanes run across as rows instead of down as columns.
     var isRows: Bool = false
     /// Strip: every photo side by side in one row, each as wide as its own
-    /// shape allows (a carousel strip). Overrides columns and rows.
-    var isStrip: Bool = false
+    /// shape allows (a carousel strip). Overrides columns and rows. Only on
+    /// a page spread across more than one post; a single post lays out as
+    /// columns (also when Apply to All or pasted settings bring a strip).
+    var isStrip: Bool {
+        get { stripLanes && slides > 1 }
+        set { stripLanes = newValue }
+    }
+    private var stripLanes = false
     /// How many pictures wide the page is: 1 is a single picture; more make
     /// a wide page, exported as that many pictures that join up seamlessly
     /// when swiped (each of the collage's ratio).

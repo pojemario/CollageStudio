@@ -74,9 +74,7 @@ struct PageTabBar: View {
             let whole = state.slides > 1 && state.focusedSlide == nil
             let current = state.currentPicture
             HStack(spacing: 10) {
-                stepButton(system: "chevron.left", enabled: whole ? first > 0 : current > 0) {
-                    step(whole ? first - 1 : current - 1)
-                }
+                stepButton(system: "chevron.left", enabled: state.canStepPost(-1)) { state.stepPost(-1) }
                 .accessibilityLabel("Previous post")
                 // Tap the number for the page menu.
                 Menu { pageMenu } label: {
@@ -96,10 +94,7 @@ struct PageTabBar: View {
                     ? "Posts \(first + 1) to \(first + state.slides) of \(count), page \(state.safePageIndex + 1)"
                     : "Post \(current + 1) of \(count), page \(state.safePageIndex + 1)")
                 .accessibilityHint("Opens the page menu")
-                stepButton(system: "chevron.right",
-                           enabled: whole ? first + state.slides < count : current < count - 1) {
-                    step(whole ? first + state.slides : current + 1)
-                }
+                stepButton(system: "chevron.right", enabled: state.canStepPost(1)) { state.stepPost(1) }
                 .accessibilityLabel("Next post")
                 // A wide page: all its pictures at once, or one at a time.
                 if state.slides > 1 {
@@ -168,16 +163,6 @@ struct PageTabBar: View {
         .disabled(!enabled)
     }
 
-    private func step(_ picture: Int) {
-        guard picture >= 0, picture < state.pictureCount else { return }
-        // Moving to another page also dismisses the bottom panel.
-        let page = state.pages.indices.last { state.firstPicture(ofPage: $0) <= picture } ?? 0
-        if page != state.safePageIndex { state.collapsePanel() }
-        state.goToPicture(picture)
-        #if canImport(UIKit)
-        UISelectionFeedbackGenerator().selectionChanged()
-        #endif
-    }
 }
 
 /// Under the picture count: a dot per picture, a wide page's dots joined on
