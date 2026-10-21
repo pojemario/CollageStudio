@@ -384,7 +384,7 @@ struct ModernSlider: View {
             let thumbX = thumbBase / 2 + fraction * usable
 
             // One inset track pressed into the panel, with a hairline rim,
-            // filled with a glossy accent from its start to the knob, and a
+            // filled with flat accent from its start to the knob, and a
             // slim glowing knob.
             let trackH: CGFloat = 10
             let track = Capsule(style: .continuous)
@@ -403,25 +403,12 @@ struct ModernSlider: View {
                                             lineWidth: 0.5))
                 .frame(height: trackH)
 
-                // Glossy accent from the start to the knob: a bright sheen on
-                // top, deeper toward the bottom edge.
+                // Accent from the start to the knob.
                 if trackColors == nil {
                     let fillW = max(thumbX, trackH)
+                    // One flat color, no gradient or gloss.
                     track
-                        .fill(LinearGradient(stops: [
-                            .init(color: Color.accentColor.opacity(0.75), location: 0),
-                            .init(color: Color.accentColor, location: 0.55),
-                            .init(color: Color.accentColor.opacity(0.85), location: 1)],
-                            startPoint: .top, endPoint: .bottom))
-                        .overlay(alignment: .top) {
-                            // The gloss: a soft white highlight on the upper half.
-                            track
-                                .fill(LinearGradient(colors: [Color.white.opacity(0.55), Color.white.opacity(0)],
-                                                     startPoint: .top, endPoint: .bottom))
-                                .frame(height: trackH * 0.5)
-                                .padding(.horizontal, 1.5)
-                                .padding(.top, 1)
-                        }
+                        .fill(Color.accentColor)
                         .overlay(track.strokeBorder(Color.black.opacity(0.12), lineWidth: 0.5))
                         .frame(width: fillW, height: trackH)
                 }
@@ -603,25 +590,24 @@ struct LabeledSlider: View {
 
     /// Icon, name over the slider, value box.
     private func iconRow(_ icon: String) -> some View {
-        HStack(spacing: 12) {
-            iconView(icon)
-                .frame(width: 26)
+        // The slider's frame has room above its knob: the name sits into it.
+        VStack(alignment: .leading, spacing: -3) {
+            Text(label)
+                .font(.panelLabel)
+                .foregroundColor(.primary)
+                .lineLimit(1)
                 .contentShape(Rectangle())
                 .onTapGesture(count: 2) { resetToDefault() }
-                .accessibilityHidden(true)
-            // The slider's frame has room above its knob: the name sits into it.
-            VStack(alignment: .leading, spacing: -3) {
-                Text(label)
-                    .font(.panelLabel)
-                    .foregroundColor(.primary)
-                    .lineLimit(1)
+                .padding(.leading, 26 + 12)
+            // Icon, slider and value on one line, centred on the slider.
+            HStack(spacing: 12) {
+                iconView(icon)
+                    .frame(width: 26)
                     .contentShape(Rectangle())
                     .onTapGesture(count: 2) { resetToDefault() }
-                // The value sits level with its slider, not the row.
-                HStack(spacing: 12) {
-                    slider
-                    valueBox(width: 46)
-                }
+                    .accessibilityHidden(true)
+                slider
+                valueBox(width: 46)
             }
         }
         .background { focusGlass(active: state.activeAdjustment == label) }
