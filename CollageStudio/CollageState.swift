@@ -17,10 +17,13 @@ class CollageState: ObservableObject {
     @Published var pageSlideEdge: Edge = .trailing
 
     /// Navigates with a direction-correct slide.
-    func goToPage(_ index: Int) {
+    func goToPage(_ index: Int, slide: Int? = nil) {
         guard pages.indices.contains(index), index != currentPageIndex else { return }
         pageSlideEdge = index > currentPageIndex ? .trailing : .leading
         DispatchQueue.main.async { [self] in
+            // The picture is picked together with the page, so the page
+            // sliding out never first scrolls to it.
+            if let slide { pendingSlideFocus = slide }
             withAnimation(.easeInOut(duration: 0.3)) { currentPageIndex = index }
         }
     }
@@ -32,8 +35,8 @@ class CollageState: ObservableObject {
             // Highlight maps belong to the previous page's picture
             if currentPageIndex != oldValue { effectMaps.clear() }
             // goToPicture picks the picture before the page changes.
-            if currentPageIndex != oldValue && !isExporting && !pictureFocusSet { slideFocus = 0 }
-            pictureFocusSet = false
+            if currentPageIndex != oldValue && !isExporting { slideFocus = pendingSlideFocus ?? 0 }
+            pendingSlideFocus = nil
             // Tracked box frames belong to the previous page's boxes — but
             // only drop them when a different page is actually shown. didSet
             // also runs when the index is re-assigned or the current page just
@@ -122,8 +125,8 @@ class CollageState: ObservableObject {
     /// The picture on screen (the first one while a wide page is shown whole).
     var currentPicture: Int { firstPicture(ofPage: safePageIndex) + (focusedSlide ?? 0) }
 
-    /// Set by goToPicture so the page change keeps its picture.
-    private var pictureFocusSet = false
+    /// The picture goToPicture wants on the page it's moving to.
+    private var pendingSlideFocus: Int?
 
     /// Shows picture `k`: its page, zoomed to it if the page is wide.
     func goToPicture(_ k: Int) {
@@ -135,9 +138,7 @@ class CollageState: ObservableObject {
                 if i == safePageIndex {
                     withAnimation(.spring(response: 0.4, dampingFraction: 0.9)) { slideFocus = slide }
                 } else {
-                    slideFocus = slide
-                    pictureFocusSet = true
-                    goToPage(i)
+                    goToPage(i, slide: slide)
                 }
                 return
             }

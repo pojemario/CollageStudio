@@ -17,7 +17,7 @@ struct FramesPanel: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 10) {
             if state.slides > 1 {
-                Label("Frames are off on a wide page. Set its Width to 1 picture (Layout) to see them.",
+                Label("Frames are off on a spread page. Set Spread across to 1 post (Layout) to see them.",
                       systemImage: "rectangle.split.3x1")
                     .font(.footnote)
                     .foregroundStyle(.secondary)

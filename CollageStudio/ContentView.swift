@@ -77,7 +77,7 @@ struct PageTabBar: View {
                 stepButton(system: "chevron.left", enabled: whole ? first > 0 : current > 0) {
                     step(whole ? first - 1 : current - 1)
                 }
-                .accessibilityLabel("Previous picture")
+                .accessibilityLabel("Previous post")
                 // Tap the number for the page menu.
                 Menu { pageMenu } label: {
                     VStack(spacing: 3) {
@@ -93,14 +93,14 @@ struct PageTabBar: View {
                     .contentShape(Rectangle())
                 }
                 .accessibilityLabel(whole
-                    ? "Pictures \(first + 1) to \(first + state.slides) of \(count), page \(state.safePageIndex + 1)"
-                    : "Picture \(current + 1) of \(count), page \(state.safePageIndex + 1)")
+                    ? "Posts \(first + 1) to \(first + state.slides) of \(count), page \(state.safePageIndex + 1)"
+                    : "Post \(current + 1) of \(count), page \(state.safePageIndex + 1)")
                 .accessibilityHint("Opens the page menu")
                 stepButton(system: "chevron.right",
                            enabled: whole ? first + state.slides < count : current < count - 1) {
                     step(whole ? first + state.slides : current + 1)
                 }
-                .accessibilityLabel("Next picture")
+                .accessibilityLabel("Next post")
                 // A wide page: all its pictures at once, or one at a time.
                 if state.slides > 1 {
                     Divider().frame(height: 18)
@@ -109,7 +109,7 @@ struct PageTabBar: View {
                             state.slideFocus = whole ? 0 : nil
                         }
                     }
-                    .accessibilityLabel(whole ? "One picture at a time" : "Whole page")
+                    .accessibilityLabel(whole ? "One post at a time" : "Whole page")
                 }
             }
             .padding(.horizontal, 14)

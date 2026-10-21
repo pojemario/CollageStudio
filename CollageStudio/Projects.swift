@@ -1094,6 +1094,16 @@ extension CollageState {
         if let t = args.firstIndex(of: "-picture"), t + 1 < args.count, let k = Int(args[t + 1]) {
             DispatchQueue.main.asyncAfter(deadline: .now() + 3.5) { self.goToPicture(k) }
         }
+        // `-pagerTour` steps through every picture and back, like the arrows.
+        if args.contains("-pagerTour") {
+            DispatchQueue.main.asyncAfter(deadline: .now() + 4) {
+                let n = self.pictureCount
+                let path = Array(0..<n) + Array((0..<max(n - 1, 0)).reversed())
+                for (i, k) in path.enumerated() {
+                    DispatchQueue.main.asyncAfter(deadline: .now() + Double(i) * 1.5) { self.goToPicture(k) }
+                }
+            }
+        }
         if args.contains("-exportTest") {
             DispatchQueue.main.asyncAfter(deadline: .now() + 4) {
                 Task {

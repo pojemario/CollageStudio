@@ -82,35 +82,12 @@ struct CanvasContainerView: View {
 
                     CollageGridView_Grid(scale: scale)
                         .padding(.top, state.toolbarHidden ? 0 : padding)
-                        // Fresh view identity per page: during the page
-                        // transition SwiftUI briefly holds the outgoing and
-                        // incoming canvas and slides between them
-                        .id(state.currentPage.id)
-                        .transition(.asymmetric(
-                            insertion: .move(edge: state.pageSlideEdge).combined(with: .opacity),
-                            removal: .move(edge: state.pageSlideEdge == .trailing ? .leading : .trailing)
-                                .combined(with: .opacity)))
                         .frame(width: displayW, height: displayH)
                         // Before any images are added the canvas is invisible:
                         // one flat backdrop from the toolbar down, with just
                         // the "start" content on it.
                         .background(state.images.isEmpty ? AnyShapeStyle(.clear) : AnyShapeStyle(state.gapColor))
-                        // Flatten the canvas into one layer first — otherwise
-                        // .shadow draws a separate shadow under every image box
-                        // (visible in the gaps) instead of just the outer edge.
-                        .compositingGroup()
-                        .shadow(color: state.images.isEmpty ? .clear : .black.opacity(0.25), radius: 20, x: 0, y: 8)
                         .coordinateSpace(name: "collageCanvas")
-                        // A small anchor near the top of the collage for the
-                        // tap-a-photo tip.
-                        .overlay(alignment: .top) {
-                            if state.hasAnyImages {
-                                Color.clear.frame(width: 40, height: 1)
-                                    .popoverTip(PhotoMenuTip(), arrowEdge: .bottom)
-                                    .allowsHitTesting(false)
-                                    .padding(.top, displayH * 0.3)
-                            }
-                        }
                         // Insert marker: a bar across the hovered splitter.
                         .overlay(alignment: .topLeading) {
                             if let target = state.dropInsertTarget {
@@ -134,12 +111,37 @@ struct CanvasContainerView: View {
                                 SlideCuts(slides: state.slides)
                             }
                         }
-                        .animation(.spring(response: 0.4), value: state.canvasSize)
-                        .animation(.spring(response: 0.4), value: state.numCols)
                         // Only the zoomed-to slide (and its edges) shows.
+                        // The window belongs to the page, so a page sliding
+                        // out keeps its own view while the next slides in.
                         .offset(x: -windowX)
                         .frame(width: windowW, height: displayH, alignment: .leading)
                         .clipped()
+                        // Fresh view identity per page: during the page
+                        // transition SwiftUI briefly holds the outgoing and
+                        // incoming canvas and slides between them
+                        .id(state.currentPage.id)
+                        .transition(.asymmetric(
+                            insertion: .move(edge: state.pageSlideEdge).combined(with: .opacity),
+                            removal: .move(edge: state.pageSlideEdge == .trailing ? .leading : .trailing)
+                                .combined(with: .opacity)))
+                        // Flatten the canvas into one layer first — otherwise
+                        // .shadow draws a separate shadow under every image box
+                        // (visible in the gaps) instead of just the outer edge.
+                        .compositingGroup()
+                        .shadow(color: state.images.isEmpty ? .clear : .black.opacity(0.25), radius: 20, x: 0, y: 8)
+                        // A small anchor near the top of the collage for the
+                        // tap-a-photo tip.
+                        .overlay(alignment: .top) {
+                            if state.hasAnyImages {
+                                Color.clear.frame(width: 40, height: 1)
+                                    .popoverTip(PhotoMenuTip(), arrowEdge: .bottom)
+                                    .allowsHitTesting(false)
+                                    .padding(.top, displayH * 0.3)
+                            }
+                        }
+                        .animation(.spring(response: 0.4), value: state.canvasSize)
+                        .animation(.spring(response: 0.4), value: state.numCols)
                         .animation(.spring(response: 0.4, dampingFraction: 0.9), value: state.focusedSlide)
                         .padding(.top, pagerReserve)
                         .animation(.easeInOut(duration: 0.25), value: pagerReserve)

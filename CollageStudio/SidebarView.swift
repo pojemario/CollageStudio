@@ -180,7 +180,7 @@ struct RatioPanelView: View {
     }
 }
 
-/// Width: how many pictures wide the page is. A wide page is one collage
+/// Spread across: how many pictures the page spreads across. A wide page is one collage
 /// posted as several pictures that join up when swiped.
 struct PageWidthRow: View {
     @EnvironmentObject var state: CollageState
@@ -191,7 +191,7 @@ struct PageWidthRow: View {
                 Image(systemName: "arrow.left.and.right.square")
                     .font(.system(size: 15, weight: .medium))
                     .frame(width: 22)
-                Text("Width")
+                Text("Spread across")
                     .font(.system(size: 14, weight: .medium))
                 Spacer()
                 stepButton("minus", enabled: state.slides > 1) { state.setSlides(state.slides - 1) }
@@ -205,8 +205,8 @@ struct PageWidthRow: View {
             .padding(.vertical, 6)
             .appButtonBackground(prominent: false)
             Text(state.slides > 1
-                 ? "This page is \(state.slides) pictures wide. Photos can run from one picture into the next."
-                 : "Pictures this page is wide. More than 1 makes a seamless carousel.")
+                 ? "This page spreads across \(state.slides) posts. Photos can run from one post into the next."
+                 : "Posts this page spreads across. More than 1 makes a seamless carousel.")
                 .font(.caption)
                 .foregroundStyle(.secondary)
                 .padding(.horizontal, 4)
@@ -226,7 +226,7 @@ struct PageWidthRow: View {
         .buttonStyle(.plain)
         .foregroundStyle(enabled ? Color.accentColor : Color.secondary.opacity(0.5))
         .disabled(!enabled)
-        .accessibilityLabel(sf == "plus" ? "Wider page" : "Narrower page")
+        .accessibilityLabel(sf == "plus" ? "Spread across more posts" : "Spread across fewer posts")
     }
 }
 

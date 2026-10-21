@@ -102,7 +102,7 @@ struct ExportOptionsView: View {
             Form {
                 if exportablePictures > exportablePages {
                     Section {
-                        Label("A wide page goes out as several pictures, numbered in order. Post them together and they join up when swiped.",
+                        Label("A spread page goes out as several posts, numbered in order. Post them together and they join up when swiped.",
                               systemImage: "rectangle.split.3x1")
                             .font(.footnote)
                     }
@@ -111,7 +111,7 @@ struct ExportOptionsView: View {
                     Section {
                         Picker("Pages", selection: $allPages) {
                             Text(state.slides > 1 ? "This page (\(state.slides))" : "This page").tag(false)
-                            Text("All \(exportablePictures) pictures").tag(true)
+                            Text("All \(exportablePictures) posts").tag(true)
                         }
                         .pickerStyle(.segmented)
                     } footer: {
@@ -168,7 +168,7 @@ struct ExportOptionsView: View {
 
     private func detail(for size: ExportSettings.Size) -> String {
         let px = settings.withSize(size).pixelSize(for: state.pictureSize)
-        let each = exportablePictures > 1 ? "each picture " : ""
+        let each = exportablePictures > 1 ? "each post " : ""
         return "\(each)\(Int(px.width)) × \(Int(px.height)) px · \(size.detail)"
     }
 
