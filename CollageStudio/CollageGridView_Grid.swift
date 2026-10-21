@@ -416,7 +416,7 @@ struct CollageGridView_Grid: View {
 
     private func columnWidths(canvasSize: CGSize, gap: CGFloat, cols: [[ColumnItem]]) -> [CGFloat] {
         let totalGrow = state.layout.colGrows.reduce(0, +)
-        let availW = canvasSize.width - gap * CGFloat(cols.count + 1)
+        let availW = max(canvasSize.width - gap * CGFloat(cols.count + 1), 0)
         return (0..<cols.count).map { ci in
             let g = ci < state.layout.colGrows.count ? state.layout.colGrows[ci] : 1.0
             return totalGrow > 0 ? (g / totalGrow) * availW : 0
@@ -426,7 +426,7 @@ struct CollageGridView_Grid: View {
     private func boxHeights(col: [ColumnItem], ci: Int, canvasSize: CGSize, gap: CGFloat) -> [CGFloat] {
         let grows = ci < state.layout.boxGrows.count ? state.layout.boxGrows[ci] : []
         let totalGrow = grows.reduce(0, +)
-        let availH = canvasSize.height - gap * CGFloat(col.count + 1)
+        let availH = max(canvasSize.height - gap * CGFloat(col.count + 1), 0)
         return (0..<col.count).map { bi in
             let g = bi < grows.count ? grows[bi] : 1.0
             return totalGrow > 0 ? (g / totalGrow) * availH : 0
@@ -443,7 +443,7 @@ struct CollageGridView_Grid: View {
         let at: (CGFloat, CGFloat) -> CGPoint = { x, y in rows ? CGPoint(x: y, y: x) : CGPoint(x: x, y: y) }
         let size: (CGFloat, CGFloat) -> CGSize = { w, h in rows ? CGSize(width: h, height: w) : CGSize(width: w, height: h) }
         let widths = columnWidths(canvasSize: canvasSize, gap: gap, cols: cols)
-        let availW = canvasSize.width - gap * CGFloat(cols.count + 1)
+        let availW = max(canvasSize.width - gap * CGFloat(cols.count + 1), 0)
         // A finger-sized strip over the gap. Kept in check on purpose: 28pt
         // strips used to bleed ~14pt onto the images and swallowed pinch
         // fingers — boxes sandwiched between strips went gesture-dead — so
@@ -463,7 +463,7 @@ struct CollageGridView_Grid: View {
             // Horizontal handles between boxes within each column
             ForEach(Array(cols.enumerated()), id: \.offset) { ci, col in
                 let heights = boxHeights(col: col, ci: ci, canvasSize: canvasSize, gap: gap)
-                let availH = canvasSize.height - gap * CGFloat(col.count + 1)
+                let availH = max(canvasSize.height - gap * CGFloat(col.count + 1), 0)
                 let colCenterX = gap + widths.prefix(ci).reduce(0, +) + gap * CGFloat(ci) + widths[ci] / 2
 
                 ForEach(1..<max(col.count, 1), id: \.self) { bi in

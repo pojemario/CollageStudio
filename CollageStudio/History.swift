@@ -53,7 +53,7 @@ extension CollageImage {
     func sameContent(as o: CollageImage) -> Bool {
         // A text box is defined by its style; its bitmap is re-rendered
         // whenever its box changes shape.
-        let samePicture = isText || o.isText ? textStyle == o.textStyle : image === o.image
+        let samePicture = isText || o.isText ? textStyle == o.textStyle : original === o.original
         return id == o.id && samePicture && isPlaceholder == o.isPlaceholder
             && protrusion == o.protrusion && protrusionEffect == o.protrusionEffect
             && protrusionObjects == o.protrusionObjects
@@ -119,6 +119,14 @@ extension CollageState {
         redoStack.removeAll()
         updateHistoryFlags()
         documentDidChange()
+    }
+
+    /// Keeps only the last `n` undo steps and no redo (low on memory: each
+    /// step can hold photos no longer in the collage).
+    func trimHistory(keeping n: Int) {
+        if undoStack.count > n { undoStack.removeFirst(undoStack.count - n) }
+        redoStack.removeAll()
+        updateHistoryFlags()
     }
 
     func undo() {

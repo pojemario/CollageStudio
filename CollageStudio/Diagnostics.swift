@@ -19,6 +19,11 @@ enum Diagnostics {
     private static let endMark = "END"
     private static let keepCrashLogs = 5
     private static var handle: FileHandle?
+    /// Bytes in the session log; past `maxLogBytes` it keeps only its last
+    /// `keptLogBytes` (on `queue`).
+    private static var logBytes: UInt64 = 0
+    private static let maxLogBytes: UInt64 = 2_000_000
+    private static let keptLogBytes = 500_000
     private static let queue = DispatchQueue(label: "CollageStudio.diagnostics")
 
     static var folder: URL {
@@ -31,7 +36,8 @@ enum Diagnostics {
     static func start() {
         let fm = FileManager.default
         try? fm.createDirectory(at: folder, withIntermediateDirectories: true)
-        if let last = try? String(contentsOf: sessionURL, encoding: .utf8),
+        // Only the log's tail is read: enough to see how it ended.
+        if let last = tail(of: sessionURL, bytes: 256),
            !last.trimmingCharacters(in: .whitespacesAndNewlines).hasSuffix(endMark) {
             let stamp = ISO8601DateFormatter().string(from: Date()).replacingOccurrences(of: ":", with: "-")
             try? fm.moveItem(at: sessionURL, to: folder.appendingPathComponent("crash-\(stamp).log"))
@@ -40,6 +46,7 @@ enum Diagnostics {
         try? fm.removeItem(at: sessionURL)
         fm.createFile(atPath: sessionURL.path, contents: nil)
         handle = try? FileHandle(forWritingTo: sessionURL)
+        logBytes = 0
         let info = Bundle.main.infoDictionary ?? [:]
         let version = info["CFBundleShortVersionString"] as? String ?? "?"
         let build = info["CFBundleVersion"] as? String ?? "?"
@@ -157,11 +164,33 @@ enum Diagnostics {
         queue.async { write(line) }
     }
 
-    /// On `queue`.
+    /// On `queue`. Errors (a full disk) are dropped: the throwing API, not
+    /// the old one, which raises an exception that ends the app.
     private static func write(_ line: String) {
         guard let handle, let data = line.data(using: .utf8) else { return }
-        handle.seekToEndOfFile()
-        handle.write(data)
+        _ = try? handle.seekToEnd()
+        guard (try? handle.write(contentsOf: data)) != nil else { return }
+        logBytes += UInt64(data.count)
+        if logBytes > maxLogBytes { trimLog() }
+    }
+
+    /// The session log cut down to its last `keptLogBytes` (on `queue`).
+    private static func trimLog() {
+        guard let handle, let kept = tail(of: sessionURL, bytes: keptLogBytes),
+              let data = ("… (earlier lines trimmed)\n" + kept).data(using: .utf8) else { return }
+        _ = try? handle.truncate(atOffset: 0)
+        _ = try? handle.write(contentsOf: data)
+        logBytes = UInt64(data.count)
+    }
+
+    /// The last `bytes` of a file as text (nil if it can't be read).
+    private static func tail(of url: URL, bytes: Int) -> String? {
+        guard let h = try? FileHandle(forReadingFrom: url) else { return nil }
+        defer { try? h.close() }
+        guard let size = try? h.seekToEnd() else { return nil }
+        try? h.seek(toOffset: size > UInt64(bytes) ? size - UInt64(bytes) : 0)
+        guard let data = try? h.readToEnd() else { return "" }
+        return String(decoding: data, as: UTF8.self)
     }
 
     /// The app left the screen normally: not a crash if it's never back.

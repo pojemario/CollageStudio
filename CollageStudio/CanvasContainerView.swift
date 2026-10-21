@@ -284,19 +284,8 @@ struct CanvasContainerView: View {
         Diagnostics.log("adding \(items.count) photos")
         Task {
             let start = Date()
-            var loaded: [PlatformImage] = []
-            for item in items {
-                if let data = try? await item.loadTransferable(type: Data.self),
-                   let img = PlatformImage.decoded(from: data) {
-                    loaded.append(img)
-                }
-            }
-            Diagnostics.log(String(format: "read %d of %d photos in %.1fs", loaded.count, items.count, Date().timeIntervalSince(start)))
-            // Generate proxies/thumbnails off the main thread
-            let images = loaded
-            let prepared = await Task.detached(priority: .userInitiated) {
-                images.map { CollageImage(image: $0) }
-            }.value
+            let prepared = await CollageImage.prepare(items)
+            Diagnostics.log(String(format: "read %d of %d photos in %.1fs", prepared.count, items.count, Date().timeIntervalSince(start)))
             await MainActor.run {
                 let isNew = !state.hasAnyImages
                 Diagnostics.log(String(format: "prepared photos in %.1fs", Date().timeIntervalSince(start)))
@@ -314,10 +303,10 @@ struct CanvasContainerView: View {
         guard let item = items.first,
               let targetId = state.boxActionTargetId else { return }
         Task {
-            if let data = try? await item.loadTransferable(type: Data.self),
-               let img = PlatformImage.decoded(from: data) {
+            // Decoded and prepared off the main thread.
+            if let prepared = await CollageImage.prepare([item]).first {
                 await MainActor.run {
-                    state.replaceImage(id: targetId, with: img)
+                    state.replaceImage(id: targetId, with: prepared)
                 }
             }
             await MainActor.run {

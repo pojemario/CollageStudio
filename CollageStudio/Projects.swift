@@ -343,27 +343,48 @@ final class ProjectStore: ObservableObject {
     nonisolated static func jsonURL(_ id: UUID) -> URL { folder(id).appendingPathComponent("project.json") }
     nonisolated static func thumbURL(_ id: UUID) -> URL { folder(id).appendingPathComponent("thumb.jpg") }
 
-    static func defaultName(created: Date) -> String {
+    nonisolated static func defaultName(created: Date) -> String {
         "Collage " + created.formatted(.dateTime.day().month(.abbreviated).hour().minute())
     }
 
-    init() { refresh() }
+    init() { summaries = Self.readSummaries() }
 
-    /// Re-reads the list (newest first). Collages with no pictures are left
-    /// out (and cleaned up).
-    func refresh() {
-        let fm = FileManager.default
-        let folders = (try? fm.contentsOfDirectory(at: Self.root, includingPropertiesForKeys: nil)) ?? []
-        var list: [ProjectSummary] = []
-        for folder in folders {
-            guard let id = UUID(uuidString: folder.lastPathComponent),
-                  let file = Self.readFile(id) else { continue }
-            guard file.imageCount > 0 else { continue }
-            list.append(ProjectSummary(id: id, name: file.name ?? Self.defaultName(created: file.created),
-                                       modified: file.modified, imageCount: file.imageCount,
-                                       pageCount: file.pages.count, thumbURL: Self.thumbURL(id)))
+    /// Every collage on disk (newest first). Collages with no pictures are
+    /// left out.
+    nonisolated private static func readSummaries() -> [ProjectSummary] {
+        let folders = (try? FileManager.default.contentsOfDirectory(at: root, includingPropertiesForKeys: nil)) ?? []
+        return folders.compactMap { folder in
+            UUID(uuidString: folder.lastPathComponent).flatMap { summary(of: $0) }
         }
-        summaries = list.sorted { $0.modified > $1.modified }
+        .sorted { $0.modified > $1.modified }
+    }
+
+    nonisolated private static func summary(of id: UUID) -> ProjectSummary? {
+        guard let file = readFile(id), file.imageCount > 0 else { return nil }
+        return ProjectSummary(id: id, name: file.name ?? defaultName(created: file.created),
+                              modified: file.modified, imageCount: file.imageCount,
+                              pageCount: file.pages.count, thumbURL: thumbURL(id))
+    }
+
+    /// Re-reads the whole list, in the queue (after pending writes), and
+    /// shows it when done.
+    func refresh() {
+        io.async {
+            let list = Self.readSummaries()
+            DispatchQueue.main.async { self.summaries = list }
+        }
+    }
+
+    /// Re-reads one collage's entry (after a save), in the queue.
+    func refresh(_ id: UUID) {
+        io.async {
+            let entry = Self.summary(of: id)
+            DispatchQueue.main.async {
+                var list = self.summaries.filter { $0.id != id }
+                if let entry { list.append(entry) }
+                self.summaries = list.sorted { $0.modified > $1.modified }
+            }
+        }
     }
 
     nonisolated static func readFile(_ id: UUID) -> ProjectFile? {
@@ -382,26 +403,48 @@ final class ProjectStore: ObservableObject {
     /// files on disk are left as they were and `completion` gets the photo
     /// files that didn't make it (or false), so the next save tries again.
     /// Runs to the end even if the app leaves the screen meanwhile.
-    func save(_ file: ProjectFile, newImages: [(PlatformImage, String)], thumbnail: PlatformImage?,
+    func save(_ file: ProjectFile, newImages: [(OriginalPicture, String)], thumbnail: PlatformImage?,
               protected: Set<String> = [], completion: @escaping (_ saved: Bool, _ unwritten: Set<String>) -> Void) {
         let id = file.id
         let keep = Set(file.pages.flatMap { $0.images.compactMap(\.file) }).union(protected)
         #if canImport(UIKit)
-        let task = UIApplication.shared.beginBackgroundTask(withName: "Save collage")
+        // Out of background time: end the task (the write goes on if iOS
+        // lets it) rather than have iOS end the app for overrunning.
+        var task = UIBackgroundTaskIdentifier.invalid
+        task = UIApplication.shared.beginBackgroundTask(withName: "Save collage") {
+            Diagnostics.log("save ran out of background time")
+            UIApplication.shared.endBackgroundTask(task)
+            task = .invalid
+        }
         #endif
         io.async {
             let fm = FileManager.default
+            var file = file
+            // The name and creation date as on disk (read here, after any
+            // pending rename, so a save never writes back an older name).
+            if let existing = Self.readFile(id) {
+                file.name = existing.name
+                file.created = existing.created
+            }
             var unwritten: Set<String> = []
             do {
                 try fm.createDirectory(at: Self.imagesFolder(id), withIntermediateDirectories: true)
-                for (image, name) in newImages {
+                for (original, name) in newImages {
                     let url = Self.imagesFolder(id).appendingPathComponent(name)
                     guard !fm.fileExists(atPath: url.path) else { continue }
-                    guard let data = Self.encode(image, name: name) else { unwritten.insert(name); continue }
+                    guard let data = autoreleasepool(invoking: { original.data ?? Self.encode(original.image, name: name) })
+                    else { unwritten.insert(name); continue }
                     do { try data.write(to: url, options: .atomic) } catch { unwritten.insert(name) }
                 }
             } catch {
                 unwritten = Set(newImages.map(\.1))
+            }
+            // Every photo file the collage names must be there: one an
+            // earlier save failed to write would leave the JSON pointing at
+            // nothing.
+            for name in keep where !protected.contains(name)
+                && !fm.fileExists(atPath: Self.imagesFolder(id).appendingPathComponent(name).path) {
+                unwritten.insert(name)
             }
             var saved = false
             // A photo missing on disk: keep the last good JSON (and every
@@ -426,38 +469,48 @@ final class ProjectStore: ObservableObject {
             DispatchQueue.main.async {
                 completion(saved, unwritten)
                 #if canImport(UIKit)
-                UIApplication.shared.endBackgroundTask(task)
+                if task != .invalid { UIApplication.shared.endBackgroundTask(task); task = .invalid }
                 #endif
             }
         }
     }
 
-    /// Waits for pending writes (e.g. before opening another collage).
-    func flush() { io.sync {} }
+    /// Reads a collage once pending writes are done (e.g. its own save just
+    /// before opening another), off the main thread; `done` gets it on main.
+    func readAfterWrites(_ id: UUID, done: @escaping (ProjectFile?) -> Void) {
+        io.async {
+            let file = Self.readFile(id)
+            DispatchQueue.main.async { done(file) }
+        }
+    }
 
-    func delete(_ id: UUID) {
-        io.sync { try? FileManager.default.removeItem(at: Self.folder(id)) }
-        refresh()
+    func delete(_ ids: [UUID]) {
+        io.async {
+            for id in ids { try? FileManager.default.removeItem(at: Self.folder(id)) }
+        }
+        for id in ids { ProjectThumbCache.forget(id) }
+        // Gone from the list at once; the files go in the queue.
+        summaries.removeAll { ids.contains($0.id) }
     }
 
     func rename(_ id: UUID, to name: String) {
         let trimmed = name.trimmingCharacters(in: .whitespacesAndNewlines)
         // Read in the queue, after any save still pending for this collage,
         // so the rename never writes back an older version.
-        io.sync {
+        io.async {
             guard var file = Self.readFile(id) else { return }
             file.name = trimmed.isEmpty ? nil : String(trimmed.prefix(80))
             if let data = try? JSONEncoder().encode(file) {
                 try? data.write(to: Self.jsonURL(id), options: .atomic)
             }
         }
-        refresh()
+        refresh(id)
     }
 
     /// A copy under a new id, named "… copy".
     func duplicate(_ id: UUID) {
         let newId = UUID()
-        io.sync {
+        io.async {
             // (In the queue: after a pending save of the original.)
             guard var file = Self.readFile(id) else { return }
             try? FileManager.default.copyItem(at: Self.folder(id), to: Self.folder(newId))
@@ -469,7 +522,7 @@ final class ProjectStore: ObservableObject {
                 try? data.write(to: Self.jsonURL(newId), options: .atomic)
             }
         }
-        refresh()
+        refresh(newId)
     }
 
     nonisolated private static func encode(_ image: PlatformImage, name: String) -> Data? {
@@ -514,14 +567,18 @@ extension CollageState {
         guard !isRestoringProject else { return }
         hasUnsavedChanges = true
         autosaveWork?.cancel()
-        let work = DispatchWorkItem { [weak self] in self?.saveProjectNow() }
+        let work = DispatchWorkItem { [weak self] in self?.saveProjectNow(thumbnail: false) }
         autosaveWork = work
         DispatchQueue.main.asyncAfter(deadline: .now() + 1.2, execute: work)
     }
 
     /// Writes the open collage now (if there's anything to keep).
-    func saveProjectNow() {
-        guard !isRestoringProject else { return }
+    /// `thumbnail`: render the Collages list picture (on leaving the collage
+    /// or the app); autosaves while editing remake it every 10 s at most.
+    func saveProjectNow(thumbnail: Bool = true) {
+        // Not mid-export: the page on screen is the one being exported (the
+        // export saves before it starts).
+        guard !isRestoringProject, !isExporting else { return }
         // Edits from the last moment (history waits for them to settle, or
         // for a finger to lift) still count.
         commitHistoryIfChanged()
@@ -541,20 +598,23 @@ extension CollageState {
         guard hasUnsavedChanges || !onDisk else { return }
         hasUnsavedChanges = false
 
-        var newImages: [(PlatformImage, String)] = []
+        var newImages: [(OriginalPicture, String)] = []
         var used: Set<ObjectIdentifier> = []
         let pagesOut: [ProjectFile.Page] = pages.map { page in
             let imagesOut: [ProjectFile.Image] = page.images.map { img in
                 var file: String? = nil
                 if !img.isText && !img.isPlaceholder {
-                    let key = ObjectIdentifier(img.image)
+                    let key = ObjectIdentifier(img.original)
                     used.insert(key)
-                    if let known = savedImageFiles[key], known.image === img.image {
+                    if let known = savedImageFiles[key], known.original === img.original {
                         file = known.file
                     } else {
-                        let name = UUID().uuidString + "." + ProjectStore.fileExtension(for: img.image)
-                        savedImageFiles[key] = (img.image, name)
-                        newImages.append((img.image, name))
+                        // A photo's own file as it is; a picture made in the
+                        // app encoded (in the save queue).
+                        let ext = img.original.fileExtension ?? ProjectStore.fileExtension(for: img.image)
+                        let name = UUID().uuidString + "." + ext
+                        savedImageFiles[key] = (img.original, name)
+                        newImages.append((img.original, name))
                         file = name
                     }
                 }
@@ -580,17 +640,19 @@ extension CollageState {
         // Forget pictures no longer in the collage (their files go too).
         savedImageFiles = savedImageFiles.filter { used.contains($0.key) }
 
-        let existing = onDisk ? ProjectStore.readFile(currentProjectId) : nil
         let look = currentPage.look.file
+        // Name and creation date: the store keeps the ones on disk.
         let file = ProjectFile(
-            id: currentProjectId, name: existing?.name, created: existing?.created ?? Date(), modified: Date(),
+            id: currentProjectId, name: nil, created: Date(), modified: Date(),
             currentPageIndex: currentPageIndex, pages: pagesOut,
             ratio: ratio.rawValue, canvasWidth: Double(pictureSize.width), canvasHeight: Double(pictureSize.height),
             customWidth: customWidth, customHeight: customHeight, customUnit: customUnit.rawValue,
             canvasMargin: look.canvasMargin, canvasRotation: look.canvasRotation, frame: look.frame,
             overlays: look.overlays, effects: look.effects, hsl: look.hsl, calibration: look.calibration,
             filter: look.filter, filterStrength: look.filterStrength)
-        let thumb = hasAnyImages ? renderThumbnail() : nil
+        let wantThumb = thumbnail || !onDisk || Date().timeIntervalSince(lastThumbnailAt) > 10
+        let thumb = hasAnyImages && wantThumb ? renderThumbnail() : nil
+        if thumb != nil { lastThumbnailAt = Date() }
         Diagnostics.log("saved collage \(currentProjectId.uuidString.prefix(8)) thumb \(thumb.map { "\(Int($0.size.width))x\(Int($0.size.height))" } ?? "none")")
         UserDefaults.standard.set(currentProjectId.uuidString, forKey: Self.lastProjectKey)
         let savingId = currentProjectId
@@ -602,12 +664,13 @@ extension CollageState {
                 savedImageFiles = savedImageFiles.filter { !unwritten.contains($0.value.file) }
                 if currentProjectId == savingId { hasUnsavedChanges = true }
             }
-            projectStore.refresh()
+            projectStore.refresh(savingId)
         }
     }
 
-    /// A small picture of the page on screen, for the Collages list.
-    private func renderThumbnail(longEdge: CGFloat = 600) -> PlatformImage? {
+    /// A small picture of the page on screen, for the Collages list (tiles
+    /// are ~170 pt).
+    private func renderThumbnail(longEdge: CGFloat = 480) -> PlatformImage? {
         isRenderingThumbnail = true
         defer { isRenderingThumbnail = false }
         let view = CollageGridView_Grid(scale: 1.0)
@@ -628,17 +691,36 @@ extension CollageState {
         guard id != currentProjectId || !hasAnyImages else { return }
         // One at a time: two loads finishing out of order could put one
         // collage under the other's id.
-        guard !isRestoringProject else { return }
+        guard !isRestoringProject, !isOpeningProject else { return }
         saveProjectNow()
-        projectStore.flush()
-        guard let file = ProjectStore.readFile(id) else { return }
-        prepareForOtherCollage()
-        currentProjectId = id
-        UserDefaults.standard.set(id.uuidString, forKey: Self.lastProjectKey)
-        // A saved collage opens with no tab chosen and the panel down.
-        panelTabShown = false
-        isPanelOpen = false
-        load(file)
+        // Read after the save above is written, without waiting for it here.
+        isOpeningProject = true
+        isBusy = true
+        projectStore.readAfterWrites(id) { [weak self] file in
+            guard let self else { return }
+            isOpeningProject = false
+            isBusy = false
+            guard let file else { return }
+            prepareForOtherCollage()
+            currentProjectId = id
+            UserDefaults.standard.set(id.uuidString, forKey: Self.lastProjectKey)
+            // A saved collage opens with no tab chosen and the panel down.
+            panelTabShown = false
+            isPanelOpen = false
+            load(file)
+        }
+    }
+
+    /// Removes saved collages at once (one list update).
+    func removeProjects(_ ids: [UUID]) {
+        if ids.contains(currentProjectId) {
+            prepareForOtherCollage()
+            currentProjectId = UUID()
+            clear()
+            resetHistory()
+            showWholeCollage()
+        }
+        projectStore.delete(ids)
     }
 
     /// Back to the start screen (the Collages list): the open collage is
@@ -669,7 +751,7 @@ extension CollageState {
             resetHistory()
             showWholeCollage()
         }
-        projectStore.delete(id)
+        projectStore.delete([id])
     }
 
     /// A collage always starts out whole: out of full screen (toolbar,
@@ -713,8 +795,9 @@ extension CollageState {
                         img = CollageImage.emptyPlaceholder(id: item.id)
                     } else if let name = item.file,
                               let data = try? Data(contentsOf: ProjectStore.imagesFolder(id).appendingPathComponent(name)),
-                              let picture = PlatformImage.decoded(from: data) {
-                        img = CollageImage(id: item.id, image: picture)
+                              let picture = autoreleasepool(invoking: { CollageImage(id: item.id, data: data) }) {
+                        // Kept compressed; only the working copies are decoded.
+                        img = picture
                         files[item.id] = name
                     } else {
                         // Missing or unreadable now (low memory?): its file
@@ -796,7 +879,7 @@ extension CollageState {
         savedImageFiles = [:]
         for page in pages {
             for img in page.images {
-                if let name = files[img.id] { savedImageFiles[ObjectIdentifier(img.image)] = (img.image, name) }
+                if let name = files[img.id] { savedImageFiles[ObjectIdentifier(img.original)] = (img.original, name) }
             }
         }
         imageFrames.removeAll()
@@ -863,7 +946,7 @@ struct CollagesHome: View {
         .confirmationDialog(selected.count == 1 ? "Remove this collage?" : "Remove \(selected.count) collages?",
                             isPresented: $confirmingBatch, titleVisibility: .visible) {
             Button(selected.count == 1 ? "Remove" : "Remove \(selected.count)", role: .destructive) {
-                for id in selected { state.removeProject(id) }
+                state.removeProjects(Array(selected))
                 selected = []
                 selecting = false
             }
@@ -1020,23 +1103,40 @@ struct CollagesHome: View {
 }
 
 /// A saved collage's thumbnail. Read from disk as its tile appears (a
-/// small JPEG, a few milliseconds) and kept in memory for the session, so
+/// small JPEG, a few milliseconds) and kept in memory (see
+/// ProjectThumbCache), so
 /// coming back to the Collages screen shows every thumbnail at once.
 /// (Loading it in the background lost out to the photo analysis a just
 /// opened collage starts, and an evictable cache could come back empty.)
+/// The Collages list's thumbnails, by file and save time (a re-saved
+/// collage gets a new one). Dropped for a removed collage, and all of them
+/// when memory runs low (they load again in a few milliseconds).
+@MainActor
+enum ProjectThumbCache {
+    static var images: [String: PlatformImage] = [:]
+    static let maxEdge: CGFloat = 480
+
+    static func forget(_ id: UUID) {
+        let prefix = ProjectStore.thumbURL(id).path + "#"
+        images = images.filter { !$0.key.hasPrefix(prefix) }
+    }
+}
+
 private struct ProjectThumb: View {
     let url: URL
     let version: Date
     @State private var image: PlatformImage?
 
-    /// Thumbnails by file and save time (a re-saved collage gets a new one).
-    @MainActor private static var cache: [String: PlatformImage] = [:]
+    private var cache: [String: PlatformImage] {
+        get { ProjectThumbCache.images }
+        nonmutating set { ProjectThumbCache.images = newValue }
+    }
     private var key: String { "\(url.path)#\(version.timeIntervalSinceReferenceDate)" }
 
     var body: some View {
         ZStack {
             Color.primary.opacity(0.06)
-            if let image = image ?? Self.cache[key] {
+            if let image = image ?? cache[key] {
                 // The whole collage, fitted (its shape shows on the tile).
                 Group {
                     #if canImport(UIKit)
@@ -1054,19 +1154,21 @@ private struct ProjectThumb: View {
     }
 
     private func load() {
-        if let hit = Self.cache[key] {
+        if let hit = cache[key] {
             image = hit
             return
         }
-        guard let img = PlatformImage(contentsOfFile: url.path) else {
+        // Decoded at the tiles' size (older thumbnails were saved bigger).
+        guard let data = try? Data(contentsOf: url),
+              let img = PlatformImage.decoded(from: data, maxEdge: ProjectThumbCache.maxEdge) else {
             let exists = FileManager.default.fileExists(atPath: url.path)
             Diagnostics.log("thumb load failed \(url.deletingLastPathComponent().lastPathComponent.prefix(8)) file \(exists ? "there" : "missing")")
             return
         }
         // Drop the collage's older thumbnails (other save times).
         let prefix = url.path + "#"
-        for k in Self.cache.keys where k.hasPrefix(prefix) { Self.cache[k] = nil }
-        Self.cache[key] = img
+        for k in cache.keys where k.hasPrefix(prefix) { cache[k] = nil }
+        cache[key] = img
         image = img
     }
 }

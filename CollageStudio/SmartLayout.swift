@@ -44,7 +44,7 @@ extension CollageState {
         }
         for img in todo {
             focusChecked.insert(img.id)
-            let id = img.id, proxy = img.proxy, source = img.image
+            let id = img.id, proxy = img.proxy, source = img.original
             // Vision blocks its thread until done (in the Simulator, for
             // good), so it runs on its own queue, never in the shared
             // Swift task pool that grading needs.
@@ -61,7 +61,7 @@ extension CollageState {
                 DispatchQueue.main.async {
                     guard let point = found, let pi = self.pageIndex(containing: id),
                           let idx = self.pages[pi].images.firstIndex(where: { $0.id == id }),
-                          self.pages[pi].images[idx].image === source else { return }
+                          self.pages[pi].images[idx].original === source else { return }
                     var img = self.pages[pi].images[idx]
                     img.focus = point
                     if let pan = Self.focusPan(for: img, boxSize: img.lastBoxSize) { img.panOffset = pan }

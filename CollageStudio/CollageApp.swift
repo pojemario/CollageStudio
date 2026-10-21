@@ -119,25 +119,32 @@ struct CollageApp: App {
         }
         guard !drainingInbox else { return }
         drainingInbox = true
+        let known = Set(state.pendingSharedFiles)
         Task {
-            let shared = await Task.detached(priority: .userInitiated) { SharedInbox.drainPendingImages() }.value
+            // Decoded and prepared (proxy, thumb) off the main thread.
+            let shared = await Task.detached(priority: .userInitiated) {
+                SharedInbox.pendingImages(skipping: known).map { ($0.url, $0.image) }
+            }.value
             drainingInbox = false
             addShared(shared)
         }
     }
 
-    private func addShared(_ shared: [PlatformImage]) {
+    private func addShared(_ shared: [(URL, CollageImage)]) {
         guard !shared.isEmpty else { return }
 
         if state.images.isEmpty {
             // Empty collage — no conflict, import straight away (a new
             // collage: Images panel up).
-            state.addImages(shared)
+            state.addPreparedImages(shared.map(\.1))
+            SharedInbox.remove(shared.map(\.0))
             state.openImagesPanel()
         } else {
             // Images already present: let the user decide whether to start
-            // a fresh collage or append the shared photos to it.
-            state.pendingSharedImages.append(contentsOf: shared)
+            // a fresh collage or append the shared photos to it. The inbox
+            // files stay until then.
+            state.pendingSharedImages.append(contentsOf: shared.map(\.1))
+            state.pendingSharedFiles.append(contentsOf: shared.map(\.0))
             state.showSharedImportChoice = true
         }
     }

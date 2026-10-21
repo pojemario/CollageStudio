@@ -365,7 +365,7 @@ struct ContentView: View {
                 .background(ColorManager.windowBackground)
         }
         .frame(minWidth: 900, minHeight: 600)
-        .sheet(isPresented: $state.showExportSheet) { ExportSheetView().environmentObject(state) }
+        .sheet(isPresented: $state.showExportSheet, onDismiss: { state.clearExportFiles() }) { ExportSheetView().environmentObject(state) }
     }
     #endif
 
@@ -385,7 +385,7 @@ struct ContentView: View {
                     { ColorManager.groupedBackground }()
                 )
         }
-        .sheet(isPresented: $state.showExportSheet) { ExportSheetView().environmentObject(state) }
+        .sheet(isPresented: $state.showExportSheet, onDismiss: { state.clearExportFiles() }) { ExportSheetView().environmentObject(state) }
     }
 
     // MARK: - iPhone: canvas + bottom panel
@@ -707,7 +707,7 @@ struct ContentView: View {
                     state.closeRatio()
                 }
         )
-        .sheet(isPresented: $state.showExportSheet) { ExportSheetView().environmentObject(state) }
+        .sheet(isPresented: $state.showExportSheet, onDismiss: { state.clearExportFiles() }) { ExportSheetView().environmentObject(state) }
         .overlay {
             if state.isExporting {
                 /*

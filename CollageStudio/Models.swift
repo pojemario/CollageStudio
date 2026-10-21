@@ -1,4 +1,5 @@
 import SwiftUI
+import PhotosUI
 
 // MARK: - Platform Image
 
@@ -64,6 +65,9 @@ extension PlatformImage {
         #if canImport(UIKit)
         let format = UIGraphicsImageRendererFormat()
         format.scale = 1
+        // 8 bits per channel: wide-color photos would otherwise get 16-bit
+        // bitmaps (twice the memory); the app grades in sRGB anyway.
+        format.preferredRange = .standard
         return UIGraphicsImageRenderer(size: newSize, format: format).image { _ in
             draw(in: CGRect(origin: .zero, size: newSize))
         }
@@ -285,6 +289,111 @@ extension CollageImage {
     }
 }
 
+// MARK: - Original picture
+
+/// A photo's full-size original, kept compressed (the picked or saved file's
+/// bytes) and decoded only when something needs it at full size — a sharp
+/// copy, the export, a cutout, a save — for as long as that holds it. Kept
+/// decoded, 20 photos took ~1 GB; compressed, a few MB each. Pictures made
+/// in the app (text boxes, empty slots) are kept as they are.
+/// Its identity is the picture's: a replaced photo gets a new one.
+final class OriginalPicture: @unchecked Sendable {
+    /// The encoded file (nil for a picture made in the app).
+    let data: Data?
+    /// Size in points of the decoded picture (upright, capped like the
+    /// decode), known without decoding.
+    let size: CGSize
+    private let made: PlatformImage?
+    private let lock = NSLock()
+    private weak var decodedCopy: PlatformImage?
+
+    init(image: PlatformImage) {
+        data = nil
+        made = image
+        size = image.size
+    }
+
+    /// Nil when the data isn't a picture. A very big file, or one in a
+    /// format other than JPEG, HEIC or PNG (RAW…), is kept re-encoded as a
+    /// JPEG (PNG with transparency) at the import size instead.
+    init?(data: Data) {
+        var data = data
+        if data.count > Self.maxKeptBytes || !Self.isCompact(data) {
+            guard let decoded = PlatformImage.decoded(from: data),
+                  let encoded = Self.encode(decoded) else { return nil }
+            data = encoded
+        }
+        guard let size = Self.uprightSize(of: data) else { return nil }
+        self.data = data
+        self.made = nil
+        self.size = size
+    }
+
+    private static let maxKeptBytes = 12_000_000
+
+    private static func isCompact(_ data: Data) -> Bool {
+        guard let source = CGImageSourceCreateWithData(data as CFData, nil),
+              let type = CGImageSourceGetType(source) as String? else { return false }
+        return ["public.jpeg", "public.heic", "public.png"].contains(type)
+    }
+
+    /// File name extension for the data ("jpg", "heic", "png").
+    var fileExtension: String? {
+        guard let data, let source = CGImageSourceCreateWithData(data as CFData, nil),
+              let type = CGImageSourceGetType(source) as String? else { return nil }
+        switch type {
+        case "public.heic": return "heic"
+        case "public.png": return "png"
+        default: return "jpg"
+        }
+    }
+
+    private static func encode(_ image: PlatformImage) -> Data? {
+        #if canImport(UIKit)
+        let alpha = image.cgImage?.alphaInfo
+        let transparent = [.first, .last, .premultipliedFirst, .premultipliedLast].contains(alpha)
+        return transparent ? image.pngData() : image.jpegData(compressionQuality: 0.92)
+        #else
+        return image.tiffRepresentation
+        #endif
+    }
+
+    /// The decoded picture (decoded now if no one is holding it).
+    var image: PlatformImage {
+        if let made { return made }
+        lock.lock()
+        defer { lock.unlock() }
+        if let decodedCopy { return decodedCopy }
+        let decoded = data.flatMap { PlatformImage.decoded(from: $0) } ?? PlatformImage()
+        decodedCopy = decoded
+        return decoded
+    }
+
+    /// A copy at most `maxEdge` on its long side, straight from the data
+    /// (never decoding the full picture).
+    func scaled(maxEdge: CGFloat) -> PlatformImage {
+        if let made { return made.downsampled(longEdge: maxEdge) }
+        return data.flatMap { PlatformImage.decoded(from: $0, maxEdge: maxEdge) } ?? PlatformImage()
+    }
+
+    /// Pixel size after orientation, capped at the import limit, from the
+    /// file's header.
+    private static func uprightSize(of data: Data) -> CGSize? {
+        #if canImport(UIKit)
+        guard let source = CGImageSourceCreateWithData(data as CFData, [kCGImageSourceShouldCache: false] as CFDictionary),
+              let props = CGImageSourceCopyPropertiesAtIndex(source, 0, nil) as? [CFString: Any],
+              let w = props[kCGImagePropertyPixelWidth] as? CGFloat,
+              let h = props[kCGImagePropertyPixelHeight] as? CGFloat, w > 0, h > 0 else { return nil }
+        let orientation = props[kCGImagePropertyOrientation] as? UInt32 ?? 1
+        let upright = (5...8).contains(orientation) ? CGSize(width: h, height: w) : CGSize(width: w, height: h)
+        let cap = min(1, PlatformImage.maxImportEdge / max(upright.width, upright.height))
+        return CGSize(width: floor(upright.width * cap), height: floor(upright.height * cap))
+        #else
+        return NSImage(data: data)?.size
+        #endif
+    }
+}
+
 // MARK: - CollageImage
 
 struct CollageImage: Identifiable, Equatable {
@@ -293,8 +402,11 @@ struct CollageImage: Identifiable, Equatable {
     static let thumbLongEdge: CGFloat = 240
 
     let id: UUID
-    /// Full-resolution original — only drawn during export.
-    var image: PlatformImage
+    /// The full-size original, kept compressed (see OriginalPicture).
+    var original: OriginalPicture
+    /// The original decoded (decodes it unless something holds it already):
+    /// off the main thread wherever it can be.
+    var image: PlatformImage { original.image }
     /// Downscaled copy used for all on-canvas rendering and gestures.
     var proxy: PlatformImage
     /// Tiny copy for the thumbnail strips.
@@ -341,27 +453,67 @@ struct CollageImage: Identifiable, Equatable {
     static func == (lhs: CollageImage, rhs: CollageImage) -> Bool {
         // Compare the image reference too, so views refresh when an image
         // is replaced in place (same id, new picture).
-        lhs.id == rhs.id && lhs.image === rhs.image
+        lhs.id == rhs.id && lhs.original === rhs.original
     }
 
+    /// A picture made in the app (or already decoded), kept as is.
     init(id: UUID = UUID(), image: PlatformImage) {
         self.id = id
-        self.image = image
+        self.original = OriginalPicture(image: image)
         self.proxy = image.downsampled(longEdge: Self.proxyLongEdge)
         self.thumb = image.downsampled(longEdge: Self.thumbLongEdge)
+    }
+
+    /// A photo from its file: kept compressed, the working copies made
+    /// straight from the data. Nil if it isn't a picture. Off the main
+    /// thread.
+    nonisolated init?(id: UUID = UUID(), data: Data) {
+        guard let original = OriginalPicture(data: data) else { return nil }
+        self.id = id
+        self.original = original
+        let proxy = original.scaled(maxEdge: Self.proxyLongEdge)
+        self.proxy = proxy
+        self.thumb = proxy.downsampled(longEdge: Self.thumbLongEdge)
+    }
+
+    /// Picked photos, read and prepared one at a time, decoding and the
+    /// working copies off the main thread: never more than one full-size
+    /// photo decoded at once.
+    static func prepare(_ items: [PhotosPickerItem]) async -> [CollageImage] {
+        var prepared: [CollageImage] = []
+        for item in items {
+            guard let data = try? await item.loadTransferable(type: Data.self) else { continue }
+            let img = await Task.detached(priority: .userInitiated) {
+                autoreleasepool { CollageImage(data: data) }
+            }.value
+            if let img { prepared.append(img) }
+        }
+        return prepared
     }
 
     /// Swaps in a new picture, regenerating the working copies. Replacing a
     /// placeholder or text box with a real photo makes it a normal image
     /// again (applyTextStyle restores textStyle after its re-render).
     mutating func setImage(_ newImage: PlatformImage) {
-        image = newImage
-        proxy = newImage.downsampled(longEdge: Self.proxyLongEdge)
-        thumb = newImage.downsampled(longEdge: Self.thumbLongEdge)
+        setOriginal(OriginalPicture(image: newImage),
+                    proxy: newImage.downsampled(longEdge: Self.proxyLongEdge),
+                    thumb: newImage.downsampled(longEdge: Self.thumbLongEdge))
+    }
+
+    private mutating func setOriginal(_ newOriginal: OriginalPicture, proxy: PlatformImage, thumb: PlatformImage) {
+        original = newOriginal
+        self.proxy = proxy
+        self.thumb = thumb
         isPlaceholder = false
         textStyle = nil
         focus = nil
         framedByUser = false
+    }
+
+    /// Swaps in another prepared picture's original and working copies (made
+    /// off the main thread), as setImage does.
+    mutating func setImage(_ prepared: CollageImage) {
+        setOriginal(prepared.original, proxy: prepared.proxy, thumb: prepared.thumb)
     }
 
     /// A "Text image": a rendered text box that behaves like any other image.
@@ -393,7 +545,7 @@ struct CollageImage: Identifiable, Equatable {
     /// dimensions; the proxy has the same aspect ratio and is stretched into
     /// the same frame, so geometry is identical in preview and export.
     var naturalSize: CGSize {
-        image.size
+        original.size
     }
 }
 
@@ -900,6 +1052,14 @@ struct ContentGrade: Hashable {
     /// Whether the spatial (neighbourhood) part does anything.
     var hasDetailChange: Bool { clarity != 0 || sharpness > 0 || tone.texture != 0 || tone.dehaze > 0 }
     var isIdentity: Bool { !hasColorChange && !hasDetailChange }
+    /// Without the settings that aren't per-pixel (the color cube's key).
+    var colorOnly: ContentGrade {
+        var g = self
+        g.clarity = 0
+        g.sharpness = 0
+        g.tone.texture = 0
+        return g
+    }
 }
 
 /// One photo's Edit settings: the Edit tab's sliders, HSL and calibration,
@@ -1075,7 +1235,8 @@ struct CubeLUT {
             if line.isEmpty || line.hasPrefix("#") || line.hasPrefix("TITLE") { continue }
             let parts = line.split(separator: " ", omittingEmptySubsequences: true)
             switch parts.first {
-            case "LUT_3D_SIZE": size = Int(parts.last ?? "") ?? 0
+            // At most 128 (a broken file's huge size would overflow below).
+            case "LUT_3D_SIZE": size = min(Int(parts.last ?? "") ?? 0, 129)
             case "LUT_1D_SIZE": return nil
             case "DOMAIN_MIN": lo = parts.dropFirst().compactMap { Double($0) }
             case "DOMAIN_MAX": hi = parts.dropFirst().compactMap { Double($0) }
@@ -1083,7 +1244,8 @@ struct CubeLUT {
                 for p in parts { if let v = Float(p) { values.append(v) } }
             }
         }
-        guard size >= 2, values.count == size * size * size * 3, lo.count == 3, hi.count == 3 else { return nil }
+        guard (2...128).contains(size), values.count == size * size * size * 3, lo.count == 3, hi.count == 3
+        else { return nil }
         self.size = size
         self.data = values
         self.domainMin = lo
@@ -1094,7 +1256,8 @@ struct CubeLUT {
         let n = size - 1
         func coord(_ v: Double, _ c: Int) -> Double {
             let t = (v - domainMin[c]) / max(domainMax[c] - domainMin[c], 1e-9)
-            return min(max(t, 0), 1) * Double(n)
+            // NaN would trap in Int(_:) below.
+            return t.isFinite ? min(max(t, 0), 1) * Double(n) : 0
         }
         let x = coord(r, 0), y = coord(g, 1), z = coord(b, 2)
         let x0 = min(Int(x), n - 1), y0 = min(Int(y), n - 1), z0 = min(Int(z), n - 1)
@@ -1102,16 +1265,15 @@ struct CubeLUT {
         func at(_ i: Int, _ j: Int, _ k: Int, _ c: Int) -> Double {
             Double(data[((k * size + j) * size + i) * 3 + c])
         }
-        var out = [0.0, 0.0, 0.0]
-        for c in 0..<3 {
+        func channel(_ c: Int) -> Double {
             let c00 = at(x0, y0, z0, c) * (1 - fx) + at(x0 + 1, y0, z0, c) * fx
             let c10 = at(x0, y0 + 1, z0, c) * (1 - fx) + at(x0 + 1, y0 + 1, z0, c) * fx
             let c01 = at(x0, y0, z0 + 1, c) * (1 - fx) + at(x0 + 1, y0, z0 + 1, c) * fx
             let c11 = at(x0, y0 + 1, z0 + 1, c) * (1 - fx) + at(x0 + 1, y0 + 1, z0 + 1, c) * fx
             let c0 = c00 * (1 - fy) + c10 * fy, c1 = c01 * (1 - fy) + c11 * fy
-            out[c] = min(max(c0 * (1 - fz) + c1 * fz, 0), 1)
+            return min(max(c0 * (1 - fz) + c1 * fz, 0), 1)
         }
-        return (out[0], out[1], out[2])
+        return (channel(0), channel(1), channel(2))
     }
 }
 
@@ -2150,7 +2312,7 @@ struct CollageLayout {
 
         let totalColGrow = colGrows.prefix(cols).reduce(0, +)
         guard totalColGrow > 0 else { return result }
-        let availW = canvasSize.width - gap * CGFloat(cols + 1)
+        let availW = max(canvasSize.width - gap * CGFloat(cols + 1), 0)
 
         var xOffset = gap
         for (ci, col) in columns.enumerated() {
@@ -2159,7 +2321,7 @@ struct CollageLayout {
             let grows = boxGrows[ci]
             let totalBoxGrow = grows.reduce(0, +)
             guard totalBoxGrow > 0 else { continue }
-            let availH = canvasSize.height - gap * CGFloat(col.count + 1)
+            let availH = max(canvasSize.height - gap * CGFloat(col.count + 1), 0)
 
             var yOffset = gap
             for (bi, item) in col.enumerated() {

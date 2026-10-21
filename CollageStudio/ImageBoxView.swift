@@ -191,7 +191,12 @@ struct ImageBoxView: View {
                 )
                 .offset(state.draggingId == imageId ? state.dragOffset : .zero)
                 .scaleEffect(state.draggingId == imageId ? 1.03 : 1.0)
-                .shadow(color: state.draggingId == imageId ? .black.opacity(0.3) : .clear, radius: 14, x: 0, y: 8)
+                // Only while dragged; at rest clear with no blur, so it costs
+                // nothing (the modifier stays put: swapping it would reset
+                // the drag gesture as it starts).
+                .shadow(color: state.draggingId == imageId ? .black.opacity(0.3) : .clear,
+                        radius: state.draggingId == imageId ? 14 : 0,
+                        x: 0, y: state.draggingId == imageId ? 8 : 0)
                 .zIndex(state.draggingId == imageId ? 10 : 0)
                 .highPriorityGesture(panGesture(boxSize: boxSize))
                 // Empty-image placeholders are blank, so zoom/rotate is
@@ -754,15 +759,12 @@ struct StampedBorderView: View {
             let stamp = Self.stampPath(for: style, size: lineWidth)
             let strokeWidth = max(1, lineWidth * 0.25)
 
+            // The outline flattened once into straight pieces, walked by
+            // length: each stamp's place and direction (so stamps turn
+            // around corners) without re-measuring the path per stamp.
+            let walker = PathWalker(path.cgPath.flattened(threshold: 0.25))
             for i in 0..<count {
-                let t = CGFloat(i) / CGFloat(count)
-                // Sample the path position and a point slightly ahead to get
-                // the local direction, so stamps rotate around corners.
-                let here = path.trimmedPath(from: t, to: min(t + 0.002, 1)).boundingRect
-                let ahead = path.trimmedPath(from: min(t + 0.004, 1), to: min(t + 0.006, 1)).boundingRect
-                let pos = CGPoint(x: here.midX, y: here.midY)
-                let nxt = CGPoint(x: ahead.midX, y: ahead.midY)
-                let angle = atan2(nxt.y - pos.y, nxt.x - pos.x)
+                let (pos, angle) = walker.point(at: CGFloat(i) / CGFloat(count))
 
                 let transform = CGAffineTransform(translationX: pos.x, y: pos.y)
                     .rotated(by: angle)
@@ -778,6 +780,42 @@ struct StampedBorderView: View {
         }
         .padding(-pad)
         .allowsHitTesting(false)
+    }
+
+    /// Points along a path of straight pieces, by fraction of its length.
+    private struct PathWalker {
+        private var points: [CGPoint] = []
+        private var lengths: [CGFloat] = [0]
+
+        init(_ path: CGPath) {
+            path.applyWithBlock { el in
+                let e = el.pointee
+                switch e.type {
+                case .moveToPoint, .addLineToPoint: points.append(e.points[0])
+                case .closeSubpath: if let first = points.first { points.append(first) }
+                default: break
+                }
+            }
+            for i in points.indices.dropFirst() {
+                lengths.append(lengths[i - 1] + hypot(points[i].x - points[i - 1].x, points[i].y - points[i - 1].y))
+            }
+        }
+
+        /// Position and direction (radians) at fraction `t` of the length.
+        func point(at t: CGFloat) -> (CGPoint, CGFloat) {
+            guard points.count > 1, let total = lengths.last, total > 0 else { return (points.first ?? .zero, 0) }
+            let d = min(max(t, 0), 1) * total
+            // Binary search for the piece holding d.
+            var lo = 0, hi = lengths.count - 1
+            while hi - lo > 1 {
+                let mid = (lo + hi) / 2
+                if lengths[mid] <= d { lo = mid } else { hi = mid }
+            }
+            let a = points[lo], b = points[hi]
+            let span = lengths[hi] - lengths[lo]
+            let f = span > 0 ? (d - lengths[lo]) / span : 0
+            return (CGPoint(x: a.x + (b.x - a.x) * f, y: a.y + (b.y - a.y) * f), atan2(b.y - a.y, b.x - a.x))
+        }
     }
 
     /// A single stamp shape centered on the origin, sized to the thickness.
@@ -846,8 +884,9 @@ enum SubjectMasker {
     /// compute, and the same mask serves the canvas and the export.
     static let maskLongEdge: CGFloat = 1600
 
-    static func makeMask(for image: PlatformImage) -> SubjectMask {
-        let none = SubjectMask(source: ObjectIdentifier(image), mask: nil, bounds: .zero)
+    /// `source`: the original the picture comes from.
+    static func makeMask(for image: PlatformImage, source: ObjectIdentifier) -> SubjectMask {
+        let none = SubjectMask(source: source, mask: nil, bounds: .zero)
         guard let cg = uprightCGImage(image, longEdge: maskLongEdge) else { return none }
         let handler = VNImageRequestHandler(cgImage: cg, options: [:])
         let request = VNGenerateForegroundInstanceMaskRequest()
@@ -857,7 +896,7 @@ enum SubjectMasker {
                                                                        from: handler)
         else { return none }
         guard let (mask, bounds) = alphaMask(from: buffer) else { return none }
-        var result = SubjectMask(source: ObjectIdentifier(image), mask: mask, bounds: bounds)
+        var result = SubjectMask(source: source, mask: mask, bounds: bounds)
 
         // Each subject on its own, plus a label map for tapping them.
         let w = CVPixelBufferGetWidth(buffer), h = CVPixelBufferGetHeight(buffer)
@@ -908,7 +947,7 @@ enum SubjectMasker {
         return ciContext.createCGImage(merged.cropped(to: extent), from: extent)
     }
 
-    private static let ciContext = CIContext()
+    private static var ciContext: CIContext { SharedCI.context }
 
     /// Outer outlines of a mask as polylines in normalized image coordinates
     /// (0...1, y down), traced with Vision; specks are dropped.
@@ -1051,7 +1090,7 @@ struct ProtrusionLayer: View {
                     Color.clear.frame(width: 1, height: 1)
                     protrusion(img, box: rects[img.id])
                 }
-                .task(id: ObjectIdentifier(img.image)) { state.requestSubjectMask(for: img) }
+                .task(id: ObjectIdentifier(img.original)) { state.requestSubjectMask(for: img) }
             }
             // While its Protrude panel is open, a photo shows what Vision
             // found — never in exports.

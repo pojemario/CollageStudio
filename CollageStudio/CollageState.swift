@@ -1,5 +1,6 @@
 import SwiftUI
 import Combine
+import os
 
 @MainActor
 class CollageState: ObservableObject {
@@ -28,6 +29,8 @@ class CollageState: ObservableObject {
         DispatchQueue.main.async { [self] in
             // The picture is picked together with the page, so the page
             // sliding out never first scrolls to it.
+            // (Checked again: pages may have gone meanwhile.)
+            guard pages.indices.contains(index) else { return }
             if let slide { pendingSlideFocus = slide }
             withAnimation(.easeInOut(duration: 0.3)) { currentPageIndex = index }
         }
@@ -38,7 +41,11 @@ class CollageState: ObservableObject {
             if currentPageIndex != oldValue, !isExporting { Diagnostics.log("page \(currentPageIndex + 1)") }
             pageSlideEdge = currentPageIndex > oldValue ? .trailing : .leading
             // Highlight maps belong to the previous page's picture
-            if currentPageIndex != oldValue { effectMaps.clear() }
+            if currentPageIndex != oldValue {
+                effectMaps.clear()
+                pruneGradedProxies()
+                sharpGeneration.withLock { $0 += 1 }
+            }
             // goToPicture picks the picture before the page changes.
             if currentPageIndex != oldValue && !isExporting { slideFocus = pendingSlideFocus ?? 0 }
             pendingSlideFocus = nil
@@ -80,7 +87,7 @@ class CollageState: ObservableObject {
     }
 
     var safePageIndex: Int {
-        min(max(currentPageIndex, 0), pages.count - 1)
+        max(min(currentPageIndex, pages.count - 1), 0)
     }
 
     var currentPage: CollagePage {
@@ -446,11 +453,22 @@ class CollageState: ObservableObject {
         // keeps its frame for when it's a single picture again).
         guard slides == 1, let set = canvasFrame else { return nil }
         let suffix = ratio.rawValue.replacingOccurrences(of: ":", with: "x")
-        if let name = set.assetName(ratioSuffix: suffix), PlatformImage.named(name) != nil {
-            return name
+        // Asked several times per canvas redraw: the asset lookups (which
+        // UIKit doesn't cache when they miss) are done once per frame and
+        // ratio.
+        let key = set.id + "|" + suffix
+        if let hit = Self.frameAssetNames[key] { return hit }
+        let name: String?
+        if let exact = set.assetName(ratioSuffix: suffix), PlatformImage.named(exact) != nil {
+            name = exact
+        } else {
+            name = set.variantAssets.first { PlatformImage.named($0) != nil }
         }
-        return set.variantAssets.first { PlatformImage.named($0) != nil }
+        Self.frameAssetNames[key] = name
+        return name
     }
+
+    private static var frameAssetNames: [String: String?] = [:]
 
     /// Minimum content margins of the frame variant in use — margins can
     /// differ per ratio (zero without a frame).
@@ -822,7 +840,9 @@ class CollageState: ObservableObject {
     /// filter (holding a filter tile) is instant. While a slider moves, a
     /// box keeps showing its last grade until the next one lands.
     @Published private(set) var gradedProxies: [UUID: [Graded]] = [:]
-    private var gradeInFlight: Set<UUID> = []
+    /// The grade underway per picture, by a token: a retry gets a new one,
+    /// so the lost grade finishing late can't clear the retry's.
+    private var gradeInFlight: [UUID: UUID] = [:]
     private var gradeStarted: [UUID: Date] = [:]
     /// Grades finished in the last moment, shown together (one canvas
     /// update) instead of picture by picture.
@@ -831,6 +851,10 @@ class CollageState: ObservableObject {
     /// Full-resolution grades for the export in progress (made synchronously
     /// while it renders; dropped when it ends).
     private var gradeExportCache: [UUID: Graded] = [:]
+    /// The export in progress: each photo scaled to the pixels it fills at
+    /// the export size (see prepareExportPage), drawn instead of the
+    /// original.
+    private var exportSources: [UUID: PlatformImage] = [:]
 
     func dropGradesIfIdentity() {
         if !needsGrading, !gradedProxies.isEmpty { gradedProxies = [:] }
@@ -864,11 +888,11 @@ class CollageState: ObservableObject {
     /// The picture a box should draw: its proxy (or the original while
     /// exporting) with the current grade applied.
     func gradedDisplayImage(for img: CollageImage) -> PlatformImage {
-        let source = renderFullResolution ? img.image : img.proxy
+        let source = renderFullResolution ? (exportSources[img.id] ?? img.image) : img.proxy
         let grade = grade(for: img)
         // Settled on screen: the sharp copy (see refreshSharpCopies).
         if !isRenderingOffscreen, grade.isIdentity,
-           let s = sharpCopies[img.id], s.source === img.image { return s.image }
+           let s = sharpCopies[img.id], s.source === img.original { return s.image }
         guard !grade.isIdentity, !img.isPlaceholder else { return source }
         if renderFullResolution {
             if let g = gradeExportCache[img.id], g.source === source, g.grade == grade { return g.image }
@@ -877,7 +901,7 @@ class CollageState: ObservableObject {
             return graded
         }
         // On screen and settled: the sharp copy, when it has this grade.
-        if !isRenderingOffscreen, let s = sharpCopies[img.id], s.source === img.image,
+        if !isRenderingOffscreen, let s = sharpCopies[img.id], s.source === img.original,
            let g = s.graded, g.grade == grade { return g.image }
         let cached = (gradedProxies[img.id] ?? []).filter { $0.source === source }
         if let exact = cached.first(where: { $0.grade == grade }) { return exact.image }
@@ -887,6 +911,33 @@ class CollageState: ObservableObject {
         // before / after peek, which made sliders flicker.
         if let sameLook = cached.last(where: { $0.grade.filter == grade.filter }) { return sameLook.image }
         return cached.last?.image ?? source
+    }
+
+    /// Drops graded proxies of pictures not on the current page or its
+    /// neighbours: paging through a graded collage otherwise keeps two
+    /// graded copies of every photo it passed.
+    func pruneGradedProxies() {
+        let near = Set(pages.indices.filter { abs($0 - safePageIndex) <= 1 }
+            .flatMap { pages[$0].images.map(\.id) })
+        guard gradedProxies.keys.contains(where: { !near.contains($0) }) else { return }
+        gradedProxies = gradedProxies.filter { near.contains($0.key) }
+    }
+
+    /// Low on memory: everything that can be made again goes — sharp
+    /// copies, other pages' graded proxies, the cutout caches — and the
+    /// undo history keeps only its last steps.
+    func freeMemory() {
+        Diagnostics.log("memory warning: caches dropped")
+        sharpCopies = [:]
+        let here = Set(currentPage.images.map(\.id))
+        gradedProxies = gradedProxies.filter { here.contains($0.key) }
+        subjectMasks = [:]
+        mergedShapes = [:]
+        instanceOutlines = [:]
+        dilatedMasks = [:]
+        subjectOutlines = [:]
+        trimHistory(keeping: 5)
+        ProjectThumbCache.images = [:]
     }
 
     /// Grades a box's proxy for the current settings unless that's already
@@ -905,25 +956,29 @@ class CollageState: ObservableObject {
         }
         let source = img.proxy, id = img.id
         guard !img.isPlaceholder else { return }
-        if gradeInFlight.contains(id) {
+        if gradeInFlight[id] != nil {
             // A grade takes well under a second; one still out after a few
             // is lost (logged, to find out why): let a new one start.
             guard let started = gradeStarted[id], Date().timeIntervalSince(started) > 4 else { return }
             Diagnostics.log("grade stuck \(String(format: "%.0f", Date().timeIntervalSince(started)))s, retrying")
-            gradeInFlight.remove(id)
+            gradeInFlight[id] = nil
         }
         let cached = (gradedProxies[id] ?? []).filter { $0.source === source }
         guard let grade = grades.first(where: { g in
             !g.isIdentity && !cached.contains { $0.grade == g }
         }) else { return }
-        gradeInFlight.insert(id)
+        let token = UUID()
+        gradeInFlight[id] = token
         gradeStarted[id] = Date()
         let photoEdit = grade.photo != nil
         Task.detached(priority: .userInitiated) {
             let graded = ContentGrader.apply(grade, to: source)
             let unchanged = graded === source
             await MainActor.run {
-                self.gradeInFlight.remove(id)
+                if self.gradeInFlight[id] == token {
+                    self.gradeInFlight[id] = nil
+                    self.gradeStarted[id] = nil
+                }
                 // Diagnostics: a photo's own edit that came back untouched.
                 if photoEdit, unchanged { Diagnostics.log("photo grade failed (picture unchanged)") }
                 guard self.needsGrading else {
@@ -954,6 +1009,7 @@ class CollageState: ObservableObject {
                 all[id] = Array(list.suffix(2))
             }
             self.gradedProxies = all
+            self.gradeFlushCount += 1
             for img in self.currentPage.images where done[img.id] != nil { self.gradeIfNeeded(img) }
         }
     }
@@ -968,7 +1024,7 @@ class CollageState: ObservableObject {
 
     struct Sharp {
         /// The original it was made from (a replaced photo drops it).
-        let source: PlatformImage
+        let source: OriginalPicture
         let edge: CGFloat
         let image: PlatformImage
         var graded: Graded? = nil
@@ -977,8 +1033,12 @@ class CollageState: ObservableObject {
     /// Long-edge cap for a sharp copy; a phone screen is ~1300 px across,
     /// so a pinched-in photo still has room.
     static let sharpMaxEdge: CGFloat = 2560
-    /// Total pixels kept in sharp copies (~25 MB per copy at most).
-    static let sharpPixelBudget: CGFloat = 16_000_000
+    /// Total pixels kept in sharp copies, graded copies included (a graded
+    /// photo counts twice): ~100 MB at most.
+    static let sharpPixelBudget: CGFloat = 24_000_000
+    /// Bumped on a page change: sharp jobs still queued for the page left
+    /// behind stop before decoding anything.
+    nonisolated private let sharpGeneration = OSAllocatedUnfairLock(initialState: 0)
 
     @Published private(set) var sharpCopies: [UUID: Sharp] = [:]
     /// One copy at a time, off the shared task pool.
@@ -997,10 +1057,7 @@ class CollageState: ObservableObject {
         memoryWarning = NotificationCenter.default
             .publisher(for: UIApplication.didReceiveMemoryWarningNotification)
             .sink { [weak self] _ in
-                MainActor.assumeIsolated {
-                    Diagnostics.log("sharp copies dropped (memory warning)")
-                    self?.sharpCopies = [:]
-                }
+                MainActor.assumeIsolated { self?.freeMemory() }
             }
         #endif
     }
@@ -1008,14 +1065,19 @@ class CollageState: ObservableObject {
     /// The long edge, in pixels, a box's photo is drawn at on screen
     /// (rounded up to 256s, so small box changes don't remake it); nil when
     /// the proxy is enough.
+    #if canImport(UIKit)
+    /// The screen's scale (looked up once).
+    private static let screenScale: CGFloat = UIApplication.shared.connectedScenes
+        .compactMap { ($0 as? UIWindowScene)?.screen.scale }.first ?? 3
+    #endif
+
     private func sharpEdge(for img: CollageImage) -> CGFloat? {
         guard !img.isPlaceholder,
               let placement = ImagePlacement.compute(natural: img.naturalSize, boxSize: img.lastBoxSize,
                                                      zoom: img.zoom, rotation: img.rotation, pan: .zero)
         else { return nil }
         #if canImport(UIKit)
-        let screenScale = UIApplication.shared.connectedScenes
-            .compactMap { ($0 as? UIWindowScene)?.screen.scale }.first ?? 3
+        let screenScale = Self.screenScale
         #else
         let screenScale: CGFloat = 2
         #endif
@@ -1037,7 +1099,7 @@ class CollageState: ObservableObject {
             .sorted { $0.1 > $1.1 }
         for (img, edge) in needs {
             let aspect = min(img.naturalSize.width, img.naturalSize.height) / max(img.naturalSize.width, img.naturalSize.height)
-            let pixels = edge * edge * aspect
+            let pixels = edge * edge * aspect * (grade(for: img).isIdentity ? 1 : 2)
             guard pixels <= budget else { continue }
             budget -= pixels
             wanted[img.id] = edge
@@ -1045,10 +1107,12 @@ class CollageState: ObservableObject {
         // Let go of copies no longer needed (another page, smaller box,
         // replaced photo).
         let keep = sharpCopies.filter { id, s in
-            wanted[id] == s.edge && images.contains { $0.id == id && $0.image === s.source }
+            wanted[id] == s.edge && images.contains { $0.id == id && $0.original === s.source }
         }
         if keep.count != sharpCopies.count { sharpCopies = keep }
 
+        let generation = sharpGeneration.withLock { $0 }
+        let current = { [sharpGeneration] in sharpGeneration.withLock { $0 } == generation }
         for img in images {
             guard let edge = wanted[img.id], !sharpInFlight.contains(img.id) else { continue }
             let grade = grade(for: img)
@@ -1058,6 +1122,10 @@ class CollageState: ObservableObject {
                 let id = img.id, base = s.image
                 sharpInFlight.insert(id)
                 Self.sharpQueue.async {
+                    guard current() else {
+                        DispatchQueue.main.async { self.sharpInFlight.remove(id) }
+                        return
+                    }
                     let graded = ContentGrader.apply(grade, to: base)
                     if graded === base { Diagnostics.log("sharp grade failed (picture unchanged)") }
                     DispatchQueue.main.async {
@@ -1068,15 +1136,20 @@ class CollageState: ObservableObject {
                     }
                 }
             } else {
-                let id = img.id, original = img.image
+                let id = img.id, original = img.original
                 sharpInFlight.insert(id)
                 Self.sharpQueue.async {
-                    let sharp = original.downsampled(longEdge: edge)
+                    guard current() else {
+                        DispatchQueue.main.async { self.sharpInFlight.remove(id) }
+                        return
+                    }
+                    // Decoded straight at its size from the compressed original.
+                    let sharp = autoreleasepool { original.scaled(maxEdge: edge) }
                     let graded = grade.isIdentity ? nil
                         : Graded(source: sharp, grade: grade, image: ContentGrader.apply(grade, to: sharp))
                     DispatchQueue.main.async {
                         self.sharpInFlight.remove(id)
-                        guard self.currentPage.images.contains(where: { $0.id == id && $0.image === original })
+                        guard self.currentPage.images.contains(where: { $0.id == id && $0.original === original })
                         else { return }
                         Diagnostics.log("sharp copy \(Int(edge)) px")
                         self.sharpCopies[id] = Sharp(source: original, edge: edge, image: sharp, graded: graded)
@@ -1099,6 +1172,24 @@ class CollageState: ObservableObject {
     /// boxes drawn there must not report their geometry as the on-screen one.
     var isRenderingOffscreen: Bool { isRenderingEffectSource || renderFullResolution || isRenderingThumbnail }
     private var effectMapRefresh: AnyCancellable?
+    /// What the last highlight-map snapshot showed.
+    private var lastEffectSource: EffectSourceKey?
+    /// Bumped whenever graded pictures land (the snapshot shows them).
+    private var gradeFlushCount = 0
+
+    private struct EffectSourceKey {
+        let page: CollagePage
+        let grade: ContentGrade
+        let canvas: CGSize
+        let grades: Int
+        let glow: Bool
+        let halation: Bool
+
+        func same(as o: EffectSourceKey) -> Bool {
+            page.sameContent(as: o.page) && grade == o.grade && canvas == o.canvas
+                && grades == o.grades && glow == o.glow && halation == o.halation
+        }
+    }
 
     /// Re-derives the maps shortly after anything settles; cheap no-op while
     /// neither effect is on.
@@ -1121,9 +1212,19 @@ class CollageState: ObservableObject {
         let glow = effectAmount(.glow) > 0, halation = effectAmount(.halation) > 0
         guard glow || halation, !currentPage.images.isEmpty else {
             effectMaps.clear()
+            lastEffectSource = nil
             return
         }
         guard force || !isExporting else { return }
+        // Not while a slider moves (its end publishes again), and not when
+        // nothing the snapshot shows changed (a panel drag, a frame report).
+        let key = EffectSourceKey(page: currentPage, grade: contentGrade, canvas: canvasSize,
+                                  grades: gradeFlushCount, glow: glow, halation: halation)
+        if !force {
+            guard activeAdjustment == nil else { return }
+            if let last = lastEffectSource, last.same(as: key) { return }
+        }
+        lastEffectSource = key
 
         isRenderingEffectSource = true
         defer { isRenderingEffectSource = false }
@@ -1135,7 +1236,7 @@ class CollageState: ObservableObject {
         // The maps are heavily blurred — half resolution is plenty.
         renderer.scale = 0.5
         guard let snapshot = renderer.cgImage else { return }
-        effectMaps.update(from: snapshot, glow: glow, halation: halation, slides: slides)
+        effectMaps.update(from: snapshot, glow: glow, halation: halation, slides: slides, sync: force)
     }
 
     // MARK: - Drag to swap
@@ -1383,7 +1484,18 @@ class CollageState: ObservableObject {
     }
 
     // MARK: - Shared import (Share Extension)
-    @Published var pendingSharedImages: [PlatformImage] = []
+    @Published var pendingSharedImages: [CollageImage] = []
+    /// Their inbox files, deleted once the photos are added or discarded.
+    var pendingSharedFiles: [URL] = []
+
+    /// The pending shared photos, taken: their inbox files go too.
+    private func takePendingShared() -> [CollageImage] {
+        let shared = pendingSharedImages
+        pendingSharedImages = []
+        SharedInbox.remove(pendingSharedFiles)
+        pendingSharedFiles = []
+        return shared
+    }
     @Published var showSharedImportChoice: Bool = false
 
     // MARK: - Undo / redo (see History.swift)
@@ -1407,12 +1519,16 @@ class CollageState: ObservableObject {
     /// The collage being edited; it's saved under this id.
     var currentProjectId = UUID()
     var autosaveWork: DispatchWorkItem?
+    /// When the Collages list picture was last rendered (see saveProjectNow).
+    var lastThumbnailAt: Date = .distantPast
+    /// A saved collage is being read (after the open one's save).
+    var isOpeningProject = false
     /// Edited since it was opened or last saved. Leaving a collage that
     /// wasn't touched doesn't save it again (that would re-render its
     /// thumbnail before the photos are drawn, leaving it empty).
     var hasUnsavedChanges = false
     /// Photo files already written for this collage, by picture.
-    var savedImageFiles: [ObjectIdentifier: (image: PlatformImage, file: String)] = [:]
+    var savedImageFiles: [ObjectIdentifier: (original: OriginalPicture, file: String)] = [:]
     /// Photo files the open collage lists but couldn't load: never deleted
     /// as unused by a save.
     var unloadedImageFiles: Set<String> = []
@@ -1424,9 +1540,11 @@ class CollageState: ObservableObject {
     var focusChecked: Set<UUID> = []
 
     // MARK: - Export
-    /// While true, image boxes draw the full-resolution originals instead of
-    /// the canvas proxies. Only enabled during export rendering.
-    @Published var renderFullResolution: Bool = false
+    /// While true, image boxes draw the export's pictures instead of the
+    /// canvas proxies: true only while an export picture renders (see renderCurrentPage):
+    /// the boxes on screen keep drawing their proxies meanwhile. Not
+    /// published: it's on and off again within one render.
+    var renderFullResolution: Bool = false
     @Published var isExporting: Bool = false
     /// 0…1 progress of a multi-page export (pages rendered / total).
     @Published var exportProgress: Double = 0
@@ -1565,7 +1683,7 @@ class CollageState: ObservableObject {
 
     /// The subject mask for a photo, if made (and still matching its image).
     func subjectMask(for img: CollageImage) -> SubjectMask? {
-        guard let m = subjectMasks[img.id], m.source == ObjectIdentifier(img.image) else { return nil }
+        guard let m = subjectMasks[img.id], m.source == ObjectIdentifier(img.original) else { return nil }
         return m
     }
 
@@ -1574,12 +1692,17 @@ class CollageState: ObservableObject {
     /// Finds the photo's subject with Vision, off the main thread, once.
     func requestSubjectMask(for img: CollageImage) {
         guard img.canProtrude, subjectMask(for: img) == nil, !maskInFlight.contains(img.id) else { return }
-        let id = img.id, image = img.image
+        let id = img.id, original = img.original
         maskInFlight.insert(id)
         objectWillChange.send()
-        Task.detached(priority: .userInitiated) {
-            let mask = SubjectMasker.makeMask(for: image)
-            await MainActor.run {
+        // Vision blocks its thread: on its own queue, off the shared task
+        // pool that grading needs (as focus finding).
+        Self.maskQueue.async {
+            let mask = autoreleasepool {
+                SubjectMasker.makeMask(for: original.scaled(maxEdge: SubjectMasker.maskLongEdge),
+                                       source: ObjectIdentifier(original))
+            }
+            DispatchQueue.main.async {
                 self.maskInFlight.remove(id)
                 self.subjectMasks[id] = mask
                 Diagnostics.log("subject \(mask.mask == nil ? "not found" : "found (\(mask.instances.count))")")
@@ -1587,6 +1710,8 @@ class CollageState: ObservableObject {
             }
         }
     }
+
+    nonisolated static let maskQueue = DispatchQueue(label: "subject masks", qos: .userInitiated)
 
     func setProtrusion(_ edges: ProtrusionEdges?, for id: UUID) {
         guard let pi = pageIndex(containing: id),
@@ -1632,15 +1757,48 @@ class CollageState: ObservableObject {
         }
         let picked = objects.sorted().filter { $0 < subject.instances.count }.map { subject.instances[$0] }
         guard !picked.isEmpty else { return (all, subject.bounds) }
-        if let m = mergedShapes[img.id], m.source == ObjectIdentifier(img.image), m.objects == objects {
+        let source = ObjectIdentifier(img.original)
+        if let m = mergedShapes[img.id], m.source == source, m.objects == objects {
             return (m.mask, m.bounds)
         }
-        guard let mask = picked.count == 1 ? picked[0].mask : SubjectMasker.union(picked.map(\.mask)) else {
-            return (all, subject.bounds)
-        }
         let bounds = picked.dropFirst().reduce(picked[0].bounds) { $0.union($1.bounds) }
-        mergedShapes[img.id] = (ObjectIdentifier(img.image), objects, mask, bounds)
-        return (mask, bounds)
+        if picked.count == 1 { return (picked[0].mask, bounds) }
+        let id = img.id, masks = picked.map(\.mask)
+        let made = cutoutWork("union \(id) \(objects.sorted())") {
+            SubjectMasker.union(masks)
+        } store: { (mask: CGImage?) in
+            if let mask { self.mergedShapes[id] = (source, objects, mask, bounds) }
+        }
+        if let made, let mask = made { return (mask, bounds) }
+        // Meanwhile: the last shape this photo had, else all its subjects.
+        if let m = mergedShapes[img.id], m.source == source { return (m.mask, m.bounds) }
+        return (all, subject.bounds)
+    }
+
+    /// Cutout shapes in the making, by job.
+    private var cutoutJobs: Set<String> = []
+
+    /// A cutout shape (Vision / Core Image work): made right away for an
+    /// offscreen render (the export needs it now), else on the mask queue
+    /// — never in the middle of drawing the screen — then `store`d and the
+    /// canvas redrawn. Returns what was made now (offscreen only).
+    private func cutoutWork<T>(_ job: String, make: @escaping () -> T, store: @escaping (T) -> Void) -> T? {
+        if isRenderingOffscreen {
+            let value = make()
+            store(value)
+            return value
+        }
+        guard !cutoutJobs.contains(job) else { return nil }
+        cutoutJobs.insert(job)
+        Self.maskQueue.async {
+            let value = autoreleasepool { make() }
+            DispatchQueue.main.async {
+                self.cutoutJobs.remove(job)
+                store(value)
+                self.objectWillChange.send()
+            }
+        }
+        return nil
     }
 
     /// Outline polylines of each subject (for the preview), by image id.
@@ -1648,10 +1806,14 @@ class CollageState: ObservableObject {
 
     func subjectInstanceOutlines(for img: CollageImage) -> [[[CGPoint]]] {
         guard let subject = subjectMask(for: img) else { return [] }
-        if let o = instanceOutlines[img.id], o.source == ObjectIdentifier(img.image) { return o.outlines }
-        let outlines = subject.instances.map { SubjectMasker.outline(of: $0.mask) }
-        instanceOutlines[img.id] = (ObjectIdentifier(img.image), outlines)
-        return outlines
+        let source = ObjectIdentifier(img.original)
+        if let o = instanceOutlines[img.id], o.source == source { return o.outlines }
+        let id = img.id, masks = subject.instances.map(\.mask)
+        return cutoutWork("outlines \(id)") {
+            masks.map { SubjectMasker.outline(of: $0) }
+        } store: { outlines in
+            self.instanceOutlines[id] = (source, outlines)
+        } ?? []
     }
 
     /// Subject masks grown by a radius (mask pixels), for the Border effect.
@@ -1662,27 +1824,39 @@ class CollageState: ObservableObject {
     private var subjectOutlines: [UUID: (source: ObjectIdentifier, objects: Set<Int>?, radius: Int, outline: [[CGPoint]])] = [:]
 
     func subjectOutline(for img: CollageImage, radius: Int, allowStale: Bool = false) -> [[CGPoint]] {
-        if let o = subjectOutlines[img.id], o.source == ObjectIdentifier(img.image),
-           o.objects == img.protrusionObjects, o.radius == radius || allowStale {
-            return o.outline
+        let source = ObjectIdentifier(img.original), objects = img.protrusionObjects
+        let cached = subjectOutlines[img.id].flatMap { $0.source == source && $0.objects == objects ? $0 : nil }
+        if let cached, cached.radius == radius || allowStale { return cached.outline }
+        // The grown mask first (made the same way); until both are there,
+        // the last outline at another radius stands in.
+        guard let grown = dilatedSubjectMask(for: img, radius: radius, exact: true) else { return cached?.outline ?? [] }
+        let id = img.id
+        let made = cutoutWork("outline \(id) \(radius)") {
+            SubjectMasker.outline(of: grown)
+        } store: { outline in
+            self.subjectOutlines[id] = (source, objects, radius, outline)
         }
-        guard let grown = dilatedSubjectMask(for: img, radius: radius) else { return [] }
-        let outline = SubjectMasker.outline(of: grown)
-        subjectOutlines[img.id] = (ObjectIdentifier(img.image), img.protrusionObjects, radius, outline)
-        return outline
+        return made ?? cached?.outline ?? []
     }
 
     /// `allowStale`: during a live pinch, reuse the last grown mask whatever
     /// its radius (growing one per frame is too slow); it's redone on release.
-    func dilatedSubjectMask(for img: CollageImage, radius: Int, allowStale: Bool = false) -> CGImage? {
+    /// Made off the main thread (see cutoutWork): until it's there, the
+    /// last one at another radius stands in, unless `exact`.
+    func dilatedSubjectMask(for img: CollageImage, radius: Int, allowStale: Bool = false,
+                            exact: Bool = false) -> CGImage? {
         guard let mask = protrusionShape(for: img)?.mask else { return nil }
-        if let d = dilatedMasks[img.id], d.source == ObjectIdentifier(img.image),
-           d.objects == img.protrusionObjects, d.radius == radius || allowStale {
-            return d.image
+        let source = ObjectIdentifier(img.original), objects = img.protrusionObjects
+        let cached = dilatedMasks[img.id].flatMap { $0.source == source && $0.objects == objects ? $0 : nil }
+        if let cached, cached.radius == radius || allowStale { return cached.image }
+        let id = img.id
+        let made = cutoutWork("dilate \(id) \(radius) \(objects.map { $0.sorted() } ?? [])") {
+            SubjectMasker.dilate(mask, radius: radius)
+        } store: { grown in
+            if let grown { self.dilatedMasks[id] = (source, objects, radius, grown) }
         }
-        guard let grown = SubjectMasker.dilate(mask, radius: radius) else { return nil }
-        dilatedMasks[img.id] = (ObjectIdentifier(img.image), img.protrusionObjects, radius, grown)
-        return grown
+        if let made { return made }
+        return exact ? nil : cached?.image
     }
 
     /// The box edges the photo's subject currently crosses — where a
@@ -1835,34 +2009,31 @@ class CollageState: ObservableObject {
     /// Resolves the pending Share Extension import once the user has chosen
     /// whether to start a fresh collage or append to the current one.
     func importPendingShared(replacingCurrent: Bool) {
-        let shared = pendingSharedImages
-        pendingSharedImages = []
+        let shared = takePendingShared()
         guard !shared.isEmpty else { return }
         if replacingCurrent {
             startNewCollage()
         }
-        addImages(shared)
+        addPreparedImages(shared)
     }
 
     /// Adds the pending shared photos to the existing collage on a fresh page
     /// appended at the end, and navigates to it. Overflow beyond the per-page
     /// limit spills onto further new pages, like a normal import.
     func importPendingSharedAsNewPage() {
-        let shared = pendingSharedImages
-        pendingSharedImages = []
-        guard !shared.isEmpty, canAddPost else { return }
+        guard !pendingSharedImages.isEmpty, canAddPost else { return }
+        let shared = takePendingShared()
         pages.append(CollagePage(style: currentPage.style.single, look: currentPage.look))
         currentPageIndex = pages.count - 1
-        addImages(shared)
+        addPreparedImages(shared)
     }
 
     /// Spreads the current images plus the pending shared photos evenly
     /// across the defined pages.
     func importPendingSharedBurst() {
-        let shared = pendingSharedImages
-        pendingSharedImages = []
+        let shared = takePendingShared()
         guard !shared.isEmpty else { return }
-        let all = pages.flatMap { $0.images } + shared.map { CollageImage(image: $0) }
+        let all = pages.flatMap { $0.images } + shared
         // Create enough pages for ~4 images each, but never fewer than the
         // pages that already exist.
         let target = max(pages.count, Int((Double(all.count) / 4).rounded(.up)))
@@ -1870,15 +2041,15 @@ class CollageState: ObservableObject {
     }
 
     func discardPendingShared() {
-        pendingSharedImages = []
+        _ = takePendingShared()
     }
 
     /// Replaces the image content of an existing box, keeping its position in
     /// the layout. Pan/zoom reset because they are meaningless for the new image.
-    func replaceImage(id: UUID, with newImage: PlatformImage) {
+    func replaceImage(id: UUID, with prepared: CollageImage) {
         guard let pi = pageIndex(containing: id),
               let idx = pages[pi].images.firstIndex(where: { $0.id == id }) else { return }
-        pages[pi].images[idx].setImage(newImage)
+        pages[pi].images[idx].setImage(prepared)
         focusChecked.remove(id)
         // The old picture's cutout must not stay with the new one (the
         // caches know a picture by its address, which can be reused).
@@ -2391,15 +2562,18 @@ class CollageState: ObservableObject {
     }
 
     func resetAllImagePositions() {
-        for pi in pages.indices {
-            for i in pages[pi].images.indices {
-                pages[pi].images[i].panOffset = .zero
-                pages[pi].images[i].framedByUser = false
-                pages[pi].images[i].zoom = 1.0
-                pages[pi].images[i].rotation = 0
-                pages[pi].images[i].lastBoxSize = .zero
+        // On a copy, written back once (each write to the pages redraws).
+        var all = pages
+        for pi in all.indices {
+            for i in all[pi].images.indices {
+                all[pi].images[i].panOffset = .zero
+                all[pi].images[i].framedByUser = false
+                all[pi].images[i].zoom = 1.0
+                all[pi].images[i].rotation = 0
+                all[pi].images[i].lastBoxSize = .zero
             }
         }
+        pages = all
     }
 
     /// Rebuilds the layout of every page — used when a global setting that
@@ -2455,6 +2629,12 @@ class CollageState: ObservableObject {
 
     func setBoxSize(id: UUID, boxSize: CGSize) {
         guard !isRenderingOffscreen else { return }
+        // Mid splitter drag: noted, written once the drag ends (each write
+        // redraws every box, and a text box would re-render every frame).
+        if isResizing {
+            pendingBoxSizes[id] = boxSize
+            return
+        }
         guard let idx = images.firstIndex(where: { $0.id == id }),
               boxSize.differs(from: images[idx].lastBoxSize) else { return }
         Diagnostics.count("boxSize")
@@ -2583,6 +2763,16 @@ class CollageState: ObservableObject {
 
     func endResize() {
         isResizing = false
+        applyPendingBoxSizes()
+    }
+
+    /// Box sizes reported during a splitter drag.
+    private var pendingBoxSizes: [UUID: CGSize] = [:]
+
+    private func applyPendingBoxSizes() {
+        let pending = pendingBoxSizes
+        pendingBoxSizes = [:]
+        for (id, size) in pending { setBoxSize(id: id, boxSize: size) }
     }
 
     func updateResizeBoxes(colIndex: Int, biA: Int, biB: Int, totalDeltaFraction: CGFloat) {
@@ -2610,7 +2800,7 @@ class CollageState: ObservableObject {
     }
 
     func updateResizeCols(ciA: Int, ciB: Int, totalDeltaFraction: CGFloat) {
-        guard ciA < dragStartColGrows.count, ciB < dragStartColGrows.count,
+        guard ciA >= 0, ciB >= 0, ciA < dragStartColGrows.count, ciB < dragStartColGrows.count,
               dragStartColGrows.count == layout.colGrows.count else { return }
         
         let totalSum = dragStartColGrows.reduce(0, +)
@@ -2652,7 +2842,7 @@ class CollageState: ObservableObject {
     }
 
     func resizeCols(ciA: Int, ciB: Int, deltaFraction: CGFloat) {
-        guard ciA < layout.colGrows.count, ciB < layout.colGrows.count else { return }
+        guard ciA >= 0, ciB >= 0, ciA < layout.colGrows.count, ciB < layout.colGrows.count else { return }
         
         let totalSum = layout.colGrows.reduce(0, +)
         let sumAB = layout.colGrows[ciA] + layout.colGrows[ciB]
@@ -2806,7 +2996,10 @@ class CollageState: ObservableObject {
         if isCanvasZooming { isCanvasZooming = false }
         // A splitter drag cancelled without its end would otherwise keep
         // undo and autosave paused.
-        if isResizing { isResizing = false }
+        if isResizing {
+            isResizing = false
+            applyPendingBoxSizes()
+        }
     }
 
     /// Lets go of whatever pointed at a picture that's no longer in the
@@ -3002,6 +3195,9 @@ class CollageState: ObservableObject {
     func exportPages(allPages: Bool, settings: ExportSettings = .saved) async {
         guard hasAnyImages else { return }
         Diagnostics.log("export \(allPages ? "all pages" : "page") \(settings.size.rawValue) \(settings.format.rawValue)")
+        // Saved first: no save runs while exporting (the page on screen is
+        // the one being exported).
+        saveProjectNow()
         isExporting = true
         isBusy = true
         isLoading = true
@@ -3010,8 +3206,6 @@ class CollageState: ObservableObject {
         // Let the "Exporting" dialog animate in before the render blocks the main thread
         try? await Task.sleep(nanoseconds: 350_000_000)
 
-        // Draw the full-resolution originals for the export snapshots
-        renderFullResolution = true
         let originalIndex = currentPageIndex
 
         let dir = FileManager.default.temporaryDirectory
@@ -3034,16 +3228,22 @@ class CollageState: ObservableObject {
         for (n, pi) in targets.enumerated() {
             currentPageIndex = pi
             let slideCount = slides
+            let scale = settings.scale(for: pictureSize)
+            await prepareExportPage(scale: scale)
             refreshEffectMaps(force: true)
             defer {
-                // Each page's full-size graded photos go before the next.
+                // Each page's photos go before the next.
                 gradeExportCache = [:]
+                exportSources = [:]
                 exportProgress = Double(n + 1) / Double(targets.count)
             }
             for slide in 0..<slideCount {
-                guard let image = renderCurrentPage(scale: settings.scale(for: pictureSize),
-                                                    slide: slideCount > 1 ? slide : nil),
-                      let data = settings.encode(image) else {
+                // Drained per picture: the render and its encoding are big.
+                let data: Data? = autoreleasepool {
+                    renderCurrentPage(scale: scale, slide: slideCount > 1 ? slide : nil)
+                        .flatMap { settings.encode($0) }
+                }
+                guard let data else {
                     if failed.last != pi + 1 { failed.append(pi + 1) }
                     continue
                 }
@@ -3066,8 +3266,8 @@ class CollageState: ObservableObject {
         }
 
         currentPageIndex = originalIndex
-        renderFullResolution = false
         gradeExportCache = [:]
+        exportSources = [:]
         isExporting = false
         isBusy = false
         isLoading = false
@@ -3081,6 +3281,39 @@ class CollageState: ObservableObject {
         }
         if !urls.isEmpty {
             showExportSheet = true
+        }
+    }
+
+    /// The share sheet closed: the exported files (tens of MB) go.
+    func clearExportFiles() {
+        guard !isExporting else { return }
+        exportedFiles = []
+        try? FileManager.default.removeItem(at: FileManager.default.temporaryDirectory
+            .appendingPathComponent("CollageExport", isDirectory: true))
+    }
+
+    /// Before a page is drawn for export: each photo scaled to the pixels it
+    /// fills at the export size (never the whole 4096 px original when the
+    /// box is small) and graded, one photo at a time off the main thread,
+    /// so the render itself only draws.
+    private func prepareExportPage(scale: CGFloat) async {
+        let rects = layout.rects(canvasSize: canvasSize, gap: CGFloat(gap), rows: isRows)
+        for img in currentPage.images where !img.isPlaceholder && !img.isText {
+            let box = rects[img.id]?.size ?? canvasSize
+            let placement = ImagePlacement.compute(natural: img.naturalSize, boxSize: box, zoom: img.zoom,
+                                                   rotation: img.rotation, pan: .zero)
+            let drawn = placement.map { max($0.size.width, $0.size.height) } ?? max(canvasSize.width, canvasSize.height)
+            let edge = ceil(drawn * scale * 1.05)
+            let original = img.original, grade = grade(for: img)
+            let (source, graded): (PlatformImage, PlatformImage?) = await Task.detached(priority: .userInitiated) {
+                autoreleasepool {
+                    // Decoded straight at that size from the compressed original.
+                    let source = original.scaled(maxEdge: edge)
+                    return (source, grade.isIdentity ? nil : ContentGrader.apply(grade, to: source))
+                }
+            }.value
+            exportSources[img.id] = source
+            if let graded { gradeExportCache[img.id] = Graded(source: source, grade: grade, image: graded) }
         }
     }
 
@@ -3107,6 +3340,10 @@ class CollageState: ObservableObject {
         renderer.scale = scale
         renderer.isOpaque = false
 
+        // The export's prepared pictures (see prepareExportPage), for this
+        // render only.
+        renderFullResolution = true
+        defer { renderFullResolution = false }
         #if canImport(UIKit)
         return renderer.uiImage
         #else

@@ -1889,18 +1889,7 @@ struct PageAddPhotosButton: View {
         state.isBusy = true
         state.isLoading = true
         Task {
-            var loaded: [PlatformImage] = []
-            for item in picked {
-                if let data = try? await item.loadTransferable(type: Data.self),
-                   let img = PlatformImage.decoded(from: data) {
-                    loaded.append(img)
-                }
-            }
-            // Generate proxies/thumbnails off the main thread
-            let images = loaded
-            let prepared = await Task.detached(priority: .userInitiated) {
-                images.map { CollageImage(image: $0) }
-            }.value
+            let prepared = await CollageImage.prepare(picked)
             await MainActor.run {
                 state.addPreparedImages(prepared, toPage: target)
                 state.goToPage(target)

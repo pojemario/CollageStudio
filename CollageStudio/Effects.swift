@@ -139,6 +139,15 @@ struct EffectLayers: View {
     }
 }
 
+// MARK: - Shared Core Image context
+
+enum SharedCI {
+    /// One context for every one-shot render (grades, highlight maps,
+    /// masks): each context keeps its own caches and GPU buffers, and these
+    /// renders never reuse intermediates.
+    static let context = CIContext(options: [.cacheIntermediates: false])
+}
+
 // MARK: - Highlight maps for glow & halation
 
 /// Blurred-highlight images derived from a snapshot of the collage (see
@@ -149,19 +158,41 @@ final class EffectMaps: ObservableObject {
     @Published private(set) var glow: PlatformImage?
     @Published private(set) var halation: PlatformImage?
 
-    private let context = CIContext()
+    private var context: CIContext { SharedCI.context }
+    private static let queue = DispatchQueue(label: "effect maps", qos: .userInitiated)
+    /// The latest update: an older one finishing late is dropped.
+    private var generation = 0
 
     func clear() {
+        generation += 1
         if glow != nil { glow = nil }
         if halation != nil { halation = nil }
     }
 
     /// `slides`: a carousel strip blurs as much as one of its slides would.
-    func update(from snapshot: CGImage, glow wantGlow: Bool, halation wantHalation: Bool, slides: Int = 1) {
+    /// The blurs run off the main thread; `sync` (export) waits for them.
+    func update(from snapshot: CGImage, glow wantGlow: Bool, halation wantHalation: Bool, slides: Int = 1,
+                sync: Bool = false) {
+        generation += 1
+        let gen = generation
+        let work = {
+            let maps = self.makeMaps(from: snapshot, glow: wantGlow, halation: wantHalation, slides: slides)
+            let publish = {
+                guard gen == self.generation else { return }
+                self.glow = maps.glow
+                self.halation = maps.halation
+            }
+            if sync { publish() } else { DispatchQueue.main.async(execute: publish) }
+        }
+        if sync { work() } else { Self.queue.async(execute: work) }
+    }
+
+    private func makeMaps(from snapshot: CGImage, glow wantGlow: Bool, halation wantHalation: Bool,
+                          slides: Int) -> (glow: PlatformImage?, halation: PlatformImage?) {
         let source = CIImage(cgImage: snapshot)
         let longEdge = max(source.extent.width / CGFloat(max(slides, 1)), source.extent.height)
 
-        glow = wantGlow
+        let glow = wantGlow
             ? render(highlights(of: source, from: 0.35), blur: longEdge * 0.045, extent: source.extent)
             : nil
 
@@ -174,10 +205,9 @@ final class EffectMaps: ObservableObject {
             tint.gVector = CIVector(x: 0.22, y: 0.14, z: 0.05, w: 0)
             tint.bVector = CIVector(x: 0.05, y: 0.03, z: 0.01, w: 0)
             tint.aVector = CIVector(x: 0, y: 0, z: 0, w: 1)
-            halation = render(tint.outputImage, blur: longEdge * 0.016, extent: source.extent)
-        } else {
-            halation = nil
+            return (glow, render(tint.outputImage, blur: longEdge * 0.016, extent: source.extent))
         }
+        return (glow, nil)
     }
 
     /// Everything darker than `threshold` goes to black; the rest ramps up.
@@ -212,8 +242,9 @@ final class EffectMaps: ObservableObject {
 /// over the pictures with Core Image (so the export matches the screen).
 /// The background color goes through the same math directly.
 enum HSLGrader {
-    private static let context = CIContext()
+    private static var context: CIContext { SharedCI.context }
     private static let cubeSize = 32
+    static var cubeDimension: Int { cubeSize }
     /// Hue shift at ±100, in degrees.
     private static let maxHueShift = 30.0
 
@@ -269,16 +300,21 @@ enum HSLGrader {
         return Color(.sRGB, red: out.r, green: out.g, blue: out.b, opacity: Double(a))
     }
 
+    /// The transform sampled over the cube, one blue slice per core,
+    /// straight into one buffer.
     static func cubeData(_ transform: (Double, Double, Double) -> (r: Double, g: Double, b: Double)) -> Data {
-        let n = cubeSize
-        var values = [Float]()
-        values.reserveCapacity(n * n * n * 4)
-        for bi in 0..<n {
-            for gi in 0..<n {
-                for ri in 0..<n {
-                    let out = transform(Double(ri) / Double(n - 1), Double(gi) / Double(n - 1),
-                                        Double(bi) / Double(n - 1))
-                    values += [Float(out.r), Float(out.g), Float(out.b), 1]
+        let n = cubeSize, step = 1 / Double(n - 1)
+        var values = [Float](repeating: 1, count: n * n * n * 4)
+        values.withUnsafeMutableBufferPointer { buffer in
+            let out = buffer.baseAddress!
+            DispatchQueue.concurrentPerform(iterations: n) { bi in
+                var i = bi * n * n * 4
+                for gi in 0..<n {
+                    for ri in 0..<n {
+                        let c = transform(Double(ri) * step, Double(gi) * step, Double(bi) * step)
+                        out[i] = Float(c.r); out[i + 1] = Float(c.g); out[i + 2] = Float(c.b)
+                        i += 4
+                    }
                 }
             }
         }
@@ -386,26 +422,38 @@ extension ContentGrade {
 }
 
 enum ContentGrader {
-    private static let context = CIContext()
+    private static var context: CIContext { SharedCI.context }
 
     /// Color cubes of the last few grades. Building one runs the whole
     /// color math 32,768 times, so it's made once per slider step and
     /// shared by every picture instead of once per picture.
     private static let cubeLock = NSLock()
     nonisolated(unsafe) private static var cubes: [(grade: ContentGrade, data: Data)] = []
+    /// The filter tiles' cubes, kept apart so a long group of tiles never
+    /// pushes out the live grade (and its before/after twin).
+    nonisolated(unsafe) private static var previewCubes: [(grade: ContentGrade, data: Data)] = []
 
-    static func cube(for grade: ContentGrade) -> Data {
+    /// `preview`: for a filter tile.
+    static func cube(for grade: ContentGrade, preview: Bool = false) -> Data {
+        // Keyed by the color settings only: the detail sliders (clarity,
+        // sharpness, texture) don't change the cube.
+        let key = grade.colorOnly
         cubeLock.lock()
         defer { cubeLock.unlock() }
-        if let hit = cubes.first(where: { $0.grade == grade }) { return hit.data }
-        let m = grade.calibration.isIdentity ? nil : grade.calibration.matrix
-        let data = HSLGrader.cubeData { grade.color($0, $1, $2, calibrationMatrix: m) }
-        cubes.append((grade, data))
-        // Room for the filter tiles' previews without pushing out the live
-        // grade (and its before/after twin). Built under the lock on
-        // purpose: every photo asks for the same cube at once, and only
-        // one should build it.
-        if cubes.count > 14 { cubes.removeFirst() }
+        if let hit = cubes.first(where: { $0.grade == key }) ?? previewCubes.first(where: { $0.grade == key }) {
+            return hit.data
+        }
+        let m = key.calibration.isIdentity ? nil : key.calibration.matrix
+        // Built under the lock on purpose: every photo asks for the same
+        // cube at once, and only one should build it.
+        let data = HSLGrader.cubeData { key.color($0, $1, $2, calibrationMatrix: m) }
+        if preview {
+            previewCubes.append((key, data))
+            if previewCubes.count > 24 { previewCubes.removeFirst() }
+        } else {
+            cubes.append((key, data))
+            if cubes.count > 6 { cubes.removeFirst() }
+        }
         return data
     }
 
@@ -415,23 +463,27 @@ enum ContentGrader {
         return HSLGrader.applyTransform(to: color) { grade.color($0, $1, $2) }
     }
 
-    static func apply(_ grade: ContentGrade, to image: PlatformImage) -> PlatformImage {
+    /// The color cube and the detail filters as one Core Image chain,
+    /// rendered once (no in-between bitmap). `preview`: a filter tile.
+    static func apply(_ grade: ContentGrade, to image: PlatformImage, preview: Bool = false) -> PlatformImage {
         guard !grade.isIdentity else { return image }
-        var source = image
-        if grade.hasColorChange {
-            source = HSLGrader.applyCube(to: source, cube: cube(for: grade))
-        }
-        guard grade.hasDetailChange else { return source }
-
         #if canImport(UIKit)
-        guard let cg = source.cgImage else { return source }
+        guard let cg = image.cgImage else { return image }
         #else
-        guard let cg = source.cgImage(forProposedRect: nil, context: nil, hints: nil) else { return source }
+        guard let cg = image.cgImage(forProposedRect: nil, context: nil, hints: nil) else { return image }
         #endif
         let input = CIImage(cgImage: cg)
         let extent = input.extent
         let longEdge = max(extent.width, extent.height)
         var out = input
+        if grade.hasColorChange {
+            let f = CIFilter.colorCubeWithColorSpace()
+            f.inputImage = input
+            f.cubeDimension = Float(HSLGrader.cubeDimension)
+            f.cubeData = cube(for: grade, preview: preview)
+            f.colorSpace = CGColorSpace(name: CGColorSpace.sRGB)
+            out = f.outputImage ?? input
+        }
 
         if grade.clarity > 0 {
             let f = CIFilter.unsharpMask()
@@ -486,11 +538,11 @@ enum ContentGrader {
             out = (f.outputImage ?? out).cropped(to: extent)
         }
 
-        guard let rendered = context.createCGImage(out, from: extent) else { return source }
+        guard let rendered = context.createCGImage(out, from: extent) else { return image }
         #if canImport(UIKit)
-        return UIImage(cgImage: rendered, scale: source.scale, orientation: source.imageOrientation)
+        return UIImage(cgImage: rendered, scale: image.scale, orientation: image.imageOrientation)
         #else
-        return NSImage(cgImage: rendered, size: source.size)
+        return NSImage(cgImage: rendered, size: image.size)
         #endif
     }
 }
@@ -872,12 +924,16 @@ struct FilterControls: View {
             let missing = shownFilters.filter { previews[$0] == nil || previewSource != ObjectIdentifier(sample) }
             if previewSource != ObjectIdentifier(sample) { previews = [:]; previewSource = ObjectIdentifier(sample) }
             guard !missing.isEmpty else { return }
-            let rendered = await Task.detached(priority: .userInitiated) {
-                Dictionary(uniqueKeysWithValues: missing.map { f in
-                    (f, ContentGrader.apply(ContentGrade(filter: f), to: sample))
-                })
-            }.value
-            previews.merge(rendered) { _, new in new }
+            // One tile at a time, stopping as soon as the row goes away or
+            // the group changes (cancellation doesn't reach a detached task
+            // by itself).
+            for f in missing {
+                guard !Task.isCancelled else { return }
+                let tile = await Task.detached(priority: .userInitiated) {
+                    ContentGrader.apply(ContentGrade(filter: f), to: sample, preview: true)
+                }.value
+                previews[f] = tile
+            }
         }
     }
 
