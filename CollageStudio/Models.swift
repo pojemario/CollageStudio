@@ -1293,6 +1293,11 @@ enum ColorFilter: Hashable, Identifiable {
     /// blue-green foliage, clear cyan water / sky, muted blues, near-neutral
     /// grays with faintly warm highlights.
     case portra400
+    /// Matched to the ginger references (red hair by misty water): oranges
+    /// and reds shifted toward red, pale muted emerald-teal greens, yellows
+    /// to amber, quiet blues, near-true blacks under teal-green shadows,
+    /// warm cream mids and highlights rolled off under white.
+    case ginger
 
     /// A 3D LUT (.cube) bundled from the project's luts/ folder, by its key
     /// "Group/Name" (see LUTLibrary).
@@ -1300,7 +1305,7 @@ enum ColorFilter: Hashable, Identifiable {
 
     /// The built-in looks, in tile order.
     static let builtIns: [ColorFilter] = [.none, .amber, .amber2, .heritage, .tealSplit, .brownie, .melancholy, .classicNegative,
-                                          .classicNegative2, .portra400]
+                                          .classicNegative2, .portra400, .ginger]
     /// Every filter offered: built-ins, then the bundled LUTs.
     static var allCases: [ColorFilter] { groups.flatMap(\.filters) }
 
@@ -1324,6 +1329,7 @@ enum ColorFilter: Hashable, Identifiable {
         case .classicNegative: return "Split Neg"
         case .classicNegative2: return "Classic Fade"
         case .portra400: return "P400"
+        case .ginger: return "Ginger"
         case .lut(let key): return LUTLibrary.displayName(key)
         }
     }
@@ -1349,6 +1355,8 @@ enum ColorFilter: Hashable, Identifiable {
             return Self.classicNegative(r, g, b, shadow: [-0.018, 0.022, -0.002])   // dark green-teal
         case .portra400:
             return Self.portra400(r, g, b)
+        case .ginger:
+            return Self.ginger(r, g, b)
         case .classicNegative2:
             return Self.classicNegative(r, g, b, shadow: [-0.070, 0.046, 0.060])    // strong teal
         case .melancholy:
@@ -1519,6 +1527,67 @@ enum ColorFilter: Hashable, Identifiable {
         let shadow = [-0.012, 0.010, 0.002]     // teal-green
         let mid = [-0.012, 0.003, 0.014]        // cool steel
         let high = [-0.020, 0.006, 0.020]       // cool cyan-gray
+        let out = (0..<3).map { min(max(c[$0] + ws * shadow[$0] + wm * mid[$0] + wh * high[$0], 0), 1) }
+        return (out[0], out[1], out[2])
+    }
+
+    /// Hue (degrees in, degrees out) and saturation-scale curves for Ginger.
+    /// Yellow-greens split sharply: below ~55° they go to amber, above to
+    /// emerald, so almost nothing is left between.
+    private static let gingerHue: [(Double, Double)] = [
+        (0, 0), (12, 9), (22, 17), (32, 27), (42, 35), (50, 40), (58, 62), (70, 118), (86, 138),
+        (110, 148), (140, 156), (170, 170), (200, 195), (232, 212), (270, 262), (330, 334), (360, 360)]
+    private static let gingerSat: [(Double, Double)] = [
+        (0, 1.12), (14, 1.10), (26, 1.03), (40, 0.85), (50, 0.6), (62, 0.5), (90, 0.56), (140, 0.64),
+        (172, 0.82), (200, 0.75), (220, 0.62), (260, 0.8), (320, 0.9), (360, 1.12)]
+
+    /// Matched to the ginger references: copper hair and reds shifted toward
+    /// red, pale muted emerald-teal foliage, near-true blacks, teal-green
+    /// shadows, warm cream mids and highlights rolled off under white.
+    private static func ginger(_ r: Double, _ g: Double, _ b: Double) -> (r: Double, g: Double, b: Double) {
+        func bump(_ h: Double, _ center: Double, _ width: Double) -> Double {
+            var d = (h - center + 180).truncatingRemainder(dividingBy: 360)
+            if d < 0 { d += 360 }
+            d -= 180
+            let w = min(max(1 - abs(d) / width, 0), 1)
+            return w * w * (3 - 2 * w)
+        }
+        func curve(_ pts: [(Double, Double)], _ x: Double) -> Double {
+            for i in 1..<pts.count where x <= pts[i].0 {
+                let (x0, y0) = pts[i - 1], (x1, y1) = pts[i]
+                return y0 + (y1 - y0) * (x - x0) / (x1 - x0)
+            }
+            return pts[pts.count - 1].1
+        }
+        var (h, s, v) = hsv(r, g, b)
+        let chroma = min(s / 0.25, 1)
+        // Strong coppers and rust get a little richer; greens a little lighter.
+        let strong = min(max((s - 0.35) / 0.25, 0), 1) * bump(h, 20, 20)
+        s = min(s * curve(gingerSat, h) * (1 + 0.05 * strong), 1)
+        v *= 1 + 0.05 * bump(h, 110, 50) * chroma
+        h = curve(gingerHue, h).truncatingRemainder(dividingBy: 360)
+        s *= 0.95
+        var c = rgb(h, s, v)
+        // Near-true blacks, gentle contrast, whites rolled off under 1 —
+        // mostly on luminance.
+        func tone(_ x: Double) -> Double {
+            let sc = x * x * (3 - 2 * x)
+            let y = x * 0.65 + sc * 0.35
+            let top = y > 0.72 ? 0.72 + (y - 0.72) * 0.68 : y
+            return 0.006 + (0.985 - 0.006) * top
+        }
+        let l0 = 0.299 * c[0] + 0.587 * c[1] + 0.114 * c[2]
+        let k = l0 > 1e-4 ? tone(l0) / l0 : 1
+        c = c.map { x in tone(x) * 0.3 + min(x * k, 1) * 0.7 }
+        // Teal-green shadows, warm cream mids (near-neutrals) and highlights.
+        let l = 0.299 * c[0] + 0.587 * c[1] + 0.114 * c[2]
+        let neutral = 1 - min(max((hsv(c[0], c[1], c[2]).1 - 0.06) / 0.14, 0), 1)
+        let ws = pow(min(max(1 - l / 0.35, 0), 1), 1.2)
+        let wm = min(max(1 - abs(l - 0.5) / 0.3, 0), 1) * neutral
+        let wh = pow(min(max((l - 0.6) / 0.35, 0), 1), 1.1)
+        let shadow = [-0.016, 0.010, -0.002]    // teal-green
+        let mid = [0.016, 0.002, -0.020]        // warm cream
+        let high = [0.024, 0.000, -0.030]       // warm cream
         let out = (0..<3).map { min(max(c[$0] + ws * shadow[$0] + wm * mid[$0] + wh * high[$0], 0), 1) }
         return (out[0], out[1], out[2])
     }

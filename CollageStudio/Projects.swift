@@ -115,6 +115,7 @@ extension ColorFilter {
         case .classicNegative: return "classicNegative"
         case .classicNegative2: return "classicNegative2"
         case .portra400: return "portra400"
+        case .ginger: return "ginger"
         case .lut(let key): return "lut:" + key
         }
     }
@@ -130,6 +131,7 @@ extension ColorFilter {
         case "classicNegative": self = .classicNegative
         case "classicNegative2": self = .classicNegative2
         case "portra400": self = .portra400
+        case "ginger": self = .ginger
         default: self = key.hasPrefix("lut:") ? .lut(String(key.dropFirst(4))) : .none
         }
     }
@@ -1147,6 +1149,14 @@ extension CollageState {
             DispatchQueue.main.asyncAfter(deadline: .now() + 3.5) {
                 let photos = self.currentPage.images.filter { !$0.isPlaceholder }
                 if !photos.isEmpty { self.selectImage(photos[min(n, photos.count - 1)].id) }
+            }
+        }
+        // `-filter key` puts the page under that filter at full strength.
+        if let t = args.firstIndex(of: "-filter"), t + 1 < args.count {
+            let filter = ColorFilter(storageKey: args[t + 1])
+            DispatchQueue.main.asyncAfter(deadline: .now() + 2) {
+                self.colorFilter = filter
+                self.filterStrength = 100
             }
         }
         // `-photoBWTest` (after `-selectPhoto`): Edit on the selected photo,
