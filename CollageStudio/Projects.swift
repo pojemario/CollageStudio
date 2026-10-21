@@ -654,6 +654,8 @@ extension CollageState {
         clear()
         resetHistory()
         hasUnsavedChanges = false
+        // (Clearing moves to page 1, which zooms to its first post.)
+        showWholeCollage()
     }
 
     /// Removes a saved collage; removing the open one leaves a blank one.
@@ -663,11 +665,22 @@ extension CollageState {
             currentProjectId = UUID()
             clear()
             resetHistory()
+            showWholeCollage()
         }
         projectStore.delete(id)
     }
 
+    /// A collage always starts out whole: out of full screen (toolbar,
+    /// tabs and pager back) and a spread page shown in full, not zoomed
+    /// to one post.
+    private func showWholeCollage() {
+        chromeHidden = false
+        toolbarHidden = false
+        slideFocus = nil
+    }
+
     private func prepareForOtherCollage() {
+        showWholeCollage()
         autosaveWork?.cancel()
         endTextEditing()
         endProtrusionEditing()
@@ -774,6 +787,8 @@ extension CollageState {
             customWidth: file.customWidth, customHeight: file.customHeight,
             customUnit: CustomUnit(rawValue: file.customUnit) ?? .px)
         applyDocument(snapshot)
+        // (Going to its saved page zooms to that page's first post.)
+        showWholeCollage()
         Diagnostics.log("opened collage \(diagnosticsSummary)")
         // The pictures already on disk aren't written again.
         savedImageFiles = [:]
