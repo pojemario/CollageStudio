@@ -59,7 +59,7 @@ struct FloatingTabBar: View {
     /// A photo is selected (and no editor has the panel).
     private var photoTools: Bool {
         state.selectedImage != nil && state.textEditTargetId == nil && state.protrusionTargetId == nil
-            && state.photoEditTargetId == nil && !CollageState.photoToolsAtTop && !CollageState.photoToolsNear
+            && state.photoEditTargetId == nil
     }
     private var tabWidth: CGFloat { rowWidth / CGFloat(Self.tabs.count) }
 
@@ -156,6 +156,10 @@ struct FloatingTabBar: View {
         .animation(.easeInOut(duration: 0.2), value: isAvailable(i))
         .accessibilityHidden(!isAvailable(i))
         .accessibilityElement(children: .combine)
+        .accessibilityIdentifier("tab.\(Self.tabs[i])")
+        // Bigger text on the phone (labels here stay small): a long press
+        // shows the tab enlarged, as iOS's own tab bars do.
+        .accessibilityShowsLargeContentViewer { Label(Self.tabs[i], systemImage: Self.icons[i]) }
         .accessibilityValue(hasChanges(i) ? "Changed" : "")
         .accessibilityAddTraits(activeTab == i && state.panelTabShown ? [.isButton, .isSelected] : .isButton)
         .accessibilityAction { select(i) }
@@ -421,230 +425,10 @@ struct PhotoToolsRow: View {
             .contentShape(Rectangle())
         }
         .buttonStyle(.plain)
+        .accessibilityShowsLargeContentViewer { Label(title, systemImage: sf) }
         .opacity(available ? 1 : 0)
         .disabled(!available)
         .accessibilityHidden(!available)
-    }
-}
-
-/// Test layout (`-photoToolsNear`): the selected photo's tools as a small
-/// floating bar right next to it, never over it, so the photo stays free to
-/// pinch and rotate: horizontal above or below the photo if it fits there,
-/// else vertical at its right or left side.
-struct NearPhotoBar: View {
-    @EnvironmentObject var state: CollageState
-    let image: CollageImage
-    /// The overlay's own frame (global), to place the bar in it.
-    let container: CGRect
-
-    private static let cell: CGFloat = 42
-    /// The line after Close, with its space on both sides.
-    private static let separator: CGFloat = 7
-    private static let pad: CGFloat = 4
-    /// Callout triangle (base, height); the bar stands this far off the
-    /// photo, the triangle's tip almost touching it.
-    private static let arrowBase: CGFloat = 15.4
-    private static let arrowHeight: CGFloat = 7.7
-    private static let gap: CGFloat = arrowHeight + 1
-
-    private struct Item: Identifiable {
-        let title: String
-        let sf: String
-        var tint: Color = .primary
-        var available = true
-        var isMove = false
-        let action: () -> Void
-        var id: String { title }
-    }
-
-    private var movablePages: [Int] {
-        let source = state.pageIndex(containing: image.id)
-        return state.pages.indices.filter { pi in
-            pi != source && state.pages[pi].images.count < CollageState.maxImagesPerPage
-        }
-    }
-
-    /// Every tool keeps its place; one that doesn't apply to this box is
-    /// hidden.
-    private var items: [Item] {
-        let isPhoto = !image.isText && !image.isPlaceholder
-        return [
-            Item(title: "Close", sf: "xmark") { state.selectImage(nil) },
-            Item(title: "Cutout", sf: "person.crop.square", available: image.canProtrude) {
-                state.selectImage(nil, reopenPanel: false)
-                state.beginProtrusion(id: image.id)
-            },
-            Item(title: "Replace", sf: "photo.on.rectangle.angled", available: !image.isText) {
-                state.boxActionTargetId = image.id
-                state.showReplacePicker = true
-            },
-            Item(title: "Move", sf: "arrow.up.right.square",
-                 available: !movablePages.isEmpty || state.canAddPost, isMove: true) {},
-            Item(title: "Reset", sf: "arrow.counterclockwise", available: isPhoto) {
-                withAnimation(.easeInOut(duration: 0.2)) { state.resetTransform(id: image.id) }
-            },
-            Item(title: "Edit", sf: "slider.horizontal.3", available: isPhoto) { state.beginPhotoEdit(id: image.id) },
-            Item(title: "Remove", sf: "trash", tint: .red) {
-                state.selectImage(nil)
-                state.removeImage(id: image.id)
-            },
-        ]
-    }
-
-    /// Whether the bar runs across, and its centre (global).
-    private func placement(count: Int) -> (horizontal: Bool, center: CGPoint, edge: Edge) {
-        let box = state.selectedBoxFrame
-        let clear = state.canvasClearRect.isEmpty ? container : state.canvasClearRect
-        // Below the pager (and its compare button), above the open panel,
-        // on screen.
-        let obstacles = state.canvasObstacles.filter { $0.intersects(container) }
-        let top = max(container.minY, (obstacles.map(\.maxY).max() ?? container.minY) + 4)
-        let bounds = CGRect(x: container.minX + 4, y: top,
-                            width: container.width - 8, height: max(clear.maxY - top, 0))
-        let long = Self.length(count), thick = Self.cell + Self.pad * 2
-        let g = Self.gap
-
-        // Lined up with the photo: starting at its left edge when it's on
-        // the left, ending at its right edge when it's on the right.
-        let alignedX = box.midX <= container.midX ? box.minX + long / 2 : box.maxX - long / 2
-        let x = min(max(alignedX, bounds.minX + long / 2), bounds.maxX - long / 2)
-        let above = box.minY - g - thick / 2, below = box.maxY + g + thick / 2
-        if above - thick / 2 >= bounds.minY { return (true, CGPoint(x: x, y: above), .bottom) }
-        if below + thick / 2 <= bounds.maxY { return (true, CGPoint(x: x, y: below), .top) }
-
-        let alignedY = box.midY <= bounds.midY ? box.minY + long / 2 : box.maxY - long / 2
-        let y = min(max(alignedY, bounds.minY + long / 2), bounds.maxY - long / 2)
-        let right = box.maxX + g + thick / 2, left = box.minX - g - thick / 2
-        if right + thick / 2 <= bounds.maxX { return (false, CGPoint(x: right, y: y), .leading) }
-        if left - thick / 2 >= bounds.minX { return (false, CGPoint(x: left, y: y), .trailing) }
-
-        // Nowhere free: across the edge with more room, as far out as fits.
-        let up = box.minY - bounds.minY > bounds.maxY - box.maxY
-        let fy = up ? max(above, bounds.minY + thick / 2) : min(below, bounds.maxY - thick / 2)
-        return (true, CGPoint(x: x, y: fy), up ? .bottom : .top)
-    }
-
-    var body: some View {
-        let list = items
-        let place = placement(count: list.count)
-        let layout = place.horizontal ? AnyLayout(HStackLayout(spacing: 0)) : AnyLayout(VStackLayout(spacing: 0))
-        layout {
-            ForEach(list) { item in
-                if item.id == list.first?.id {
-                    // Close first, set apart by a thin line.
-                    Group {
-                        cellButton(item)
-                        Rectangle().fill(Color.primary.opacity(0.22))
-                            .frame(width: place.horizontal ? 1 : 26, height: place.horizontal ? 26 : 1)
-                            .padding(place.horizontal ? .horizontal : .vertical, (Self.separator - 1) / 2)
-                    }
-                } else if item.isMove {
-                    Menu {
-                        ForEach(movablePages, id: \.self) { pi in
-                            Button("Page \(pi + 1)") { state.selectImage(nil); state.moveImage(id: image.id, toPage: pi) }
-                        }
-                        if state.canAddPost {
-                            Button("New Page") { state.selectImage(nil); state.moveImageToNewPage(id: image.id) }
-                        }
-                    } label: { cell(item) }
-                    .buttonStyle(.plain)
-                    .disabled(!item.available)
-                } else {
-                    cellButton(item)
-                }
-            }
-        }
-        .padding(Self.pad)
-        .background {
-            let shape = CalloutShape(edge: place.edge, at: arrowSpot(place, count: list.count),
-                                     base: Self.arrowBase, height: Self.arrowHeight)
-            shape.fill(.ultraThinMaterial)
-                .overlay(shape.fill(PhotoToolsRow.background))
-                .overlay(shape.stroke(Color.white.opacity(0.6), lineWidth: 1))
-                .shadow(color: .black.opacity(0.22), radius: 8, y: 2)
-        }
-        .position(x: place.center.x - container.minX, y: place.center.y - container.minY)
-        .animation(.spring(response: 0.3, dampingFraction: 0.85), value: place.center)
-        .animation(.spring(response: 0.3, dampingFraction: 0.85), value: place.horizontal)
-        .transition(.opacity.combined(with: .scale(scale: 0.9)))
-    }
-
-    /// The bar's length for `count` buttons.
-    private static func length(_ count: Int) -> CGFloat {
-        CGFloat(count) * cell + separator + pad * 2
-    }
-
-    private func cellButton(_ item: Item) -> some View {
-        Button {
-            #if canImport(UIKit)
-            UIImpactFeedbackGenerator(style: .light).impactOccurred()
-            #endif
-            item.action()
-        } label: { cell(item) }
-        .buttonStyle(.plain)
-        .disabled(!item.available)
-    }
-
-    /// Where along its edge the triangle sits (bar coordinates): across
-    /// from the middle of the photo's part on screen, clear of the corners.
-    private func arrowSpot(_ place: (horizontal: Bool, center: CGPoint, edge: Edge), count: Int) -> CGFloat {
-        let long = Self.length(count)
-        let box = state.selectedBoxFrame.intersection(container)
-        let target = place.horizontal ? box.midX - (place.center.x - long / 2)
-                                      : box.midY - (place.center.y - long / 2)
-        let margin = CalloutShape.radius + Self.arrowBase / 2
-        return min(max(target, margin), long - margin)
-    }
-
-    private func cell(_ item: Item) -> some View {
-        VStack(spacing: 2) {
-            Image(systemName: item.sf).font(.system(size: 16))
-            Text(item.title).font(.system(size: 8.5, weight: .semibold)).lineLimit(1).minimumScaleFactor(0.8)
-        }
-        .foregroundStyle(item.tint == .primary ? Color.primary.opacity(0.85) : item.tint)
-        .frame(width: Self.cell, height: Self.cell)
-        .contentShape(Rectangle())
-        .opacity(item.available ? 1 : 0)
-        .allowsHitTesting(item.available)
-        .accessibilityElement(children: .ignore)
-        .accessibilityLabel(item.title)
-        .accessibilityHidden(!item.available)
-    }
-}
-
-/// A rounded bar with a small triangle on one edge pointing out of it.
-struct CalloutShape: Shape {
-    static let radius: CGFloat = 16
-    let edge: Edge
-    /// Along that edge, from its start (left or top).
-    let at: CGFloat
-    let base: CGFloat
-    let height: CGFloat
-
-    func path(in rect: CGRect) -> Path {
-        let body = Path(roundedRect: rect, cornerRadius: Self.radius, style: .continuous)
-        let b = base / 2, inset: CGFloat = 1     // overlap the bar so they join seamlessly
-        var tip = Path()
-        switch edge {
-        case .bottom:
-            tip.addLines([CGPoint(x: rect.minX + at - b, y: rect.maxY - inset),
-                          CGPoint(x: rect.minX + at, y: rect.maxY + height),
-                          CGPoint(x: rect.minX + at + b, y: rect.maxY - inset)])
-        case .top:
-            tip.addLines([CGPoint(x: rect.minX + at - b, y: rect.minY + inset),
-                          CGPoint(x: rect.minX + at, y: rect.minY - height),
-                          CGPoint(x: rect.minX + at + b, y: rect.minY + inset)])
-        case .leading:
-            tip.addLines([CGPoint(x: rect.minX + inset, y: rect.minY + at - b),
-                          CGPoint(x: rect.minX - height, y: rect.minY + at),
-                          CGPoint(x: rect.minX + inset, y: rect.minY + at + b)])
-        case .trailing:
-            tip.addLines([CGPoint(x: rect.maxX - inset, y: rect.minY + at - b),
-                          CGPoint(x: rect.maxX + height, y: rect.minY + at),
-                          CGPoint(x: rect.maxX - inset, y: rect.minY + at + b)])
-        }
-        tip.closeSubpath()
-        return body.union(tip)
     }
 }
 
@@ -663,6 +447,22 @@ struct BottomPanelView: View {
     @State private var cardHeight: CGFloat = 0
     /// Global bottom of the content area (fixed while the panel is resized).
     @State private var contentBottomY: CGFloat = 0
+    /// The page shown has sliders off their defaults (see NumbersSwipeReset).
+    @State private var canReset = false
+
+    /// What "All Pages" copies from this tab, when it shows (more than one
+    /// page, a tab's own settings, no editor open).
+    private var allPagesParts: Set<PageLookPart>? {
+        guard state.pages.count > 1, state.textEditTargetId == nil, state.protrusionTargetId == nil,
+              state.photoEditTargetId == nil, state.panelTabShown else { return nil }
+        switch state.selectedPanelTab {
+        case 1: return state.layoutPage == .arrange ? nil : [.layout, .background, .border, .canvas]
+        case 2: return [.frame]
+        case 3: return [.overlays]
+        case 4: return [.filter, .edits]
+        default: return nil
+        }
+    }
 
     /// The smallest the panel can be dragged to (about one row of content).
     private static let minHeight: CGFloat = 80
@@ -743,6 +543,52 @@ struct BottomPanelView: View {
                     #endif
                 })
                 .accessibilityHidden(true)
+                // Reset, in the grabber row's right end: puts the page's
+                // sliders back (the swipe over the numbers does the same).
+                .overlay(alignment: .trailing) {
+                    if canReset {
+                        Button {
+                            NotificationCenter.default.post(name: .panelResetRequested, object: nil)
+                        } label: {
+                            Label("Reset", systemImage: "arrow.counterclockwise")
+                                .font(.system(size: 11, weight: .semibold))
+                                .foregroundColor(.secondary)
+                                .padding(.horizontal, 8)
+                                .padding(.vertical, 3)
+                                .background(Capsule().fill(Color.primary.opacity(0.07)))
+                                .contentShape(Rectangle().inset(by: -10))
+                        }
+                        .buttonStyle(.plain)
+                        .padding(.trailing, 12)
+                        .padding(.top, 4)
+                        .transition(.opacity)
+                        .accessibilityLabel("Reset these settings")
+                    }
+                }
+                .animation(.easeInOut(duration: 0.2), value: canReset)
+                // With more than one page: this tab's settings onto every
+                // page (one look across a carousel), at the row's left end.
+                .overlay(alignment: .leading) {
+                    if let parts = allPagesParts {
+                        Button {
+                            let n = state.applyToAllPages(parts)
+                            state.flashToast("Applied to all \(n + 1) pages", icon: "square.on.square")
+                        } label: {
+                            Label("All Pages", systemImage: "square.on.square")
+                                .font(.system(size: 11, weight: .semibold))
+                                .foregroundColor(.secondary)
+                                .padding(.horizontal, 8)
+                                .padding(.vertical, 3)
+                                .background(Capsule().fill(Color.primary.opacity(0.07)))
+                                .contentShape(Rectangle().inset(by: -10))
+                        }
+                        .buttonStyle(.plain)
+                        .padding(.leading, 12)
+                        .padding(.top, 4)
+                        .transition(.opacity)
+                        .accessibilityLabel("Apply \(FloatingTabBar.tabs[state.selectedPanelTab]) settings to all pages")
+                    }
+                }
                 .zIndex(1)
 
             // Panel content — each tab is only as tall as its own content,
@@ -750,6 +596,7 @@ struct BottomPanelView: View {
             CappedHeight(cap: min(liveCap ?? state.panelCaps[capKey] ?? .infinity, maxShown)) {
                 ScrollView(.vertical) {
                     panelContent
+                        .onPreferenceChange(PanelCanResetKey.self) { canReset = $0 }
                         .onGeometryChange(for: CGFloat.self) { $0.size.height } action: { contentHeight = $0 }
                 }
                 .scrollDisabled(!scrolls || state.activeAdjustment != nil || state.isMovingThumb)

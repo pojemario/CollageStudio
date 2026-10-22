@@ -75,6 +75,7 @@ extension TextBoxStyle {
 extension TextBoxStyle: Codable {
     private enum CodingKeys: String, CodingKey {
         case text, fontChoice, fontSize, hAlignment, vAlignment, textColor, backgroundColor
+        case effect, letterSpacing
     }
 
     init(from decoder: Decoder) throws {
@@ -87,6 +88,8 @@ extension TextBoxStyle: Codable {
         if let v = try c.decodeIfPresent(String.self, forKey: .vAlignment), let a = VAlign(rawValue: v) { vAlignment = a }
         if let v = try c.decodeIfPresent([Double].self, forKey: .textColor), let col = Color(srgbComponents: v) { textColor = col }
         if let v = try c.decodeIfPresent([Double].self, forKey: .backgroundColor), let col = Color(srgbComponents: v) { backgroundColor = col }
+        if let v = try c.decodeIfPresent(String.self, forKey: .effect), let e = Effect(rawValue: v) { effect = e }
+        letterSpacing = try c.decodeIfPresent(CGFloat.self, forKey: .letterSpacing) ?? letterSpacing
     }
 
     func encode(to encoder: Encoder) throws {
@@ -98,6 +101,8 @@ extension TextBoxStyle: Codable {
         try c.encode(vAlignment.rawValue, forKey: .vAlignment)
         try c.encode(textColor.srgbComponents, forKey: .textColor)
         try c.encode(backgroundColor.srgbComponents, forKey: .backgroundColor)
+        try c.encode(effect.rawValue, forKey: .effect)
+        try c.encode(letterSpacing, forKey: .letterSpacing)
     }
 }
 
@@ -336,7 +341,11 @@ final class ProjectStore: ObservableObject {
 
     nonisolated static var root: URL {
         let base = FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask)[0]
+        #if DEBUG && canImport(UIKit)
+        return base.appendingPathComponent(UITest.projectsFolderName, isDirectory: true)
+        #else
         return base.appendingPathComponent("Projects", isDirectory: true)
+        #endif
     }
     nonisolated static func folder(_ id: UUID) -> URL { root.appendingPathComponent(id.uuidString, isDirectory: true) }
     nonisolated static func imagesFolder(_ id: UUID) -> URL { folder(id).appendingPathComponent("images", isDirectory: true) }
@@ -407,6 +416,13 @@ final class ProjectStore: ObservableObject {
               protected: Set<String> = [], completion: @escaping (_ saved: Bool, _ unwritten: Set<String>) -> Void) {
         let id = file.id
         let keep = Set(file.pages.flatMap { $0.images.compactMap(\.file) }).union(protected)
+        #if DEBUG && canImport(UIKit)
+        // `-uiTestFailSaves`: as if the phone were full.
+        if UITest.failSaves {
+            DispatchQueue.main.async { completion(false, Set(newImages.map(\.1))) }
+            return
+        }
+        #endif
         #if canImport(UIKit)
         // Out of background time: end the task (the write goes on if iOS
         // lets it) rather than have iOS end the app for overrunning.
@@ -664,6 +680,10 @@ extension CollageState {
                 savedImageFiles = savedImageFiles.filter { !unwritten.contains($0.value.file) }
                 if currentProjectId == savingId { hasUnsavedChanges = true }
             }
+            // Said on screen (the phone full, say), not only in the log.
+            if currentProjectId == savingId, saveFailed == saved {
+                withAnimation(.easeInOut(duration: 0.2)) { self.saveFailed = !saved }
+            }
             projectStore.refresh(savingId)
         }
     }
@@ -691,7 +711,7 @@ extension CollageState {
         guard id != currentProjectId || !hasAnyImages else { return }
         // One at a time: two loads finishing out of order could put one
         // collage under the other's id.
-        guard !isRestoringProject, !isOpeningProject else { return }
+        guard !isRestoringProject, !isOpeningProject else { exportAfterOpening = false; return }
         saveProjectNow()
         // Read after the save above is written, without waiting for it here.
         isOpeningProject = true
@@ -700,7 +720,7 @@ extension CollageState {
             guard let self else { return }
             isOpeningProject = false
             isBusy = false
-            guard let file else { return }
+            guard let file else { exportAfterOpening = false; return }
             prepareForOtherCollage()
             currentProjectId = id
             UserDefaults.standard.set(id.uuidString, forKey: Self.lastProjectKey)
@@ -891,6 +911,11 @@ extension CollageState {
         resetHistory()
         hasUnsavedChanges = false
         detectFocusPoints()
+        // Opened with "Export…" from the Collages screen.
+        if exportAfterOpening {
+            exportAfterOpening = false
+            DispatchQueue.main.asyncAfter(deadline: .now() + 0.4) { [weak self] in self?.showExportOptions = true }
+        }
         // Protruding photos need their subject found again (masks aren't
         // saved) before the protrusion can be drawn.
         for page in pages {
@@ -955,9 +980,12 @@ struct CollagesHome: View {
             Text("They can't be brought back.")
         }
         .alert("Rename", isPresented: Binding(get: { renaming != nil }, set: { if !$0 { renaming = nil } })) {
-            TextField("Name", text: $newName)
+            // Starts empty, the current name shown in it: typing replaces it
+            // (an alert's field can't select its text).
+            TextField(renaming?.name ?? "Name", text: $newName)
             Button("Save") {
-                if let p = renaming { store.rename(p.id, to: newName) }
+                let name = newName.trimmingCharacters(in: .whitespacesAndNewlines)
+                if let p = renaming, !name.isEmpty { store.rename(p.id, to: name) }
                 renaming = nil
             }
             Button("Cancel", role: .cancel) { renaming = nil }
@@ -1093,11 +1121,17 @@ struct CollagesHome: View {
         .buttonStyle(.plain)
         .contextMenu {
             Button { selecting = true; selected.insert(p.id) } label: { Label("Select", systemImage: "checkmark.circle") }
-            Button { newName = p.name; renaming = p } label: { Label("Rename", systemImage: "pencil") }
+            Button { newName = ""; renaming = p } label: { Label("Rename", systemImage: "pencil") }
             Button { store.duplicate(p.id) } label: { Label("Duplicate", systemImage: "plus.square.on.square") }
+            // Straight to Export Options (the collage opens behind it).
+            Button {
+                state.exportAfterOpening = true
+                state.openProject(p.id)
+            } label: { Label("Export…", systemImage: "square.and.arrow.up") }
             Button(role: .destructive) { removing = p } label: { Label("Remove", systemImage: "trash") }
         }
         .accessibilityLabel("\(p.name), \(p.imageCount) photos")
+        .accessibilityIdentifier("collage.\(p.id.uuidString)")
         .accessibilityAddTraits(isSelected ? .isSelected : [])
     }
 }
@@ -1393,6 +1427,16 @@ extension CollageState {
         if args.contains("-addText") {
             DispatchQueue.main.asyncAfter(deadline: .now() + 2.5) {
                 self.addTextImage()
+                // `-textEffect shadow|outline`: that look, white, spaced out.
+                if let t = args.firstIndex(of: "-textEffect"), t + 1 < args.count,
+                   let effect = TextBoxStyle.Effect(rawValue: args[t + 1].capitalized),
+                   let id = self.images.last(where: \.isText)?.id, var style = self.textStyle(for: id) {
+                    style.effect = effect
+                    style.textColor = .white
+                    style.letterSpacing = 20
+                    style.text = "Summer"
+                    self.applyTextStyle(style, to: id)
+                }
                 if let t = args.firstIndex(of: "-textAt"), t + 1 < args.count, let n = Int(args[t + 1]),
                    let id = self.images.last(where: \.isText)?.id {
                     self.endTextEditing()

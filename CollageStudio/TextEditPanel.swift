@@ -33,6 +33,15 @@ struct TextEditPanel: View {
                               value: Binding(get: { Double(style.wrappedValue.fontSize) },
                                              set: { style.wrappedValue.fontSize = CGFloat($0) }),
                               range: 30...400, step: 2, format: "%.0f", resetValue: 120)
+                LabeledSlider(label: "Spacing",
+                              value: Binding(get: { Double(style.wrappedValue.letterSpacing) },
+                                             set: { style.wrappedValue.letterSpacing = CGFloat($0) }),
+                              range: -10...60, step: 1, format: "%.0f", resetValue: 0)
+                Picker("Style", selection: style.effect) {
+                    ForEach(TextBoxStyle.Effect.allCases) { Text($0.rawValue).tag($0) }
+                }
+                .pickerStyle(.segmented)
+                .panelChrome(state)
                 alignmentRow.panelChrome(state)
                 colorRow.panelChrome(state)
             }

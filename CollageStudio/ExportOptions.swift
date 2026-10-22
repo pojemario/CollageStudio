@@ -1,4 +1,7 @@
 import SwiftUI
+#if canImport(UIKit)
+import Photos
+#endif
 
 /// How a collage is exported: size and file format, remembered between exports.
 struct ExportSettings: Equatable {
@@ -71,11 +74,28 @@ struct ExportSettings: Equatable {
         set { UserDefaults.standard.set(["size": newValue.size.rawValue, "format": newValue.format.rawValue], forKey: key) }
     }
 
+    #if canImport(UIKit)
+    private static func onWhite(_ image: UIImage) -> UIImage {
+        let format = UIGraphicsImageRendererFormat()
+        format.scale = image.scale
+        format.opaque = true
+        return UIGraphicsImageRenderer(size: image.size, format: format).image { ctx in
+            UIColor.white.setFill()
+            ctx.fill(CGRect(origin: .zero, size: image.size))
+            image.draw(at: .zero)
+        }
+    }
+    #endif
+
     func encode(_ image: PlatformImage) -> Data? {
         #if canImport(UIKit)
         switch format {
-        case .jpeg: return image.jpegData(compressionQuality: 0.92)
-        case .heic: return image.heicData() ?? image.jpegData(compressionQuality: 0.92)
+        // JPEG and HEIC have no transparency: see-through parts (a clear
+        // background) would turn black, so they go on white first.
+        case .jpeg: return Self.onWhite(image).jpegData(compressionQuality: 0.92)
+        case .heic:
+            let flat = Self.onWhite(image)
+            return flat.heicData() ?? flat.jpegData(compressionQuality: 0.92)
         case .png: return image.pngData()
         }
         #else
@@ -152,18 +172,37 @@ struct ExportOptionsView: View {
                 ToolbarItem(placement: .cancellationAction) {
                     Button("Cancel") { dismiss() }
                 }
-                ToolbarItem(placement: .confirmationAction) {
-                    Button("Export") {
-                        ExportSettings.saved = settings
-                        let all = allPages && exportablePages > 1
-                        let chosen = settings
-                        dismiss()
-                        Task { await state.exportPages(allPages: all, settings: chosen) }
+            }
+            // Where it goes: straight into Photos, or the share sheet
+            // (Instagram, Messages, Files…). Always in view.
+            .safeAreaInset(edge: .bottom) {
+                HStack(spacing: 12) {
+                    Button { export(to: .photos) } label: {
+                        Label("Save to Photos", systemImage: "square.and.arrow.down")
+                            .frame(maxWidth: .infinity)
                     }
-                    .fontWeight(.semibold)
+                    .buttonStyle(.bordered)
+                    Button { export(to: .share) } label: {
+                        Label("Share", systemImage: "square.and.arrow.up")
+                            .frame(maxWidth: .infinity)
+                    }
+                    .buttonStyle(.borderedProminent)
                 }
+                .controlSize(.large)
+                .fontWeight(.semibold)
+                .padding(.horizontal, 16)
+                .padding(.vertical, 10)
+                .background(.bar)
             }
         }
+    }
+
+    private func export(to destination: CollageState.ExportDestination) {
+        ExportSettings.saved = settings
+        let all = allPages && exportablePages > 1
+        let chosen = settings
+        dismiss()
+        Task { await state.exportPages(allPages: all, settings: chosen, to: destination) }
     }
 
     private func detail(for size: ExportSettings.Size) -> String {
@@ -175,9 +214,9 @@ struct ExportOptionsView: View {
     /// Social feeds crop other shapes; say which canvas ratios fit.
     private var instagramHint: String? {
         switch state.ratio {
-        case .square, .portrait45: return nil
-        case .portrait916: return "9:16 fits stories and reels; feed posts usually show it cropped to 4:5."
-        default: return "Feed posts fit best at 4:5 or 1:1 (change it with the ratio button)."
+        case .square, .portrait45, .portrait34: return nil
+        case .portrait916: return "9:16 fits stories and reels; feed posts usually show it cropped to 3:4."
+        default: return "Feed posts fit best at 4:5, 3:4 or 1:1 (change it with the ratio button)."
         }
     }
 }
@@ -189,3 +228,28 @@ private extension ExportSettings {
         return s
     }
 }
+
+#if canImport(UIKit)
+/// Exported pictures straight into Photos, in their order (a carousel's
+/// posts follow one another in the library).
+enum PhotoLibrarySaver {
+    enum Result { case saved(Int), denied, failed }
+
+    static func save(_ urls: [URL]) async -> Result {
+        let status = await PHPhotoLibrary.requestAuthorization(for: .addOnly)
+        guard status == .authorized || status == .limited else { return .denied }
+        do {
+            // One at a time, so the order in the library is the posts' order.
+            for url in urls {
+                try await PHPhotoLibrary.shared().performChanges {
+                    PHAssetCreationRequest.forAsset().addResource(with: .photo, fileURL: url, options: nil)
+                }
+            }
+            return .saved(urls.count)
+        } catch {
+            Diagnostics.log("save to Photos failed: \(error.localizedDescription)")
+            return .failed
+        }
+    }
+}
+#endif

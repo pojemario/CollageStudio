@@ -994,7 +994,10 @@ struct FilterControls: View {
         } onPressingChanged: { pressing in
             if !pressing { state.filterBypass = false }
         }
-        .accessibilityAddTraits(.isButton)
+        .accessibilityElement(children: .ignore)
+        .accessibilityLabel(filter.title)
+        .accessibilityIdentifier("filter.\(filter.storageKey)")
+        .accessibilityAddTraits(selected ? [.isButton, .isSelected] : .isButton)
         .accessibilityHint("Touch and hold to see the photos without the filter")
     }
 
@@ -1034,6 +1037,16 @@ struct NumbersSwipeReset: ViewModifier {
                 Color.clear.onAppear { width = g.size.width }
                     .onChange(of: g.size.width) { _, w in width = w }
             })
+            // The panel's Reset button (top right of the card) shows while
+            // there's something to reset, and resets this stack.
+            .preference(key: PanelCanResetKey.self, value: canReset)
+            .onReceive(NotificationCenter.default.publisher(for: .panelResetRequested)) { _ in
+                guard canReset else { return }
+                withAnimation(.easeOut(duration: 0.2)) { reset() }
+                #if canImport(UIKit)
+                UINotificationFeedbackGenerator().notificationOccurred(.success)
+                #endif
+            }
             // Armed: the values turn accent-colored (no message).
             .environment(\.resetArmed, armed)
             .animation(.easeOut(duration: 0.12), value: armed)
@@ -1065,6 +1078,17 @@ struct NumbersSwipeReset: ViewModifier {
                 including: panelScrolls ? .subviews : .all
             )
     }
+}
+
+/// Whether the slider stack in the panel has anything to reset.
+struct PanelCanResetKey: PreferenceKey {
+    static var defaultValue = false
+    static func reduce(value: inout Bool, nextValue: () -> Bool) { value = value || nextValue() }
+}
+
+extension Notification.Name {
+    /// The panel's Reset button: the slider stack shown resets itself.
+    static let panelResetRequested = Notification.Name("panelResetRequested")
 }
 
 extension View {

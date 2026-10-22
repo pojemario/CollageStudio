@@ -28,6 +28,10 @@ struct SavingOverlay: View {
                         .progressViewStyle(.circular)
                         .tint(.accentColor)
                 }
+                Button("Cancel") { state.exportCancelRequested = true }
+                    .font(.subheadline.weight(.semibold))
+                    .disabled(state.exportCancelRequested)
+                    .padding(.top, 2)
             }
             .padding(.horizontal, 32)
             .padding(.vertical, 24)
@@ -157,7 +161,8 @@ struct PageTabBar: View {
                 .font(.system(size: 11, weight: .bold))
                 .foregroundColor(Color.primary.opacity(enabled ? 0.35 : 0.12))
                 .frame(width: 30, height: 26)
-                .contentShape(Rectangle())
+                // A finger-sized touch area (44 pt) around the small arrow.
+                .contentShape(Rectangle().inset(by: -9))
         }
         .buttonStyle(.plain)
         .disabled(!enabled)
@@ -212,6 +217,37 @@ struct PictureDots: View {
         }
         .animation(.spring(response: 0.3, dampingFraction: 0.8), value: shown)
         .animation(.spring(response: 0.3, dampingFraction: 0.8), value: onScreen)
+    }
+}
+
+/// The open collage couldn't be saved (the phone is full, say): said
+/// until a save goes through, with a way to try again.
+struct SaveFailedBanner: View {
+    @EnvironmentObject var state: CollageState
+
+    var body: some View {
+        HStack(spacing: 10) {
+            Image(systemName: "exclamationmark.triangle.fill")
+                .foregroundColor(.orange)
+            VStack(alignment: .leading, spacing: 1) {
+                Text("Couldn't save this collage")
+                    .font(.subheadline.weight(.semibold))
+                Text("Free up space on your iPhone, then try again.")
+                    .font(.caption)
+                    .foregroundColor(.secondary)
+            }
+            Spacer(minLength: 4)
+            Button("Retry") {
+                state.hasUnsavedChanges = true
+                state.saveProjectNow()
+            }
+            .font(.subheadline.weight(.semibold))
+        }
+        .padding(.horizontal, 14)
+        .padding(.vertical, 10)
+        .background(.regularMaterial, in: RoundedRectangle(cornerRadius: 14, style: .continuous))
+        .shadow(color: .black.opacity(0.15), radius: 10, y: 4)
+        .accessibilityElement(children: .combine)
     }
 }
 
@@ -303,6 +339,11 @@ struct ContentView: View {
         }
         // Redo, dropped down below the toolbar's Undo button.
         .overlay { RedoBubbleLayer() }
+        #if DEBUG
+        .overlay(alignment: .topLeading) {
+            if UITest.isOn { UITestProbe() }
+        }
+        #endif
         .alert("Export", isPresented: Binding(get: { state.exportProblem != nil },
                                              set: { if !$0 { state.exportProblem = nil } })) {
             Button("OK", role: .cancel) {}
@@ -327,6 +368,12 @@ struct ContentView: View {
         // "Undo" / "Redo" after a shake.
         .overlay(alignment: .top) {
             HistoryToast().padding(.top, 70)
+        }
+        .overlay(alignment: .top) {
+            if state.saveFailed && state.hasAnyImages && !state.toolbarHidden {
+                SaveFailedBanner().padding(.top, 54).padding(.horizontal, 16)
+                    .transition(.move(edge: .top).combined(with: .opacity))
+            }
         }
         #if canImport(UIKit)
         .onReceive(NotificationCenter.default.publisher(for: .deviceDidShake)) { _ in
@@ -416,7 +463,7 @@ struct ContentView: View {
                     // while its popup is open.
                     .foregroundColor(state.isRatioOpen ? .accentColor : .primary)
                     .padding(.horizontal, 6)
-                    .frame(height: 40)
+                    .frame(height: 44)
                     .contentShape(Rectangle())
                 }
                 .buttonStyle(.plain)
@@ -432,7 +479,7 @@ struct ContentView: View {
                 // Undo / redo, full-screen preview and Share — only once
                 // there's a collage (or something to undo back to).
                 if state.hasAnyImages || state.canUndo {
-                    UndoRedoButtons(size: 34, compact: true)
+                    UndoRedoButtons(size: 40, compact: true)
                 }
                 if state.hasAnyImages {
                     // Full screen: only the collage — no status bar, toolbar,
@@ -444,7 +491,7 @@ struct ContentView: View {
                         Image(systemName: "arrow.up.left.and.arrow.down.right")
                             .font(.system(size: 16, weight: .medium))
                             .foregroundColor(.primary)
-                            .frame(width: 34, height: 40)
+                            .frame(width: 40, height: 44)
                             .contentShape(Rectangle())
                     }
                     .buttonStyle(.plain)
@@ -456,7 +503,7 @@ struct ContentView: View {
                         Image(systemName: "square.and.arrow.up")
                             .font(.system(size: 17, weight: .medium))
                             .foregroundColor(.primary)
-                            .frame(width: 34, height: 40)
+                            .frame(width: 40, height: 44)
                             .contentShape(Rectangle())
                     }
                     .buttonStyle(.plain)
@@ -547,35 +594,9 @@ struct ContentView: View {
                     .ignoresSafeArea(edges: state.toolbarHidden ? .vertical : [])
             }
             // Floating page counter pill over the top of the canvas.
-            // Test layout: the selected photo's tools in a bar next to it.
-            .overlay {
-                if CollageState.photoToolsNear, !state.toolbarHidden, let image = state.selectedImage,
-                   !state.selectedBoxFrame.isEmpty,
-                   state.textEditTargetId == nil, state.protrusionTargetId == nil, state.photoEditTargetId == nil {
-                    GeometryReader { g in
-                        NearPhotoBar(image: image, container: g.frame(in: .global))
-                    }
-                    .id(image.id)
-                }
-            }
-            // Test layout: the selected photo's tools where the pager is.
-            .overlay(alignment: .top) {
-                if CollageState.photoToolsAtTop, !state.toolbarHidden, let image = state.selectedImage,
-                   state.textEditTargetId == nil, state.protrusionTargetId == nil, state.photoEditTargetId == nil {
-                    PhotoToolsRow(image: image)
-                        .padding(.vertical, 5)
-                        .padding(.horizontal, 10)
-                        .background(PhotoToolsRow.background,
-                                    in: RoundedRectangle(cornerRadius: FloatingTabBar.cornerRadius, style: .continuous))
-                        .shadow(color: .black.opacity(0.15), radius: 8, y: 2)
-                        .padding(.horizontal, 10)
-                        .padding(.top, 2)
-                        .transition(.offset(y: -12).combined(with: .opacity))
-                }
-            }
             .animation(.spring(response: 0.3, dampingFraction: 0.85), value: state.selectedImageId)
             .overlay(alignment: .top) {
-                if !state.toolbarHidden, !(CollageState.photoToolsAtTop && state.selectedImage != nil) {
+                if !state.toolbarHidden {
                     PageTabBar().padding(.top, 2)
                         .onGeometryChange(for: CGRect.self) { $0.frame(in: .global) } action: { f in
                             pagerBottomY = f.maxY
@@ -708,16 +729,6 @@ struct ContentView: View {
                 }
         )
         .sheet(isPresented: $state.showExportSheet, onDismiss: { state.clearExportFiles() }) { ExportSheetView().environmentObject(state) }
-        .overlay {
-            if state.isExporting {
-                /*
-                ProgressView("Exporting…")
-                    .padding(24)
-                    .background(.regularMaterial)
-                    .cornerRadius(14)
-                 */
-            }
-        }
     }
 }
 

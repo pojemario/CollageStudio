@@ -128,16 +128,6 @@ struct ImageBoxView: View {
                                 shape.strokeBorder(Color.accentColor, style: StrokeStyle(lineWidth: 2, dash: [5, 4]))
                             }
                             .shadow(color: .black.opacity(0.25), radius: 1.5)
-                            // Test layout: the tools bar sits next to this box.
-                            .background {
-                                if CollageState.photoToolsNear {
-                                    GeometryReader { g in
-                                        Color.clear
-                                            .onAppear { state.selectedBoxFrame = g.frame(in: .global) }
-                                            .onChange(of: g.frame(in: .global)) { _, f in state.selectedBoxFrame = f }
-                                    }
-                                }
-                            }
                             .transition(.opacity)
                         }
                     }
@@ -189,7 +179,7 @@ struct ImageBoxView: View {
                             }
                     }
                 )
-                .offset(state.draggingId == imageId ? state.dragOffset : .zero)
+                .modifier(SwapDragShift(drag: state.swapDrag, active: state.draggingId == imageId))
                 .scaleEffect(state.draggingId == imageId ? 1.03 : 1.0)
                 // Only while dragged; at rest clear with no blur, so it costs
                 // nothing (the modifier stays put: swapping it would reset
@@ -209,38 +199,28 @@ struct ImageBoxView: View {
                 // every other recognizer on the view, leaving the box deaf to
                 // all touches.
                 .simultaneousGesture(selectLongPressGesture)
-                // Double-tap resets this image; on a text box a single tap
-                // opens it for live editing instead (exclusive, so a double
-                // tap never also opens the editor). Simultaneous (not high
-                // priority) so it never delays the pan drag from starting.
-                // Zoom and rotate need two fingers, pan needs a drag, so a
+                // A tap selects. Simultaneous (not high priority) so it never delays
+                // the pan drag from starting. Zoom and rotate need two fingers, pan needs a drag, so a
                 // plain tap can't be mistaken for any of them.
+                // (No double-tap: on iOS that means zoom, and resetting the
+                // framing by accident lost people's crops. Reset is in the
+                // photo's tools. Waiting for a second tap also slowed every
+                // selection.)
                 .simultaneousGesture(
-                    TapGesture(count: 2)
-                        .onEnded {
-                            // Reset this image, and clear any transient
-                            // interaction flags so a double-tap always
-                            // unfreezes the page if a gesture ever left one
-                            // stuck.
-                            state.clearInteractionLocks()
-                            withAnimation(.easeInOut(duration: 0.2)) {
-                                state.resetTransform(id: imageId)
-                            }
-                            #if canImport(UIKit)
-                            UIImpactFeedbackGenerator(style: .light).impactOccurred()
-                            #endif
+                    SpatialTapGesture().onEnded { tap in
+                        // A finished tap means no finger is down: let go of
+                        // anything a gesture may have left stuck.
+                        state.clearInteractionLocks()
+                        // Protrude panel open on this photo: a tap picks
+                        // or drops the subject under the finger.
+                        if state.protrusionTargetId == imageId {
+                            toggleSubject(at: tap.location, boxSize: boxSize)
+                            return
                         }
-                        .exclusively(before: SpatialTapGesture().onEnded { tap in
-                            // Protrude panel open on this photo: a tap picks
-                            // or drops the subject under the finger.
-                            if state.protrusionTargetId == imageId {
-                                toggleSubject(at: tap.location, boxSize: boxSize)
-                                return
-                            }
-                            // Otherwise it selects the box: the tab bar
-                            // becomes its tools (tap again to let go).
-                            state.toggleSelection(imageId)
-                        })
+                        // Otherwise it selects the box: the tab bar
+                        // becomes its tools (tap again to let go).
+                        state.toggleSelection(imageId)
+                    }
                 )
                 // Drive the global "an image is being pinched" flag from the
                 // @GestureState — which always resets — so it can never stick
@@ -1046,6 +1026,22 @@ enum SubjectMasker {
 
 /// The live (uncommitted) pan / pinch of the photo being touched, shared
 /// with its protrusion. Updated by the photo's box during the gesture.
+/// The photo being dragged to swap: its offset, the one thing that changes
+/// every frame of the drag (see CollageState.dragOffset).
+final class SwapDragOffset: ObservableObject {
+    @Published var value: CGSize = .zero
+}
+
+/// Moves a box with the swap drag; only this modifier redraws per frame.
+private struct SwapDragShift: ViewModifier {
+    @ObservedObject var drag: SwapDragOffset
+    let active: Bool
+
+    func body(content: Content) -> some View {
+        content.offset(active ? drag.value : .zero)
+    }
+}
+
 final class LiveGesture: ObservableObject {
     struct Values: Equatable {
         var id: UUID?

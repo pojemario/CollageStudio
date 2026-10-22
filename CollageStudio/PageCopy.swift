@@ -49,6 +49,19 @@ extension CollageState {
         return pages.firstIndex { $0.id == id }.map { $0 + 1 }
     }
 
+    /// The current page's settings (the chosen parts) onto every other
+    /// page, leaving the clipboard as it was. Returns how many pages took them.
+    @discardableResult
+    func applyToAllPages(_ parts: Set<PageLookPart>) -> Int {
+        let clipboard = copiedPageLook
+        copiedPageLook = CopiedPageLook(pageId: currentPage.id, style: currentPage.style, look: currentPage.look)
+        let others = Set(pages.indices).subtracting([safePageIndex])
+        pastePageLook(parts, to: others)
+        copiedPageLook = clipboard
+        Diagnostics.log("applied \(parts.map(\.rawValue).sorted()) to \(others.count) pages")
+        return others.count
+    }
+
     /// Copies the chosen parts of the clipboard onto the given pages.
     func pastePageLook(_ parts: Set<PageLookPart>, to targets: Set<Int>) {
         guard let clip = copiedPageLook, !parts.isEmpty else { return }

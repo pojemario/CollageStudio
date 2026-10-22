@@ -50,7 +50,7 @@ struct TabBarTip: Tip {
 
 struct PhotoMenuTip: Tip {
     var title: Text { Text("Tap a photo") }
-    var message: Text? { Text("Its tools take over the tab bar: Cutout, Replace, Move, Reset and Remove. Drag it onto another photo to swap them.") }
+    var message: Text? { Text("Its tools take over the tab bar: Cutout, Replace, Move, Reset, Edit and Remove. Drag it onto another photo to swap them.") }
     var image: Image? { Image(systemName: "hand.tap") }
     var rules: [Rule] {
         #Rule(CollageTips.$step) { $0 == 1 }
@@ -59,7 +59,7 @@ struct PhotoMenuTip: Tip {
 
 struct ResetSwipeTip: Tip {
     var title: Text { Text("Swipe the numbers to reset") }
-    var message: Text? { Text("Swipe up or down over the labels or numbers to reset these sliders. Double-tap one to reset just it.") }
+    var message: Text? { Text("Tap Reset at the top of the panel, or swipe up or down over the labels or numbers, to reset these sliders. Double-tap one to reset just it.") }
     var image: Image? { Image(systemName: "arrow.up.arrow.down") }
     var rules: [Rule] {
         #Rule(CollageTips.$step) { $0 == 2 }

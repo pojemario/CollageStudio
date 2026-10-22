@@ -1,4 +1,5 @@
 import SwiftUI
+import PhotosUI
 import Combine
 import os
 
@@ -247,6 +248,9 @@ class CollageState: ObservableObject {
     /// True specifically while images are being loaded or exported — drives
     /// the gray canvas spinner (the shimmer uses isBusy for every action).
     @Published var isLoading: Bool = false
+    /// Picked photos being read in: how many of how many.
+    @Published var importProgress: ImportProgress?
+    struct ImportProgress: Equatable { var done: Int; var total: Int }
 
     /// Label of the slider currently being dragged. While set, the panel
     /// fades everything except that slider so the canvas stays visible.
@@ -1256,7 +1260,13 @@ class CollageState: ObservableObject {
         let index: Int
         let frame: CGRect
     }
-    @Published var dragOffset: CGSize = .zero
+    /// The dragged photo's offset. Kept in its own small object: published
+    /// here, every drag frame redrew everything watching the collage.
+    let swapDrag = SwapDragOffset()
+    var dragOffset: CGSize {
+        get { swapDrag.value }
+        set { if swapDrag.value != newValue { swapDrag.value = newValue } }
+    }
     var imageFrames: [UUID: CGRect] = [:]
     /// Frames of empty placeholder boxes on the current page, by column index.
     var emptySlotFrames: [Int: CGRect] = [:]
@@ -1431,19 +1441,6 @@ class CollageState: ObservableObject {
 
     /// The box tapped (or held) last; its tools replace the tabs.
     @Published var selectedImageId: UUID?
-    /// Test layout (`-photoToolsTop`, DEBUG): a selected photo's tools take
-    /// the pager's place at the top instead of covering the tabs.
-    /// Test layout (`-photoToolsNear`, DEBUG): a small bar right next to
-    /// the selected photo.
-    #if DEBUG
-    static let photoToolsAtTop = ProcessInfo.processInfo.arguments.contains("-photoToolsTop")
-    static let photoToolsNear = ProcessInfo.processInfo.arguments.contains("-photoToolsNear")
-    #else
-    static let photoToolsAtTop = false
-    static let photoToolsNear = false
-    #endif
-    /// The selected box on screen (global), for the bar next to it.
-    @Published var selectedBoxFrame: CGRect = .zero
     /// The box whose picture the Replace picker swaps.
     @Published var boxActionTargetId: UUID? = nil
     @Published var showReplacePicker: Bool = false
@@ -1502,7 +1499,11 @@ class CollageState: ObservableObject {
     @Published var canUndo = false
     @Published var canRedo = false
     /// "Undo" / "Redo" flashed over the canvas after a shake.
+    /// The last save of the open collage didn't go through.
+    @Published var saveFailed = false
     @Published var historyToast: String? = nil
+    /// The toast's symbol, when it isn't an undo / redo one.
+    var historyToastIcon: String? = nil
     var historyToastToken = 0
     static let maxUndoSteps = 40
     var undoStack: [CollageSnapshot] = []
@@ -1564,8 +1565,15 @@ class CollageState: ObservableObject {
     @Published var autoApplied: [UUID: AutoApplied] = [:]
     /// Set when pages couldn't be exported; shown as an alert.
     @Published var exportProblem: String?
+    /// Some pages failed but the others went to the share sheet: said
+    /// once that closes (an alert can't show over it).
+    var exportProblemAfterSheet: String?
+    /// Cancel in the "Exporting" dialog: stops before the next picture.
+    @Published var exportCancelRequested = false
     /// Asks the user whether to export the current page or all pages.
     @Published var showExportOptions: Bool = false
+    /// "Export…" on a saved collage: Export Options once it's open.
+    var exportAfterOpening = false
     /// A page's settings, copied from the page menu to paste onto others.
     @Published var copiedPageLook: CopiedPageLook? = nil
     /// The Paste Settings sheet; `pasteToAllOthers` starts it on every other page.
@@ -1957,7 +1965,34 @@ class CollageState: ObservableObject {
 
     /// Adds images to page `target` (default: the current page), spilling
     /// onto new pages once it's full.
-    func addPreparedImages(_ prepared: [CollageImage], toPage target: Int? = nil) {
+    /// Picked photos read in, with "Adding 7 of 30" on screen, and a word
+    /// about any that couldn't be read.
+    func readPicked(_ items: [PhotosPickerItem]) async -> [CollageImage] {
+        let total = items.count
+        importProgress = ImportProgress(done: 0, total: total)
+        let result = await CollageImage.prepare(items) { [weak self] done in
+            self?.importProgress = ImportProgress(done: done, total: total)
+        }
+        importProgress = nil
+        if result.failed > 0 {
+            Diagnostics.log("\(result.failed) of \(total) photos couldn't be read")
+            flashToast(result.failed == 1 ? "1 photo couldn't be added" : "\(result.failed) photos couldn't be added",
+                       icon: "exclamationmark.triangle.fill", seconds: 3)
+        }
+        return result.images
+    }
+
+    /// After adding: says how many photos didn't fit.
+    func reportPhotosLeftOut(_ count: Int) {
+        guard count > 0 else { return }
+        flashToast(count == 1 ? "1 photo didn't fit (\(Self.maxPosts) posts at most)"
+                              : "\(count) photos didn't fit (\(Self.maxPosts) posts at most)",
+                   icon: "exclamationmark.triangle.fill", seconds: 3)
+    }
+
+    /// Adds the photos; returns how many didn't fit (past the page limit).
+    @discardableResult
+    func addPreparedImages(_ prepared: [CollageImage], toPage target: Int? = nil) -> Int {
         defer { detectFocusPoints() }
         let wasEmpty = pages.allSatisfy { $0.images.isEmpty }
 
@@ -1967,7 +2002,7 @@ class CollageState: ObservableObject {
             let target = max(pages.count, Self.initialPageCount(for: prepared.count))
             distributeEvenly(prepared, intoPages: target)
             withAnimation(.easeInOut(duration: 0.25)) { isPanelOpen = true }
-            return
+            return 0
         }
 
         var remaining = prepared[...]
@@ -2004,6 +2039,7 @@ class CollageState: ObservableObject {
                 isPanelOpen = true
             }
         }
+        return remaining.count
     }
 
     /// Resolves the pending Share Extension import once the user has chosen
@@ -3192,8 +3228,12 @@ class CollageState: ObservableObject {
 
     /// Exports the current page, or all non-empty pages, at the chosen size
     /// and format, numbered in order, then presents the share sheet.
-    func exportPages(allPages: Bool, settings: ExportSettings = .saved) async {
-        guard hasAnyImages else { return }
+    /// Where an export goes: the share sheet, or straight into Photos.
+    enum ExportDestination { case share, photos }
+
+    func exportPages(allPages: Bool, settings: ExportSettings = .saved, to destination: ExportDestination = .share) async {
+        guard hasAnyImages, !isExporting else { return }
+        exportCancelRequested = false
         Diagnostics.log("export \(allPages ? "all pages" : "page") \(settings.size.rawValue) \(settings.format.rawValue)")
         // Saved first: no save runs while exporting (the page on screen is
         // the one being exported).
@@ -3226,6 +3266,7 @@ class CollageState: ObservableObject {
         // through with the other pages' pictures.
         let pictures = targets.reduce(0) { $0 + min(max(pages[$1].style.slides, 1), Self.maxSlides) }
         for (n, pi) in targets.enumerated() {
+            if exportCancelRequested { break }
             currentPageIndex = pi
             let slideCount = slides
             let scale = settings.scale(for: pictureSize)
@@ -3238,6 +3279,12 @@ class CollageState: ObservableObject {
                 exportProgress = Double(n + 1) / Double(targets.count)
             }
             for slide in 0..<slideCount {
+                if exportCancelRequested { break }
+                #if DEBUG && canImport(UIKit)
+                // `-uiTestSlowExport`: time to press Cancel.
+                if UITest.slowExport { try? await Task.sleep(nanoseconds: 1_500_000_000) }
+                if exportCancelRequested { break }
+                #endif
                 // Drained per picture: the render and its encoding are big.
                 let data: Data? = autoreleasepool {
                     renderCurrentPage(scale: scale, slide: slideCount > 1 ? slide : nil)
@@ -3272,15 +3319,43 @@ class CollageState: ObservableObject {
         isBusy = false
         isLoading = false
         savePhase = .idle
-        exportedFiles = urls
+        if exportCancelRequested {
+            Diagnostics.log("export cancelled")
+            exportCancelRequested = false
+            try? FileManager.default.removeItem(at: dir)
+            return
+        }
+        var problem: String?
         if !failed.isEmpty {
             Diagnostics.log("export failed for pages \(failed)")
-            exportProblem = urls.isEmpty
+            problem = urls.isEmpty
                 ? "The collage couldn't be exported. Try a smaller size, or close other apps and try again."
-                : "Page\(failed.count == 1 ? "" : "s") \(failed.map(String.init).joined(separator: ", ")) couldn't be exported; the others are ready to share."
+                : "Page\(failed.count == 1 ? "" : "s") \(failed.map(String.init).joined(separator: ", ")) couldn't be exported; the others are \(destination == .photos ? "saved" : "ready to share")."
         }
-        if !urls.isEmpty {
+        guard !urls.isEmpty else {
+            exportProblem = problem
+            return
+        }
+        switch destination {
+        case .share:
+            exportedFiles = urls
+            exportProblemAfterSheet = problem
             showExportSheet = true
+        case .photos:
+            let saved = await PhotoLibrarySaver.save(urls)
+            try? FileManager.default.removeItem(at: dir)
+            switch saved {
+            case .saved(let n):
+                #if DEBUG && canImport(UIKit)
+                UITest.savedToPhotos += n
+                #endif
+                flashToast(n == 1 ? "Saved to Photos" : "Saved \(n) posts to Photos", icon: "checkmark.circle.fill")
+                exportProblem = problem
+            case .denied:
+                exportProblem = "das Kolaž isn't allowed to add photos. Allow it in Settings › Privacy & Security › Photos, or use Share instead."
+            case .failed:
+                exportProblem = "The pictures couldn't be saved to Photos. Try Share instead."
+            }
         }
     }
 
@@ -3288,6 +3363,11 @@ class CollageState: ObservableObject {
     func clearExportFiles() {
         guard !isExporting else { return }
         exportedFiles = []
+        if let problem = exportProblemAfterSheet {
+            exportProblemAfterSheet = nil
+            // After the sheet has gone.
+            DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) { [weak self] in self?.exportProblem = problem }
+        }
         try? FileManager.default.removeItem(at: FileManager.default.temporaryDirectory
             .appendingPathComponent("CollageExport", isDirectory: true))
     }

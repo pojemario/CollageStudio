@@ -179,11 +179,17 @@ extension CollageState {
     }
 
     /// Brief message over the canvas ("Undo", "Redo"), e.g. after a shake.
-    func flashHistoryToast(_ text: String) {
+    /// A short message under the toolbar, with its own symbol.
+    func flashToast(_ text: String, icon: String, seconds: Double = 2.2) {
+        flashHistoryToast(text, icon: icon, seconds: seconds)
+    }
+
+    func flashHistoryToast(_ text: String, icon: String? = nil, seconds: Double = 1.1) {
+        historyToastIcon = icon
         historyToast = text
         historyToastToken &+= 1
         let token = historyToastToken
-        DispatchQueue.main.asyncAfter(deadline: .now() + 1.1) { [weak self] in
+        DispatchQueue.main.asyncAfter(deadline: .now() + seconds) { [weak self] in
             guard let self, self.historyToastToken == token else { return }
             withAnimation(.easeOut(duration: 0.2)) { self.historyToast = nil }
         }
@@ -237,7 +243,7 @@ struct UndoRedoButtons: View {
             Image(systemName: sf)
                 .font(.system(size: 15, weight: .medium))
                 .foregroundColor(enabled ? .primary : .secondary.opacity(0.35))
-                .frame(width: size, height: size)
+                .frame(width: size, height: max(size, 44))
                 .contentShape(Rectangle())
         }
         .buttonStyle(.plain)
@@ -294,7 +300,7 @@ struct HistoryToast: View {
     var body: some View {
         ZStack {
             if let text = state.historyToast {
-                Label(text, systemImage: text == "Undo" ? "arrow.uturn.backward" : "arrow.uturn.forward")
+                Label(text, systemImage: state.historyToastIcon ?? (text == "Undo" ? "arrow.uturn.backward" : "arrow.uturn.forward"))
                     .font(.system(size: 13, weight: .semibold))
                     .foregroundColor(.white)
                     .padding(.horizontal, 14)

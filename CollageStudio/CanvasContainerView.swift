@@ -190,27 +190,43 @@ struct CanvasContainerView: View {
             // screen too, after photos are picked or a collage is opened).
             .overlay {
                 if state.isLoading || state.isRestoringProject {
-                    ProgressView()
-                        .progressViewStyle(.circular)
-                        .controlSize(.large)
-                        .tint(.gray)
-                        .opacity(0.55)
-                        .transition(.opacity)
+                    VStack(spacing: 12) {
+                        ProgressView()
+                            .progressViewStyle(.circular)
+                            .controlSize(.large)
+                            .tint(.gray)
+                            .opacity(0.55)
+                        // Picked photos: how far along (iCloud ones can be slow).
+                        if let p = state.importProgress, p.total > 1 {
+                            Text("Adding \(min(p.done + 1, p.total)) of \(p.total)")
+                                .font(.footnote.weight(.medium).monospacedDigit())
+                                .foregroundColor(.secondary)
+                        }
+                    }
+                    .transition(.opacity)
                 }
             }
             .animation(.easeInOut(duration: 0.2), value: state.isLoading)
             // No photos yet: the start screen — New Collage and the saved ones.
             .overlay {
                 if !state.hasAnyImages && !state.isRestoringProject && !state.isLoading {
-                    CollagesHome(store: state.projectStore) { showAddPicker = true }
+                    CollagesHome(store: state.projectStore) {
+                        #if DEBUG
+                        if UITest.isOn { addPhotos { await UITest.makePhotos() }; return }
+                        #endif
+                        showAddPicker = true
+                    }
                         .background(ColorManager.canvasAreaBackground.ignoresSafeArea())
                         .transition(.opacity)
                 }
             }
+            // `.current`: photos as they are (HEIC stays HEIC), not
+            // converted to JPEG first.
             .photosPicker(isPresented: $showAddPicker,
                           selection: $photoItems,
                           maxSelectionCount: 30,
-                          matching: .images)
+                          matching: .images,
+                          preferredItemEncoding: .current)
             // Before / after peek (holding a filter tile). Only the badge
             // fades — the pictures themselves switch instantly (animating
             // the whole canvas made the swap flash).
@@ -235,10 +251,9 @@ struct CanvasContainerView: View {
             // hold to see the collage without its edits, effects and filter;
             // on a spread page, zoom out to the whole spread or in to a post.
             .overlay(alignment: .topTrailing) {
-                let photoToolsUp = CollageState.photoToolsAtTop && state.selectedImage != nil
                 let compare = state.hasAnyImages && state.hasLookEdits
                 let spread = state.hasAnyImages && state.slides > 1
-                if !state.toolbarHidden && !photoToolsUp && (compare || spread) {
+                if !state.toolbarHidden && (compare || spread) {
                     HStack(spacing: 8) {
                         if spread { SpreadZoomButton().transition(.opacity) }
                         if compare { CompareButton().transition(.opacity) }
@@ -269,7 +284,8 @@ struct CanvasContainerView: View {
             .photosPicker(isPresented: $state.showReplacePicker,
                           selection: $replaceItems,
                           maxSelectionCount: 1,
-                          matching: .images)
+                          matching: .images,
+                          preferredItemEncoding: .current)
             .onChange(of: replaceItems) { _, newItems in
                 loadReplacement(newItems)
             }
@@ -279,17 +295,23 @@ struct CanvasContainerView: View {
 
     func loadPhotos(_ items: [PhotosPickerItem]) {
         guard !items.isEmpty else { return }
+        Diagnostics.log("adding \(items.count) photos")
+        addPhotos { await state.readPicked(items) }
+    }
+
+    /// Reads the photos in (busy meanwhile) and adds them; a new collage
+    /// opens the Images panel.
+    func addPhotos(_ read: @escaping () async -> [CollageImage]) {
         state.isBusy = true
         state.isLoading = true
-        Diagnostics.log("adding \(items.count) photos")
         Task {
             let start = Date()
-            let prepared = await CollageImage.prepare(items)
-            Diagnostics.log(String(format: "read %d of %d photos in %.1fs", prepared.count, items.count, Date().timeIntervalSince(start)))
+            let prepared = await read()
+            Diagnostics.log(String(format: "read %d photos in %.1fs", prepared.count, Date().timeIntervalSince(start)))
             await MainActor.run {
                 let isNew = !state.hasAnyImages
                 Diagnostics.log(String(format: "prepared photos in %.1fs", Date().timeIntervalSince(start)))
-                state.addPreparedImages(prepared)
+                state.reportPhotosLeftOut(state.addPreparedImages(prepared))
                 if isNew && state.hasAnyImages { state.openImagesPanel() }
                 Diagnostics.log("added photos · \(state.diagnosticsSummary)")
                 photoItems = []
@@ -304,7 +326,7 @@ struct CanvasContainerView: View {
               let targetId = state.boxActionTargetId else { return }
         Task {
             // Decoded and prepared off the main thread.
-            if let prepared = await CollageImage.prepare([item]).first {
+            if let prepared = await CollageImage.prepare([item]).images.first {
                 await MainActor.run {
                     state.replaceImage(id: targetId, with: prepared)
                 }

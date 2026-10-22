@@ -97,6 +97,15 @@ struct TextBoxStyle: Equatable {
     var textColor: Color = .black
     /// Transparent by default: the text floats on the collage.
     var backgroundColor: Color = .clear
+    /// A soft shadow or an outline, so text reads over a busy photo.
+    var effect: Effect = .none
+    /// Space between letters, in % of the text size (0 = the font's own).
+    var letterSpacing: CGFloat = 0
+
+    enum Effect: String, CaseIterable, Identifiable {
+        case none = "None", shadow = "Shadow", outline = "Outline"
+        var id: String { rawValue }
+    }
 
     enum HAlign: String, CaseIterable, Identifiable {
         case leading, center, trailing
@@ -231,11 +240,24 @@ extension CollageImage {
 
         #if canImport(UIKit)
         let font = style.fontChoice.platformFont(size: scaledFontSize)
-        let attrs: [NSAttributedString.Key: Any] = [
+        var attrs: [NSAttributedString.Key: Any] = [
             .font: font,
             .foregroundColor: UIColor(style.textColor),
             .paragraphStyle: paragraph,
+            .kern: scaledFontSize * style.letterSpacing / 100,
         ]
+        // Shadow and outline in the text's opposite: dark behind light
+        // text, light behind dark.
+        var white: CGFloat = 0, alpha: CGFloat = 0
+        UIColor(style.textColor).getWhite(&white, alpha: &alpha)
+        let contrast = white > 0.5 ? UIColor.black : UIColor.white
+        if style.effect == .shadow {
+            let shadow = NSShadow()
+            shadow.shadowColor = contrast.withAlphaComponent(0.55)
+            shadow.shadowOffset = CGSize(width: 0, height: scaledFontSize * 0.04)
+            shadow.shadowBlurRadius = scaledFontSize * 0.14
+            attrs[.shadow] = shadow
+        }
 
         let format = UIGraphicsImageRendererFormat()
         format.scale = 1
@@ -254,9 +276,16 @@ extension CollageImage {
             case .middle: y = maxRect.minY + (maxRect.height - textHeight) / 2
             case .bottom: y = maxRect.maxY - textHeight
             }
-            (style.text as NSString).draw(
-                with: CGRect(x: maxRect.minX, y: y, width: maxRect.width, height: textHeight),
-                options: [.usesLineFragmentOrigin], attributes: attrs, context: nil)
+            let rect = CGRect(x: maxRect.minX, y: y, width: maxRect.width, height: textHeight)
+            if style.effect == .outline {
+                // The outline first (centered on the letters' edges), then
+                // the letters over it: the line shows outside them only.
+                var outline = attrs
+                outline[.strokeColor] = contrast
+                outline[.strokeWidth] = 14
+                (style.text as NSString).draw(with: rect, options: [.usesLineFragmentOrigin], attributes: outline, context: nil)
+            }
+            (style.text as NSString).draw(with: rect, options: [.usesLineFragmentOrigin], attributes: attrs, context: nil)
         }
         #else
         let font = style.fontChoice.platformFont(size: scaledFontSize)
@@ -264,6 +293,7 @@ extension CollageImage {
             .font: font,
             .foregroundColor: NSColor(style.textColor),
             .paragraphStyle: paragraph,
+            .kern: scaledFontSize * style.letterSpacing / 100,
         ]
 
         let img = NSImage(size: size)
@@ -476,19 +506,48 @@ struct CollageImage: Identifiable, Equatable {
         self.thumb = proxy.downsampled(longEdge: Self.thumbLongEdge)
     }
 
-    /// Picked photos, read and prepared one at a time, decoding and the
-    /// working copies off the main thread: never more than one full-size
-    /// photo decoded at once.
-    static func prepare(_ items: [PhotosPickerItem]) async -> [CollageImage] {
+    /// Picked photos, in their order. Up to three download at once (iCloud
+    /// photos come down slowly), but they're decoded and prepared one at a
+    /// time off the main thread: never more than one full-size photo
+    /// decoded at once. `progress` gets how many are done; `failed` counts
+    /// the ones that couldn't be read.
+    static func prepare(_ items: [PhotosPickerItem],
+                        progress: (@MainActor @Sendable (Int) -> Void)? = nil) async -> (images: [CollageImage], failed: Int) {
         var prepared: [CollageImage] = []
-        for item in items {
-            guard let data = try? await item.loadTransferable(type: Data.self) else { continue }
-            let img = await Task.detached(priority: .userInitiated) {
-                autoreleasepool { CollageImage(data: data) }
-            }.value
-            if let img { prepared.append(img) }
+        var failed = 0
+        let downloadsAtOnce = 3
+        await withTaskGroup(of: (Int, Data?).self) { group in
+            var next = 0
+            // Downloaded, waiting for the ones before them.
+            var waiting: [Int: Data?] = [:]
+            var done = 0
+            while next < min(downloadsAtOnce, items.count) {
+                let i = next, item = items[i]
+                group.addTask { (i, try? await item.loadTransferable(type: Data.self)) }
+                next += 1
+            }
+            while let (i, data) = await group.next() {
+                waiting[i] = data
+                if next < items.count {
+                    let k = next, item = items[k]
+                    group.addTask { (k, try? await item.loadTransferable(type: Data.self)) }
+                    next += 1
+                }
+                while let ready = waiting.removeValue(forKey: done) {
+                    done += 1
+                    if let ready, let img = await Task.detached(priority: .userInitiated, operation: {
+                        autoreleasepool { CollageImage(data: ready) }
+                    }).value {
+                        prepared.append(img)
+                    } else {
+                        failed += 1
+                    }
+                    let count = done
+                    await progress?(count)
+                }
+            }
         }
-        return prepared
+        return (prepared, failed)
     }
 
     /// Swaps in a new picture, regenerating the working copies. Replacing a
@@ -2108,16 +2167,19 @@ struct HSLAdjustments: Hashable {
 // MARK: - Canvas Ratio
 
 enum CanvasRatio: String, CaseIterable, Identifiable {
-    // Declaration order defines the ratio grid order (3 per row):
-    // 1:1, 4:5, 4:3 / 9:16, 5:4, 3:2 / 16:9, 2:3, Custom
+    // Declaration order defines the ratio grid order (3 per row): the
+    // post shapes first, then the tall and the wide ones.
+    // 1:1, 4:5, 3:4 / 9:16, 2:3, 4:3 / 5:4, 3:2, 16:9 / Custom
     case square      = "1:1"
     case portrait45  = "4:5"
-    case landscape43 = "4:3"
+    /// Instagram's tall feed post (1080 × 1440).
+    case portrait34  = "3:4"
     case portrait916 = "9:16"
+    case portrait23  = "2:3"
+    case landscape43 = "4:3"
     case landscape54 = "5:4"
     case landscape32 = "3:2"
     case landscape169 = "16:9"
-    case portrait23  = "2:3"
     case custom      = "Custom"
 
     var id: String { rawValue }
@@ -2129,6 +2191,7 @@ enum CanvasRatio: String, CaseIterable, Identifiable {
         case .landscape54:  return CGSize(width: base, height: base * 4/5)
         case .landscape32:  return CGSize(width: base, height: base * 2/3)
         case .landscape43:  return CGSize(width: base, height: base * 3/4)
+        case .portrait34:   return CGSize(width: base * 3/4, height: base)
         case .portrait916:  return CGSize(width: base * 9/16, height: base)
         case .landscape169: return CGSize(width: base, height: base * 9/16)
         case .portrait23:   return CGSize(width: base * 2/3, height: base)

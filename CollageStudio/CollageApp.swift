@@ -11,14 +11,15 @@ struct CollageApp: App {
     init() {
         // First, so a crash anywhere after it leaves a trail.
         Diagnostics.start()
+        #if DEBUG
+        UITest.prepare()
+        #endif
         CollageTips.configure()
     }
 
     var body: some Scene {
         WindowGroup {
             ContentView()
-                // The backdrop and glass chrome are designed light; keep the
-                // system from flipping the text white in dark mode.
                 .environmentObject(state)
                 // Cap Dynamic Type scaling so the compact editor controls keep
                 // their designed proportions regardless of the device's system
@@ -79,7 +80,7 @@ struct CollageApp: App {
                     Text(["das Kolaž \(title) is ready.", info?.notes].compactMap { $0 }.joined(separator: "\n\n"))
                 }
                 .alert("Add Shared Photos", isPresented: $state.showSharedImportChoice) {
-                    Button("Start New Collage", role: .destructive) {
+                    Button("Start New Collage") {
                         state.importPendingShared(replacingCurrent: true)
                     }
                     Button("Add to Current Collage") {
@@ -99,7 +100,7 @@ struct CollageApp: App {
                         state.discardPendingShared()
                     }
                 } message: {
-                    Text("Your collage already contains \(state.images.count) photo\(state.images.count == 1 ? "" : "s"). Start a new collage with the shared photos, or add them to the current one?")
+                    Text("Start a new collage with the shared photos, or add them to the one that's open? It stays in Collages either way.")
                 }
         }
         #if os(macOS)
@@ -147,47 +148,5 @@ struct CollageApp: App {
             state.pendingSharedFiles.append(contentsOf: shared.map(\.0))
             state.showSharedImportChoice = true
         }
-    }
-}
-
-/// Version shown next to the logo, e.g. "v1.0" over "142 · ab12cd3". The build
-/// number is the git commit count and GitCommit the short hash ("+" when
-/// built with uncommitted changes) — both stamped into Info.plist at build
-/// time by the "Stamp Build Version" phase — so any installed build can be
-/// traced to its commit and features.
-enum AppVersion {
-    /// "v1.0".
-    static var version: String {
-        "v" + (Bundle.main.infoDictionary?["CFBundleShortVersionString"] as? String ?? "?")
-    }
-
-    /// "142 · ab12cd3".
-    static var build: String {
-        let info = Bundle.main.infoDictionary ?? [:]
-        let number = info["CFBundleVersion"] as? String ?? "?"
-        return (info["GitCommit"] as? String).map { "\(number) · \($0)" } ?? number
-    }
-
-    static var label: String {
-        let info = Bundle.main.infoDictionary ?? [:]
-        let version = info["CFBundleShortVersionString"] as? String ?? "?"
-        let build = info["CFBundleVersion"] as? String ?? "?"
-        if let commit = info["GitCommit"] as? String {
-            return "v\(version) (\(build) · \(commit))"
-        }
-        return "v\(version) (\(build))"
-    }
-}
-
-/// The version next to the logo: two small, faint lines. Not shown at the
-/// moment (builds go to testers); the diagnostics log records the build.
-struct VersionLabel: View {
-    var body: some View {
-        VStack(alignment: .leading, spacing: 1) {
-            Text(AppVersion.version)
-            Text(AppVersion.build)
-        }
-        .font(.system(size: 8, weight: .regular, design: .monospaced))
-        .foregroundColor(.secondary.opacity(0.6))
     }
 }

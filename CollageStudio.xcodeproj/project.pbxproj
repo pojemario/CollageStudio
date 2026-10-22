@@ -7,14 +7,16 @@
 	objects = {
 
 /* Begin PBXBuildFile section */
+		0C6D6BCFC83182BE77E97A7D /* UITestSupport.swift in Sources */ = {isa = PBXBuildFile; fileRef = 56F9B0DCF480FD99B5B96EE1 /* UITestSupport.swift */; };
 		225F1A5F2FEB91D500BFD410 /* ColorManager.swift in Sources */ = {isa = PBXBuildFile; fileRef = 225F1A5E2FEB91D500BFD410 /* ColorManager.swift */; };
-		AA0000F2 /* TextEditPanel.swift in Sources */ = {isa = PBXBuildFile; fileRef = AA0000F1 /* TextEditPanel.swift */; };
-		AA0000F4 /* FramePacksView.swift in Sources */ = {isa = PBXBuildFile; fileRef = AA0000F3 /* FramePacksView.swift */; };
-		AA0000F6 /* OverlayPanel.swift in Sources */ = {isa = PBXBuildFile; fileRef = AA0000F5 /* OverlayPanel.swift */; };
-		AA0000F8 /* Effects.swift in Sources */ = {isa = PBXBuildFile; fileRef = AA0000F7 /* Effects.swift */; };
 		22BA1EDD30028034000137C9 /* CollageGridView_Grid.swift in Sources */ = {isa = PBXBuildFile; fileRef = 22BA1EDC30028033000137C9 /* CollageGridView_Grid.swift */; };
 		22CD51FC300B66E20026FB00 /* SharedInbox.swift in Sources */ = {isa = PBXBuildFile; fileRef = 22CD51FB300B66E20026FB00 /* SharedInbox.swift */; };
 		22CD520B300B696A0026FB00 /* ShareExtension.appex in Embed Foundation Extensions */ = {isa = PBXBuildFile; fileRef = 22CD5201300B696A0026FB00 /* ShareExtension.appex */; settings = {ATTRIBUTES = (RemoveHeadersOnCopy, ); }; };
+		2AAC080ABDA224454A885B91 /* DeviceTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 83E377C37D105C29C8864052 /* DeviceTests.swift */; };
+		42D4A2D2C76203B855BF96ED /* Foundation.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = 8938F040B5DC40AE4ECC73B0 /* Foundation.framework */; };
+		8860D1E6BA5D9095F08E4B51 /* SmokeTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = ACA0B56D1B0BE8DDDFC81911 /* SmokeTests.swift */; };
+		89B741B70ED7889276299F37 /* CollageUITestCase.swift in Sources */ = {isa = PBXBuildFile; fileRef = 9AF5A09792B9DE8D5B561DE5 /* CollageUITestCase.swift */; };
+		A325EEE59868467547638834 /* CompatibilityTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = BA5E5C72CAB81B1B6BCBF1A7 /* CompatibilityTests.swift */; };
 		AA000001 /* CollageApp.swift in Sources */ = {isa = PBXBuildFile; fileRef = AA100001 /* CollageApp.swift */; };
 		AA000002 /* ContentView.swift in Sources */ = {isa = PBXBuildFile; fileRef = AA100002 /* ContentView.swift */; };
 		AA000003 /* CollageState.swift in Sources */ = {isa = PBXBuildFile; fileRef = AA100003 /* CollageState.swift */; };
@@ -25,16 +27,21 @@
 		AA000008 /* SidebarView.swift in Sources */ = {isa = PBXBuildFile; fileRef = AA100008 /* SidebarView.swift */; };
 		AA000009 /* BottomPanelView.swift in Sources */ = {isa = PBXBuildFile; fileRef = AA100009 /* BottomPanelView.swift */; };
 		AA000010 /* Assets.xcassets in Resources */ = {isa = PBXBuildFile; fileRef = AA100010 /* Assets.xcassets */; };
+		AA0000F2 /* TextEditPanel.swift in Sources */ = {isa = PBXBuildFile; fileRef = AA0000F1 /* TextEditPanel.swift */; };
+		AA0000F4 /* FramePacksView.swift in Sources */ = {isa = PBXBuildFile; fileRef = AA0000F3 /* FramePacksView.swift */; };
+		AA0000F6 /* OverlayPanel.swift in Sources */ = {isa = PBXBuildFile; fileRef = AA0000F5 /* OverlayPanel.swift */; };
+		AA0000F8 /* Effects.swift in Sources */ = {isa = PBXBuildFile; fileRef = AA0000F7 /* Effects.swift */; };
+		C07A2A1CD2A4D214FEBCB1D8 /* FeatureTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 842CB0918A2D2823C2886364 /* FeatureTests.swift */; };
+		CD0766CC9992BA895524A383 /* Diagnostics.swift in Sources */ = {isa = PBXBuildFile; fileRef = CC0766CC9992BA895524A383 /* Diagnostics.swift */; };
 		CD138EBBCAF5CCD287E4472D /* History.swift in Sources */ = {isa = PBXBuildFile; fileRef = CC138EBBCAF5CCD287E4472D /* History.swift */; };
-		CDF39BEA1DCABCA4CC123172 /* Projects.swift in Sources */ = {isa = PBXBuildFile; fileRef = CCF39BEA1DCABCA4CC123172 /* Projects.swift */; };
-		CDE04F5A291AA82632FC7C3E /* Styles.swift in Sources */ = {isa = PBXBuildFile; fileRef = CCE04F5A291AA82632FC7C3E /* Styles.swift */; };
-		CDCFFB50E3A38E486960EC62 /* SmartLayout.swift in Sources */ = {isa = PBXBuildFile; fileRef = CCCFFB50E3A38E486960EC62 /* SmartLayout.swift */; };
-		CD1D20EACFDBA78B13F8849D /* Backgrounds.swift in Sources */ = {isa = PBXBuildFile; fileRef = CC1D20EACFDBA78B13F8849D /* Backgrounds.swift */; };
 		CD1AEE73E469CECF122CC288 /* ExportOptions.swift in Sources */ = {isa = PBXBuildFile; fileRef = CC1AEE73E469CECF122CC288 /* ExportOptions.swift */; };
+		CD1D20EACFDBA78B13F8849D /* Backgrounds.swift in Sources */ = {isa = PBXBuildFile; fileRef = CC1D20EACFDBA78B13F8849D /* Backgrounds.swift */; };
 		CD2E1D6C7C956F2B46F32590 /* Tips.swift in Sources */ = {isa = PBXBuildFile; fileRef = CC2E1D6C7C956F2B46F32590 /* Tips.swift */; };
 		CD886F2C9B64CCED83ABDF64 /* PageCopy.swift in Sources */ = {isa = PBXBuildFile; fileRef = CC886F2C9B64CCED83ABDF64 /* PageCopy.swift */; };
 		CD886F2C9B64CCED83ABDF70 /* UpdateCheck.swift in Sources */ = {isa = PBXBuildFile; fileRef = CC886F2C9B64CCED83ABDF70 /* UpdateCheck.swift */; };
-		CD0766CC9992BA895524A383 /* Diagnostics.swift in Sources */ = {isa = PBXBuildFile; fileRef = CC0766CC9992BA895524A383 /* Diagnostics.swift */; };
+		CDCFFB50E3A38E486960EC62 /* SmartLayout.swift in Sources */ = {isa = PBXBuildFile; fileRef = CCCFFB50E3A38E486960EC62 /* SmartLayout.swift */; };
+		CDE04F5A291AA82632FC7C3E /* Styles.swift in Sources */ = {isa = PBXBuildFile; fileRef = CCE04F5A291AA82632FC7C3E /* Styles.swift */; };
+		CDF39BEA1DCABCA4CC123172 /* Projects.swift in Sources */ = {isa = PBXBuildFile; fileRef = CCF39BEA1DCABCA4CC123172 /* Projects.swift */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXContainerItemProxy section */
@@ -44,6 +51,13 @@
 			proxyType = 1;
 			remoteGlobalIDString = 22CD5200300B696A0026FB00;
 			remoteInfo = ShareExtension;
+		};
+		61171431FB6245515E58D516 /* PBXContainerItemProxy */ = {
+			isa = PBXContainerItemProxy;
+			containerPortal = AAPRJ0001 /* Project object */;
+			proxyType = 1;
+			remoteGlobalIDString = AATGT0001;
+			remoteInfo = CollageStudio;
 		};
 /* End PBXContainerItemProxy section */
 
@@ -63,14 +77,20 @@
 
 /* Begin PBXFileReference section */
 		225F1A5E2FEB91D500BFD410 /* ColorManager.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ColorManager.swift; sourceTree = "<group>"; };
-		AA0000F1 /* TextEditPanel.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TextEditPanel.swift; sourceTree = "<group>"; };
-		AA0000F3 /* FramePacksView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = FramePacksView.swift; sourceTree = "<group>"; };
-		AA0000F5 /* OverlayPanel.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = OverlayPanel.swift; sourceTree = "<group>"; };
-		AA0000F7 /* Effects.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Effects.swift; sourceTree = "<group>"; };
 		22BA1EDC30028033000137C9 /* CollageGridView_Grid.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CollageGridView_Grid.swift; sourceTree = "<group>"; };
 		22CD51FB300B66E20026FB00 /* SharedInbox.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SharedInbox.swift; sourceTree = "<group>"; };
 		22CD5201300B696A0026FB00 /* ShareExtension.appex */ = {isa = PBXFileReference; explicitFileType = "wrapper.app-extension"; includeInIndex = 0; path = ShareExtension.appex; sourceTree = BUILT_PRODUCTS_DIR; };
 		22CD5211300BAE4F0026FB00 /* CollageStudio.entitlements */ = {isa = PBXFileReference; lastKnownFileType = text.plist.entitlements; path = CollageStudio.entitlements; sourceTree = "<group>"; };
+		23C249292932DD3EC864E7C4 /* CollageStudioUITests.xctest */ = {isa = PBXFileReference; explicitFileType = wrapper.cfbundle; includeInIndex = 0; path = CollageStudioUITests.xctest; sourceTree = BUILT_PRODUCTS_DIR; };
+		56F9B0DCF480FD99B5B96EE1 /* UITestSupport.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = UITestSupport.swift; sourceTree = "<group>"; };
+		83E377C37D105C29C8864052 /* DeviceTests.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = DeviceTests.swift; sourceTree = "<group>"; };
+		842CB0918A2D2823C2886364 /* FeatureTests.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = FeatureTests.swift; sourceTree = "<group>"; };
+		8938F040B5DC40AE4ECC73B0 /* Foundation.framework */ = {isa = PBXFileReference; lastKnownFileType = wrapper.framework; name = Foundation.framework; path = Platforms/iPhoneOS.platform/Developer/SDKs/iPhoneOS18.0.sdk/System/Library/Frameworks/Foundation.framework; sourceTree = DEVELOPER_DIR; };
+		9AF5A09792B9DE8D5B561DE5 /* CollageUITestCase.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = CollageUITestCase.swift; sourceTree = "<group>"; };
+		AA0000F1 /* TextEditPanel.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TextEditPanel.swift; sourceTree = "<group>"; };
+		AA0000F3 /* FramePacksView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = FramePacksView.swift; sourceTree = "<group>"; };
+		AA0000F5 /* OverlayPanel.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = OverlayPanel.swift; sourceTree = "<group>"; };
+		AA0000F7 /* Effects.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Effects.swift; sourceTree = "<group>"; };
 		AA100001 /* CollageApp.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CollageApp.swift; sourceTree = "<group>"; };
 		AA100002 /* ContentView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ContentView.swift; sourceTree = "<group>"; };
 		AA100003 /* CollageState.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CollageState.swift; sourceTree = "<group>"; };
@@ -83,20 +103,22 @@
 		AA100010 /* Assets.xcassets */ = {isa = PBXFileReference; lastKnownFileType = folder.assetcatalog; path = Assets.xcassets; sourceTree = "<group>"; };
 		AA100011 /* Info.plist */ = {isa = PBXFileReference; lastKnownFileType = text.plist.xml; path = Info.plist; sourceTree = "<group>"; };
 		AAPROD001 /* CollageStudio.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = CollageStudio.app; sourceTree = BUILT_PRODUCTS_DIR; };
+		ACA0B56D1B0BE8DDDFC81911 /* SmokeTests.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = SmokeTests.swift; sourceTree = "<group>"; };
+		BA5E5C72CAB81B1B6BCBF1A7 /* CompatibilityTests.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = CompatibilityTests.swift; sourceTree = "<group>"; };
+		CC0766CC9992BA895524A383 /* Diagnostics.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Diagnostics.swift; sourceTree = "<group>"; };
 		CC138EBBCAF5CCD287E4472D /* History.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = History.swift; sourceTree = "<group>"; };
-		CCF39BEA1DCABCA4CC123172 /* Projects.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Projects.swift; sourceTree = "<group>"; };
-		CCE04F5A291AA82632FC7C3E /* Styles.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Styles.swift; sourceTree = "<group>"; };
-		CCCFFB50E3A38E486960EC62 /* SmartLayout.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SmartLayout.swift; sourceTree = "<group>"; };
-		CC1D20EACFDBA78B13F8849D /* Backgrounds.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Backgrounds.swift; sourceTree = "<group>"; };
 		CC1AEE73E469CECF122CC288 /* ExportOptions.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ExportOptions.swift; sourceTree = "<group>"; };
+		CC1D20EACFDBA78B13F8849D /* Backgrounds.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Backgrounds.swift; sourceTree = "<group>"; };
 		CC2E1D6C7C956F2B46F32590 /* Tips.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Tips.swift; sourceTree = "<group>"; };
 		CC886F2C9B64CCED83ABDF64 /* PageCopy.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PageCopy.swift; sourceTree = "<group>"; };
 		CC886F2C9B64CCED83ABDF70 /* UpdateCheck.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = UpdateCheck.swift; sourceTree = "<group>"; };
-		CC0766CC9992BA895524A383 /* Diagnostics.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Diagnostics.swift; sourceTree = "<group>"; };
+		CCCFFB50E3A38E486960EC62 /* SmartLayout.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SmartLayout.swift; sourceTree = "<group>"; };
+		CCE04F5A291AA82632FC7C3E /* Styles.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Styles.swift; sourceTree = "<group>"; };
+		CCF39BEA1DCABCA4CC123172 /* Projects.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Projects.swift; sourceTree = "<group>"; };
 /* End PBXFileReference section */
 
 /* Begin PBXFileSystemSynchronizedBuildFileExceptionSet section */
-		22CD520C300B696A0026FB00 /* PBXFileSystemSynchronizedBuildFileExceptionSet */ = {
+		22CD520C300B696A0026FB00 /* Exceptions for "ShareExtension" folder in "ShareExtension" target */ = {
 			isa = PBXFileSystemSynchronizedBuildFileExceptionSet;
 			membershipExceptions = (
 				Info.plist,
@@ -106,10 +128,29 @@
 /* End PBXFileSystemSynchronizedBuildFileExceptionSet section */
 
 /* Begin PBXFileSystemSynchronizedRootGroup section */
-		22CD5202300B696A0026FB00 /* ShareExtension */ = {isa = PBXFileSystemSynchronizedRootGroup; exceptions = (22CD520C300B696A0026FB00 /* PBXFileSystemSynchronizedBuildFileExceptionSet */, ); explicitFileTypes = {}; explicitFolders = (); path = ShareExtension; sourceTree = "<group>"; };
+		22CD5202300B696A0026FB00 /* ShareExtension */ = {
+			isa = PBXFileSystemSynchronizedRootGroup;
+			exceptions = (
+				22CD520C300B696A0026FB00 /* Exceptions for "ShareExtension" folder in "ShareExtension" target */,
+			);
+			explicitFileTypes = {
+			};
+			explicitFolders = (
+			);
+			path = ShareExtension;
+			sourceTree = "<group>";
+		};
 /* End PBXFileSystemSynchronizedRootGroup section */
 
 /* Begin PBXFrameworksBuildPhase section */
+		05842F101333EB8D456690F8 /* Frameworks */ = {
+			isa = PBXFrameworksBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+				42D4A2D2C76203B855BF96ED /* Foundation.framework in Frameworks */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
 		22CD51FE300B696A0026FB00 /* Frameworks */ = {
 			isa = PBXFrameworksBuildPhase;
 			buildActionMask = 2147483647;
@@ -127,12 +168,22 @@
 /* End PBXFrameworksBuildPhase section */
 
 /* Begin PBXGroup section */
+		8489E693EB65674A58685E97 /* Frameworks */ = {
+			isa = PBXGroup;
+			children = (
+				ED947990362156A32B12244E /* iOS */,
+			);
+			name = Frameworks;
+			sourceTree = "<group>";
+		};
 		AAGRP0000 = {
 			isa = PBXGroup;
 			children = (
 				AAGRP0001 /* CollageStudio */,
 				22CD5202300B696A0026FB00 /* ShareExtension */,
 				AAGRP0002 /* Products */,
+				8489E693EB65674A58685E97 /* Frameworks */,
+				B220F5018FC6FADFD9C5F81C /* CollageStudioUITests */,
 			);
 			sourceTree = "<group>";
 		};
@@ -168,6 +219,7 @@
 				CCE04F5A291AA82632FC7C3E /* Styles.swift */,
 				CCF39BEA1DCABCA4CC123172 /* Projects.swift */,
 				CC138EBBCAF5CCD287E4472D /* History.swift */,
+				56F9B0DCF480FD99B5B96EE1 /* UITestSupport.swift */,
 			);
 			path = CollageStudio;
 			sourceTree = "<group>";
@@ -177,8 +229,30 @@
 			children = (
 				AAPROD001 /* CollageStudio.app */,
 				22CD5201300B696A0026FB00 /* ShareExtension.appex */,
+				23C249292932DD3EC864E7C4 /* CollageStudioUITests.xctest */,
 			);
 			name = Products;
+			sourceTree = "<group>";
+		};
+		B220F5018FC6FADFD9C5F81C /* CollageStudioUITests */ = {
+			isa = PBXGroup;
+			children = (
+				9AF5A09792B9DE8D5B561DE5 /* CollageUITestCase.swift */,
+				ACA0B56D1B0BE8DDDFC81911 /* SmokeTests.swift */,
+				83E377C37D105C29C8864052 /* DeviceTests.swift */,
+				BA5E5C72CAB81B1B6BCBF1A7 /* CompatibilityTests.swift */,
+				842CB0918A2D2823C2886364 /* FeatureTests.swift */,
+			);
+			name = CollageStudioUITests;
+			path = CollageStudioUITests;
+			sourceTree = "<group>";
+		};
+		ED947990362156A32B12244E /* iOS */ = {
+			isa = PBXGroup;
+			children = (
+				8938F040B5DC40AE4ECC73B0 /* Foundation.framework */,
+			);
+			name = iOS;
 			sourceTree = "<group>";
 		};
 /* End PBXGroup section */
@@ -201,8 +275,6 @@
 				22CD5202300B696A0026FB00 /* ShareExtension */,
 			);
 			name = ShareExtension;
-			packageProductDependencies = (
-			);
 			productName = ShareExtension;
 			productReference = 22CD5201300B696A0026FB00 /* ShareExtension.appex */;
 			productType = "com.apple.product-type.app-extension";
@@ -216,6 +288,7 @@
 				AABP0001 /* Frameworks */,
 				AABP0002 /* Resources */,
 				22CD5210300B696A0026FB00 /* Embed Foundation Extensions */,
+				E34FAD5D7CDD7CD1E983B5B2 /* Copy UI Test Fixtures (Debug) */,
 			);
 			buildRules = (
 			);
@@ -226,6 +299,24 @@
 			productName = CollageStudio;
 			productReference = AAPROD001 /* CollageStudio.app */;
 			productType = "com.apple.product-type.application";
+		};
+		F10919D87C991AD94BD6BF94 /* CollageStudioUITests */ = {
+			isa = PBXNativeTarget;
+			buildConfigurationList = CC96B63A06B3D89E3FB894DB /* Build configuration list for PBXNativeTarget "CollageStudioUITests" */;
+			buildPhases = (
+				6C02E667B51891F3F5DCB914 /* Sources */,
+				05842F101333EB8D456690F8 /* Frameworks */,
+				3B5B770C6839D96002ACD372 /* Resources */,
+			);
+			buildRules = (
+			);
+			dependencies = (
+				281FE8E1F028434C5027BDA9 /* PBXTargetDependency */,
+			);
+			name = CollageStudioUITests;
+			productName = CollageStudioUITests;
+			productReference = 23C249292932DD3EC864E7C4 /* CollageStudioUITests.xctest */;
+			productType = "com.apple.product-type.bundle.ui-testing";
 		};
 /* End PBXNativeTarget section */
 
@@ -260,12 +351,20 @@
 			targets = (
 				AATGT0001 /* CollageStudio */,
 				22CD5200300B696A0026FB00 /* ShareExtension */,
+				F10919D87C991AD94BD6BF94 /* CollageStudioUITests */,
 			);
 		};
 /* End PBXProject section */
 
 /* Begin PBXResourcesBuildPhase section */
 		22CD51FF300B696A0026FB00 /* Resources */ = {
+			isa = PBXResourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+		3B5B770C6839D96002ACD372 /* Resources */ = {
 			isa = PBXResourcesBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
@@ -323,6 +422,25 @@
 			shellPath = /bin/sh;
 			shellScript = "# Writes the build number (git commit count) and short commit hash (with\n# a + when the working tree has uncommitted changes) into a header that\n# Info.plist preprocessing reads; shown next to the logo.\ncd \"$SRCROOT\"\nif git rev-parse --git-dir >/dev/null 2>&1; then\n  COUNT=$(git rev-list --count HEAD)\n  HASH=$(git rev-parse --short HEAD)\n  if [ -n \"$(git status --porcelain)\" ]; then HASH=\"$HASH+\"; fi\nelse\n  COUNT=0; HASH=unknown\nfi\nmkdir -p \"$DERIVED_FILE_DIR\"\nprintf '#define GIT_BUILD_NUMBER %s\\n#define GIT_COMMIT_HASH %s\\n' \"$COUNT\" \"$HASH\" > \"$DERIVED_FILE_DIR/BuildInfo.h\"\n";
 		};
+		E34FAD5D7CDD7CD1E983B5B2 /* Copy UI Test Fixtures (Debug) */ = {
+			isa = PBXShellScriptBuildPhase;
+			alwaysOutOfDate = 1;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			inputFileListPaths = (
+			);
+			inputPaths = (
+			);
+			name = "Copy UI Test Fixtures (Debug)";
+			outputFileListPaths = (
+			);
+			outputPaths = (
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+			shellPath = /bin/sh;
+			shellScript = "# Saved collages from earlier builds, for the UI tests (Debug builds only).\nif [ \"$CONFIGURATION\" = \"Debug\" ] && [ -d \"$SRCROOT/CollageStudioUITests/Fixtures\" ]; then\n  rsync -a --delete \"$SRCROOT/CollageStudioUITests/Fixtures/\" \"$TARGET_BUILD_DIR/$UNLOCALIZED_RESOURCES_FOLDER_PATH/UITestFixtures/\"\nfi\n";
+		};
 /* End PBXShellScriptBuildPhase section */
 
 /* Begin PBXSourcesBuildPhase section */
@@ -330,6 +448,18 @@
 			isa = PBXSourcesBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+		6C02E667B51891F3F5DCB914 /* Sources */ = {
+			isa = PBXSourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+				89B741B70ED7889276299F37 /* CollageUITestCase.swift in Sources */,
+				8860D1E6BA5D9095F08E4B51 /* SmokeTests.swift in Sources */,
+				2AAC080ABDA224454A885B91 /* DeviceTests.swift in Sources */,
+				A325EEE59868467547638834 /* CompatibilityTests.swift in Sources */,
+				C07A2A1CD2A4D214FEBCB1D8 /* FeatureTests.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -363,6 +493,7 @@
 				CDF39BEA1DCABCA4CC123172 /* Projects.swift in Sources */,
 				CD138EBBCAF5CCD287E4472D /* History.swift in Sources */,
 				22CD51FC300B66E20026FB00 /* SharedInbox.swift in Sources */,
+				0C6D6BCFC83182BE77E97A7D /* UITestSupport.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -374,9 +505,32 @@
 			target = 22CD5200300B696A0026FB00 /* ShareExtension */;
 			targetProxy = 22CD5209300B696A0026FB00 /* PBXContainerItemProxy */;
 		};
+		281FE8E1F028434C5027BDA9 /* PBXTargetDependency */ = {
+			isa = PBXTargetDependency;
+			name = CollageStudio;
+			target = AATGT0001 /* CollageStudio */;
+			targetProxy = 61171431FB6245515E58D516 /* PBXContainerItemProxy */;
+		};
 /* End PBXTargetDependency section */
 
 /* Begin XCBuildConfiguration section */
+		1523D9B7ED3A219A20EF8B75 /* Debug */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				CLANG_ENABLE_OBJC_WEAK = NO;
+				CODE_SIGN_STYLE = Automatic;
+				DEVELOPMENT_TEAM = Q74V8KTHTD;
+				GENERATE_INFOPLIST_FILE = YES;
+				IPHONEOS_DEPLOYMENT_TARGET = 17.0;
+				PRODUCT_BUNDLE_IDENTIFIER = com.collagestudio.app.UITests;
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				SDKROOT = iphoneos;
+				SWIFT_VERSION = 5.0;
+				TARGETED_DEVICE_FAMILY = "1,2";
+				TEST_TARGET_NAME = CollageStudio;
+			};
+			name = Debug;
+		};
 		22CD520E300B696A0026FB00 /* Debug */ = {
 			isa = XCBuildConfiguration;
 			buildSettings = {
@@ -393,16 +547,16 @@
 				CODE_SIGN_ENTITLEMENTS = ShareExtension/ShareExtension.entitlements;
 				CODE_SIGN_STYLE = Automatic;
 				CURRENT_PROJECT_VERSION = 1;
+				ENABLE_USER_SCRIPT_SANDBOXING = NO;
 				GCC_C_LANGUAGE_STANDARD = gnu17;
 				GCC_WARN_ABOUT_RETURN_TYPE = YES_ERROR;
 				GCC_WARN_UNINITIALIZED_AUTOS = YES_AGGRESSIVE;
-				ENABLE_USER_SCRIPT_SANDBOXING = NO;
 				GENERATE_INFOPLIST_FILE = NO;
 				INFOPLIST_FILE = ShareExtension/Info.plist;
-				INFOPLIST_PREFIX_HEADER = "$(DERIVED_FILE_DIR)/BuildInfo.h";
-				INFOPLIST_PREPROCESS = YES;
 				INFOPLIST_KEY_CFBundleDisplayName = ShareExtension;
 				INFOPLIST_KEY_NSHumanReadableCopyright = "";
+				INFOPLIST_PREFIX_HEADER = "$(DERIVED_FILE_DIR)/BuildInfo.h";
+				INFOPLIST_PREPROCESS = YES;
 				IPHONEOS_DEPLOYMENT_TARGET = 17.6;
 				LD_RUNPATH_SEARCH_PATHS = (
 					"$(inherited)",
@@ -441,15 +595,15 @@
 				CODE_SIGN_ENTITLEMENTS = ShareExtension/ShareExtension.entitlements;
 				CODE_SIGN_STYLE = Automatic;
 				CURRENT_PROJECT_VERSION = 1;
+				ENABLE_USER_SCRIPT_SANDBOXING = NO;
 				GCC_WARN_ABOUT_RETURN_TYPE = YES_ERROR;
 				GCC_WARN_UNINITIALIZED_AUTOS = YES_AGGRESSIVE;
-				ENABLE_USER_SCRIPT_SANDBOXING = NO;
 				GENERATE_INFOPLIST_FILE = NO;
 				INFOPLIST_FILE = ShareExtension/Info.plist;
-				INFOPLIST_PREFIX_HEADER = "$(DERIVED_FILE_DIR)/BuildInfo.h";
-				INFOPLIST_PREPROCESS = YES;
 				INFOPLIST_KEY_CFBundleDisplayName = ShareExtension;
 				INFOPLIST_KEY_NSHumanReadableCopyright = "";
+				INFOPLIST_PREFIX_HEADER = "$(DERIVED_FILE_DIR)/BuildInfo.h";
+				INFOPLIST_PREPROCESS = YES;
 				IPHONEOS_DEPLOYMENT_TARGET = 17.6;
 				LD_RUNPATH_SEARCH_PATHS = (
 					"$(inherited)",
@@ -493,10 +647,10 @@
 				ENABLE_USER_SCRIPT_SANDBOXING = NO;
 				GENERATE_INFOPLIST_FILE = NO;
 				INFOPLIST_FILE = CollageStudio/Info.plist;
+				INFOPLIST_KEY_CFBundleDisplayName = "das Kolaž";
+				INFOPLIST_KEY_LSApplicationCategoryType = "public.app-category.photography";
 				INFOPLIST_PREFIX_HEADER = "$(DERIVED_FILE_DIR)/BuildInfo.h";
 				INFOPLIST_PREPROCESS = YES;
-				INFOPLIST_KEY_CFBundleDisplayName = "Das Kolaz";
-				INFOPLIST_KEY_LSApplicationCategoryType = "public.app-category.entertainment";
 				IPHONEOS_DEPLOYMENT_TARGET = 17.0;
 				MACOSX_DEPLOYMENT_TARGET = 14.0;
 				MARKETING_VERSION = 2.2;
@@ -533,10 +687,10 @@
 				ENABLE_USER_SCRIPT_SANDBOXING = NO;
 				GENERATE_INFOPLIST_FILE = NO;
 				INFOPLIST_FILE = CollageStudio/Info.plist;
+				INFOPLIST_KEY_CFBundleDisplayName = "das Kolaž";
+				INFOPLIST_KEY_LSApplicationCategoryType = "public.app-category.photography";
 				INFOPLIST_PREFIX_HEADER = "$(DERIVED_FILE_DIR)/BuildInfo.h";
 				INFOPLIST_PREPROCESS = YES;
-				INFOPLIST_KEY_CFBundleDisplayName = "Das Kolaz";
-				INFOPLIST_KEY_LSApplicationCategoryType = "public.app-category.entertainment";
 				IPHONEOS_DEPLOYMENT_TARGET = 17.0;
 				MACOSX_DEPLOYMENT_TARGET = 14.0;
 				MARKETING_VERSION = 2.2;
@@ -652,6 +806,24 @@
 			};
 			name = Release;
 		};
+		D3BBF4A6502F5A7D8E083507 /* Release */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				CLANG_ENABLE_OBJC_WEAK = NO;
+				CODE_SIGN_STYLE = Automatic;
+				DEVELOPMENT_TEAM = Q74V8KTHTD;
+				GENERATE_INFOPLIST_FILE = YES;
+				IPHONEOS_DEPLOYMENT_TARGET = 17.0;
+				PRODUCT_BUNDLE_IDENTIFIER = com.collagestudio.app.UITests;
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				SDKROOT = iphoneos;
+				SWIFT_VERSION = 5.0;
+				TARGETED_DEVICE_FAMILY = "1,2";
+				TEST_TARGET_NAME = CollageStudio;
+				VALIDATE_PRODUCT = YES;
+			};
+			name = Release;
+		};
 /* End XCBuildConfiguration section */
 
 /* Begin XCConfigurationList section */
@@ -678,6 +850,15 @@
 			buildConfigurations = (
 				AACF0001 /* Debug */,
 				AACF0002 /* Release */,
+			);
+			defaultConfigurationIsVisible = 0;
+			defaultConfigurationName = Release;
+		};
+		CC96B63A06B3D89E3FB894DB /* Build configuration list for PBXNativeTarget "CollageStudioUITests" */ = {
+			isa = XCConfigurationList;
+			buildConfigurations = (
+				D3BBF4A6502F5A7D8E083507 /* Release */,
+				1523D9B7ED3A219A20EF8B75 /* Debug */,
 			);
 			defaultConfigurationIsVisible = 0;
 			defaultConfigurationName = Release;

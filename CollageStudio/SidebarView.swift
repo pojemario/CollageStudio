@@ -222,7 +222,8 @@ struct PageWidthRow: View {
                 .frame(width: 32, height: 28)
                 .background(shape.fill(Color.primary.opacity(0.08)))
                 .overlay(shape.strokeBorder(Color.primary.opacity(0.06), lineWidth: 0.5))
-                .contentShape(shape)
+                // A finger-sized touch area around the small chip.
+                .contentShape(Rectangle().inset(by: -8))
         }
         .buttonStyle(.plain)
         .disabled(!enabled)
@@ -330,10 +331,16 @@ extension View {
     /// photo is 1...1), so then it's a plain value instead.
     @ViewBuilder
     func accessibleSlider(value: Binding<Double>, range: ClosedRange<Double>, step: Double,
-                          label: String) -> some View {
+                          label: String, resetValue: Double? = nil) -> some View {
         if range.upperBound > range.lowerBound {
             accessibilityRepresentation {
                 Slider(value: value, in: range, step: step) { Text(label) }
+                    // VoiceOver's way to the double-tap reset.
+                    .accessibilityActions {
+                        if let resetValue {
+                            Button("Reset") { value.wrappedValue = min(max(resetValue, range.lowerBound), range.upperBound) }
+                        }
+                    }
             }
         } else {
             accessibilityElement(children: .ignore)
@@ -656,7 +663,7 @@ struct LabeledSlider: View {
                      },
                      resetValue: resetValue, trackColors: trackColors)
             // VoiceOver gets a standard slider (swipe up / down to adjust).
-            .accessibleSlider(value: $value, range: range, step: step, label: label)
+            .accessibleSlider(value: $value, range: range, step: step, label: label, resetValue: resetValue)
     }
 
     /// The value, signed on two-way sliders ("+12").
@@ -1870,7 +1877,7 @@ struct PageAddPhotosButton: View {
     @State private var items: [PhotosPickerItem] = []
 
     var body: some View {
-        PhotosPicker(selection: $items, maxSelectionCount: 30, matching: .images) {
+        PhotosPicker(selection: $items, maxSelectionCount: 30, matching: .images, preferredItemEncoding: .current) {
             Image(systemName: "plus")
                 .font(.system(size: 20, weight: .semibold))
                 .foregroundColor(.white)
@@ -1889,9 +1896,9 @@ struct PageAddPhotosButton: View {
         state.isBusy = true
         state.isLoading = true
         Task {
-            let prepared = await CollageImage.prepare(picked)
+            let prepared = await state.readPicked(picked)
             await MainActor.run {
-                state.addPreparedImages(prepared, toPage: target)
+                state.reportPhotosLeftOut(state.addPreparedImages(prepared, toPage: target))
                 state.goToPage(target)
                 items = []
                 state.isBusy = false
