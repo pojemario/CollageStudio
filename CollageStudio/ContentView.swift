@@ -547,6 +547,12 @@ struct ContentView: View {
                         guard state.hasAnyImages else { return }
                         withAnimation(.easeInOut(duration: 0.25)) { state.goToCollages() }
                     }
+                    // Press and hold: About das Kolaž (version, build, memory…).
+                    .onLongPressGesture(minimumDuration: 0.6) {
+                        UIImpactFeedbackGenerator(style: .medium).impactOccurred()
+                        state.showAbout = true
+                    }
+                    .accessibilityAction(named: "About das Kolaž") { state.showAbout = true }
                     .accessibilityAddTraits(state.hasAnyImages ? .isButton : [])
                     .accessibilityLabel(state.hasAnyImages ? "Collages" : "das Kolaž")
             }

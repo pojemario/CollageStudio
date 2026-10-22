@@ -47,6 +47,9 @@ struct SidebarView: View {
                 .shimmering(state.isBusy)
                 // Tap: back to the Collages screen.
                 .onTapGesture { if state.hasAnyImages { state.goToCollages() } }
+                // Press and hold: About das Kolaž.
+                .onLongPressGesture(minimumDuration: 0.6) { state.showAbout = true }
+                .accessibilityAction(named: "About das Kolaž") { state.showAbout = true }
                 .accessibilityAddTraits(state.hasAnyImages ? .isButton : [])
                 .accessibilityLabel(state.hasAnyImages ? "Collages" : "das Kolaž")
             Spacer()
@@ -594,7 +597,7 @@ struct LabeledSlider: View {
     /// Two monospaced digits ("70"); "100" shrinks a little to fit.
     static let twoDigitValueWidth: CGFloat = 20
     /// Between a slider's end and its number.
-    static let valueGap: CGFloat = 3
+    static let valueGap: CGFloat = 6
     /// Spacing between stacked rows: icon rows (name over slider) sit
     /// closer than inline ones, which are a single line.
     static let iconRowSpacing: CGFloat = 4

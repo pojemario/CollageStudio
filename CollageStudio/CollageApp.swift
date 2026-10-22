@@ -60,6 +60,11 @@ struct CollageApp: App {
                         .environmentObject(state)
                         .presentationDetents([.medium])
                 }
+                .sheet(isPresented: $state.showAbout) {
+                    AboutView()
+                        .environmentObject(state)
+                        .presentationDetents([.large])
+                }
                 .sheet(isPresented: $state.showPastePageLook) {
                     PastePageLookView(allOtherPages: state.pasteToAllOthers)
                         .environmentObject(state)

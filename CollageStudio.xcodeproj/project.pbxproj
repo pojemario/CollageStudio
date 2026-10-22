@@ -14,6 +14,7 @@
 		22CD520B300B696A0026FB00 /* ShareExtension.appex in Embed Foundation Extensions */ = {isa = PBXBuildFile; fileRef = 22CD5201300B696A0026FB00 /* ShareExtension.appex */; settings = {ATTRIBUTES = (RemoveHeadersOnCopy, ); }; };
 		2AAC080ABDA224454A885B91 /* DeviceTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 83E377C37D105C29C8864052 /* DeviceTests.swift */; };
 		42D4A2D2C76203B855BF96ED /* Foundation.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = 8938F040B5DC40AE4ECC73B0 /* Foundation.framework */; };
+		5A18F16F9999512D7B7FA39C /* AboutView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 3AD1EF4B1856180150592A8F /* AboutView.swift */; };
 		8860D1E6BA5D9095F08E4B51 /* SmokeTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = ACA0B56D1B0BE8DDDFC81911 /* SmokeTests.swift */; };
 		89B741B70ED7889276299F37 /* CollageUITestCase.swift in Sources */ = {isa = PBXBuildFile; fileRef = 9AF5A09792B9DE8D5B561DE5 /* CollageUITestCase.swift */; };
 		A325EEE59868467547638834 /* CompatibilityTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = BA5E5C72CAB81B1B6BCBF1A7 /* CompatibilityTests.swift */; };
@@ -82,6 +83,7 @@
 		22CD5201300B696A0026FB00 /* ShareExtension.appex */ = {isa = PBXFileReference; explicitFileType = "wrapper.app-extension"; includeInIndex = 0; path = ShareExtension.appex; sourceTree = BUILT_PRODUCTS_DIR; };
 		22CD5211300BAE4F0026FB00 /* CollageStudio.entitlements */ = {isa = PBXFileReference; lastKnownFileType = text.plist.entitlements; path = CollageStudio.entitlements; sourceTree = "<group>"; };
 		23C249292932DD3EC864E7C4 /* CollageStudioUITests.xctest */ = {isa = PBXFileReference; explicitFileType = wrapper.cfbundle; includeInIndex = 0; path = CollageStudioUITests.xctest; sourceTree = BUILT_PRODUCTS_DIR; };
+		3AD1EF4B1856180150592A8F /* AboutView.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = AboutView.swift; sourceTree = "<group>"; };
 		56F9B0DCF480FD99B5B96EE1 /* UITestSupport.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = UITestSupport.swift; sourceTree = "<group>"; };
 		83E377C37D105C29C8864052 /* DeviceTests.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = DeviceTests.swift; sourceTree = "<group>"; };
 		842CB0918A2D2823C2886364 /* FeatureTests.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = FeatureTests.swift; sourceTree = "<group>"; };
@@ -220,6 +222,7 @@
 				CCF39BEA1DCABCA4CC123172 /* Projects.swift */,
 				CC138EBBCAF5CCD287E4472D /* History.swift */,
 				56F9B0DCF480FD99B5B96EE1 /* UITestSupport.swift */,
+				3AD1EF4B1856180150592A8F /* AboutView.swift */,
 			);
 			path = CollageStudio;
 			sourceTree = "<group>";
@@ -400,7 +403,7 @@
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 			shellPath = /bin/sh;
-			shellScript = "# Writes the build number (git commit count) and short commit hash (with\n# a + when the working tree has uncommitted changes) into a header that\n# Info.plist preprocessing reads; shown next to the logo.\ncd \"$SRCROOT\"\nif git rev-parse --git-dir >/dev/null 2>&1; then\n  COUNT=$(git rev-list --count HEAD)\n  HASH=$(git rev-parse --short HEAD)\n  if [ -n \"$(git status --porcelain)\" ]; then HASH=\"$HASH+\"; fi\nelse\n  COUNT=0; HASH=unknown\nfi\nmkdir -p \"$DERIVED_FILE_DIR\"\nprintf '#define GIT_BUILD_NUMBER %s\\n#define GIT_COMMIT_HASH %s\\n' \"$COUNT\" \"$HASH\" > \"$DERIVED_FILE_DIR/BuildInfo.h\"\n";
+			shellScript = "# Writes the build number (git commit count) and short commit hash (with\n# a + when the working tree has uncommitted changes) into a header that\n# Info.plist preprocessing reads; shown next to the logo.\ncd \"$SRCROOT\"\nif git rev-parse --git-dir >/dev/null 2>&1; then\n  COUNT=$(git rev-list --count HEAD)\n  HASH=$(git rev-parse --short HEAD)\n  COMMITTED=$(git log -1 --format=%ct)\n  if [ -n \"$(git status --porcelain)\" ]; then HASH=\"$HASH+\"; fi\nelse\n  COUNT=0; HASH=unknown; COMMITTED=0\nfi\nmkdir -p \"$DERIVED_FILE_DIR\"\n# Dates as Unix time (plain numbers survive the plist preprocessor).\nprintf '#define GIT_BUILD_NUMBER %s\\n#define GIT_COMMIT_HASH %s\\n#define GIT_COMMIT_TIME %s\\n#define BUILD_TIME %s\\n' \"$COUNT\" \"$HASH\" \"$COMMITTED\" \"$(date +%s)\" > \"$DERIVED_FILE_DIR/BuildInfo.h\"\n";
 		};
 		AABP0005 /* Stamp Build Version */ = {
 			isa = PBXShellScriptBuildPhase;
@@ -420,7 +423,7 @@
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 			shellPath = /bin/sh;
-			shellScript = "# Writes the build number (git commit count) and short commit hash (with\n# a + when the working tree has uncommitted changes) into a header that\n# Info.plist preprocessing reads; shown next to the logo.\ncd \"$SRCROOT\"\nif git rev-parse --git-dir >/dev/null 2>&1; then\n  COUNT=$(git rev-list --count HEAD)\n  HASH=$(git rev-parse --short HEAD)\n  if [ -n \"$(git status --porcelain)\" ]; then HASH=\"$HASH+\"; fi\nelse\n  COUNT=0; HASH=unknown\nfi\nmkdir -p \"$DERIVED_FILE_DIR\"\nprintf '#define GIT_BUILD_NUMBER %s\\n#define GIT_COMMIT_HASH %s\\n' \"$COUNT\" \"$HASH\" > \"$DERIVED_FILE_DIR/BuildInfo.h\"\n";
+			shellScript = "# Writes the build number (git commit count) and short commit hash (with\n# a + when the working tree has uncommitted changes) into a header that\n# Info.plist preprocessing reads; shown next to the logo.\ncd \"$SRCROOT\"\nif git rev-parse --git-dir >/dev/null 2>&1; then\n  COUNT=$(git rev-list --count HEAD)\n  HASH=$(git rev-parse --short HEAD)\n  COMMITTED=$(git log -1 --format=%ct)\n  if [ -n \"$(git status --porcelain)\" ]; then HASH=\"$HASH+\"; fi\nelse\n  COUNT=0; HASH=unknown; COMMITTED=0\nfi\nmkdir -p \"$DERIVED_FILE_DIR\"\n# Dates as Unix time (plain numbers survive the plist preprocessor).\nprintf '#define GIT_BUILD_NUMBER %s\\n#define GIT_COMMIT_HASH %s\\n#define GIT_COMMIT_TIME %s\\n#define BUILD_TIME %s\\n' \"$COUNT\" \"$HASH\" \"$COMMITTED\" \"$(date +%s)\" > \"$DERIVED_FILE_DIR/BuildInfo.h\"\n";
 		};
 		E34FAD5D7CDD7CD1E983B5B2 /* Copy UI Test Fixtures (Debug) */ = {
 			isa = PBXShellScriptBuildPhase;
@@ -494,6 +497,7 @@
 				CD138EBBCAF5CCD287E4472D /* History.swift in Sources */,
 				22CD51FC300B66E20026FB00 /* SharedInbox.swift in Sources */,
 				0C6D6BCFC83182BE77E97A7D /* UITestSupport.swift in Sources */,
+				5A18F16F9999512D7B7FA39C /* AboutView.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};

@@ -1448,6 +1448,10 @@ extension CollageState {
                 }
             }
         }
+        // `-about`: the About sheet (as a long press on the logo opens it).
+        if args.contains("-about") {
+            DispatchQueue.main.asyncAfter(deadline: .now() + 3) { self.showAbout = true }
+        }
         // `-openNewest`: opens the most recent saved collage.
         if args.contains("-openNewest") {
             DispatchQueue.main.asyncAfter(deadline: .now() + 1.5) {

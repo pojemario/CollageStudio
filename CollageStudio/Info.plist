@@ -33,6 +33,10 @@
 	<string>GIT_BUILD_NUMBER</string>
 	<key>GitCommit</key>
 	<string>GIT_COMMIT_HASH</string>
+	<key>GitCommitTime</key>
+	<string>GIT_COMMIT_TIME</string>
+	<key>BuildTime</key>
+	<string>BUILD_TIME</string>
 	<key>ITSAppUsesNonExemptEncryption</key>
 	<false/>
 	<key>LSRequiresIPhoneOS</key>

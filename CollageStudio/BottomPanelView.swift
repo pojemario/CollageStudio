@@ -472,8 +472,31 @@ struct BottomPanelView: View {
     @State private var cardHeight: CGFloat = 0
     /// Global bottom of the content area (fixed while the panel is resized).
     @State private var contentBottomY: CGFloat = 0
-    /// The page shown has sliders off their defaults (see NumbersSwipeReset).
-    @State private var canReset = false
+    /// All Pages' row: its height, the room above the button included.
+    private static let actionRowTop: CGFloat = 8
+    private static let actionRowHeight: CGFloat = 38
+    /// Only while it would change something: another page differs from
+    /// this one in what the tab sets.
+    private var showsActionRow: Bool {
+        guard let parts = allPagesParts else { return false }
+        return state.otherPagesDiffer(in: parts)
+    }
+
+    /// A small capsule button in the grabber row.
+    private func rowButton(_ title: String, icon: String, accessibility: String,
+                           action: @escaping () -> Void) -> some View {
+        Button(action: action) {
+            Label(title, systemImage: icon)
+                .font(.system(size: 12.5, weight: .semibold))
+                .foregroundColor(.secondary)
+                .padding(.horizontal, 10)
+                .padding(.vertical, 5)
+                .background(Capsule().fill(Color.primary.opacity(0.08)))
+                .contentShape(Rectangle().inset(by: -8))
+        }
+        .buttonStyle(.plain)
+        .accessibilityLabel(accessibility)
+    }
 
     /// What "All Pages" copies from this tab, when it shows (more than one
     /// page, a tab's own settings, no editor open).
@@ -520,7 +543,8 @@ struct BottomPanelView: View {
     /// the pager (or the toolbar). The grabber row takes the rest.
     private var maxShown: CGFloat {
         guard contentBottomY > 0, state.panelTopLimitY > 0 else { return .infinity }
-        return max(contentBottomY - state.panelTopLimitY - Self.grabberHeight, Self.minHeight)
+        return max(contentBottomY - state.panelTopLimitY - Self.grabberHeight
+                   - (showsActionRow ? Self.actionRowHeight : 0), Self.minHeight)
     }
     /// The panel at its full size: all of its content, if that fits.
     private var fullHeight: CGFloat { min(contentHeight, maxShown) }
@@ -568,60 +592,32 @@ struct BottomPanelView: View {
                     #endif
                 })
                 .accessibilityHidden(true)
-                // Reset, in the grabber row's right end: puts the page's
-                // sliders back (the swipe over the numbers does the same).
-                .overlay(alignment: .trailing) {
-                    if canReset {
-                        Button {
-                            NotificationCenter.default.post(name: .panelResetRequested, object: nil)
-                        } label: {
-                            Label("Reset", systemImage: "arrow.counterclockwise")
-                                .font(.system(size: 11, weight: .semibold))
-                                .foregroundColor(.secondary)
-                                .padding(.horizontal, 8)
-                                .padding(.vertical, 3)
-                                .background(Capsule().fill(Color.primary.opacity(0.07)))
-                                .contentShape(Rectangle().inset(by: -10))
-                        }
-                        .buttonStyle(.plain)
-                        .padding(.trailing, 12)
-                        .padding(.top, 4)
-                        .transition(.opacity)
-                        .accessibilityLabel("Reset these settings")
-                    }
-                }
-                .animation(.easeInOut(duration: 0.2), value: canReset)
-                // With more than one page: this tab's settings onto every
-                // page (one look across a carousel), at the row's left end.
-                .overlay(alignment: .leading) {
-                    if let parts = allPagesParts {
-                        Button {
+                .zIndex(1)
+
+            // Under the grabber, lined up with the content's right edge:
+            // All Pages (more than one page: this tab's settings onto every
+            // page).
+            if showsActionRow {
+                HStack(spacing: 8) {
+                    Spacer()
+                    if showsActionRow, let parts = allPagesParts {
+                        rowButton("All Pages", icon: "square.on.square",
+                                  accessibility: "Apply \(FloatingTabBar.tabs[state.selectedPanelTab]) settings to all pages") {
                             let n = state.applyToAllPages(parts)
                             state.flashToast("Applied to all \(n + 1) pages", icon: "square.on.square")
-                        } label: {
-                            Label("All Pages", systemImage: "square.on.square")
-                                .font(.system(size: 11, weight: .semibold))
-                                .foregroundColor(.secondary)
-                                .padding(.horizontal, 8)
-                                .padding(.vertical, 3)
-                                .background(Capsule().fill(Color.primary.opacity(0.07)))
-                                .contentShape(Rectangle().inset(by: -10))
                         }
-                        .buttonStyle(.plain)
-                        .padding(.leading, 12)
-                        .padding(.top, 4)
-                        .transition(.opacity)
-                        .accessibilityLabel("Apply \(FloatingTabBar.tabs[state.selectedPanelTab]) settings to all pages")
                     }
                 }
-                .zIndex(1)
+                .padding(.horizontal, 12)
+                .padding(.top, Self.actionRowTop)
+                .frame(height: Self.actionRowHeight)
+            }
 
             // Panel content — each tab is only as tall as its own content,
             // or as the size the panel was dragged to.
             CappedHeight(cap: min(liveCap ?? state.panelCaps[capKey] ?? .infinity, maxShown)) {
                 ScrollView(.vertical) {
                     panelContent
-                        .onPreferenceChange(PanelCanResetKey.self) { canReset = $0 }
                         .onGeometryChange(for: CGFloat.self) { $0.size.height } action: { contentHeight = $0 }
                 }
                 .scrollDisabled(!scrolls || state.activeAdjustment != nil || state.isMovingThumb)

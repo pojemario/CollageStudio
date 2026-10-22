@@ -32,8 +32,24 @@ enum Diagnostics {
     }
     private static var sessionURL: URL { folder.appendingPathComponent("session.log") }
 
+    /// When this run of the app started (set by `start`).
+    private(set) static var launched = Date()
+
+    /// The app's memory in bytes, as iOS counts it against the app's limit.
+    static func memoryFootprint() -> UInt64 {
+        var info = task_vm_info_data_t()
+        var count = mach_msg_type_number_t(MemoryLayout<task_vm_info_data_t>.size / MemoryLayout<natural_t>.size)
+        let kr = withUnsafeMutablePointer(to: &info) {
+            $0.withMemoryRebound(to: integer_t.self, capacity: Int(count)) {
+                task_info(mach_task_self_, task_flavor_t(TASK_VM_INFO), $0, &count)
+            }
+        }
+        return kr == KERN_SUCCESS ? info.phys_footprint : 0
+    }
+
     /// Keeps the last session if it was cut short, then starts a new one.
     static func start() {
+        launched = Date()
         let fm = FileManager.default
         try? fm.createDirectory(at: folder, withIntermediateDirectories: true)
         // Only the log's tail is read: enough to see how it ended.

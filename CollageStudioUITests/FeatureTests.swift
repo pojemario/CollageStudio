@@ -1,7 +1,7 @@
 import XCTest
 
 /// The changes from the 2026-10-22 review: Save to Photos, Cancel while
-/// exporting, All Pages, the panel's Reset, 3:4, Export from the Collages
+/// exporting, All Pages, 3:4, Export from the Collages
 /// screen, and saying when a save fails.
 final class FeatureTests: CollageUITestCase {
 
@@ -53,23 +53,18 @@ final class FeatureTests: CollageUITestCase {
         launch(photos: 12)
         newCollage(photos: 12)
         wait("pages") { (Int($0) ?? 0) >= 2 }
+        let allPages = app.buttons.matching(NSPredicate(format: "label BEGINSWITH 'Apply Looks settings'")).firstMatch
+        // Every page looks the same: nothing to apply, no button.
+        openTab("Looks")
+        XCTAssertFalse(allPages.waitForExistence(timeout: 2), "All Pages shown with nothing to apply")
         let filter = pickFilter()
-        tap(app.buttons.matching(NSPredicate(format: "label BEGINSWITH 'Apply Looks settings'")).firstMatch)
+        tap(allPages)
         wait("toast") { $0.hasPrefix("Applied") }
+        // Applied: the pages match again, the button goes.
+        XCTAssertTrue(allPages.waitForNonExistence(timeout: 5), "All Pages still shown after applying")
         tap(button("Next post"))
         wait("page", is: 1)
         wait("filter", is: filter)
-    }
-
-    func testPanelResetPutsSlidersBack() {
-        launch(photos: 3)
-        newCollage(photos: 3)
-        openTab("Looks")
-        tap(app.segmentedControls.buttons["Edit"])
-        drag(app.sliders["Exposure"], to: 0.85)
-        wait("edits", is: 1)
-        tap(button("Reset these settings"))
-        wait("edits", is: 0)
     }
 
     func testThreeByFourCanvas() {

@@ -1572,6 +1572,8 @@ class CollageState: ObservableObject {
     @Published var exportCancelRequested = false
     /// Asks the user whether to export the current page or all pages.
     @Published var showExportOptions: Bool = false
+    /// About das Kolaž (press and hold the logo).
+    @Published var showAbout = false
     /// "Export…" on a saved collage: Export Options once it's open.
     var exportAfterOpening = false
     /// A page's settings, copied from the page menu to paste onto others.

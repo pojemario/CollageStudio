@@ -59,7 +59,7 @@ struct PhotoMenuTip: Tip {
 
 struct ResetSwipeTip: Tip {
     var title: Text { Text("Swipe the numbers to reset") }
-    var message: Text? { Text("Tap Reset at the top of the panel, or swipe up or down over the labels or numbers, to reset these sliders. Double-tap one to reset just it.") }
+    var message: Text? { Text("Swipe up or down over the labels or numbers to reset these sliders. Double-tap one to reset just it.") }
     var image: Image? { Image(systemName: "arrow.up.arrow.down") }
     var rules: [Rule] {
         #Rule(CollageTips.$step) { $0 == 2 }

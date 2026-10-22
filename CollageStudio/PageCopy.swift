@@ -62,57 +62,76 @@ extension CollageState {
         return others.count
     }
 
+    /// A page with the chosen parts of a clipboard look on it (what Paste
+    /// does to it). `relayout: false` skips rebuilding its grid (for a
+    /// comparison of the settings alone).
+    func page(_ original: CollagePage, taking parts: Set<PageLookPart>, from clip: CopiedPageLook,
+              relayout: Bool = true) -> CollagePage {
+        var page = original
+        let src = clip.style, look = clip.look
+        if parts.contains(.layout) {
+            let cols = max(1, min(src.numCols, max(1, min(6, page.images.count))))
+            // A single-post page never takes a strip.
+            let strip = src.isStrip && page.style.slides > 1
+            let needsLayout = cols != page.style.numCols || src.isRows != page.style.isRows
+                || strip != page.style.isStrip
+            page.style.numCols = cols
+            page.style.isRows = src.isRows
+            page.style.isStrip = strip
+            page.style.gap = src.gap
+            page.style.cornerRadius = src.cornerRadius
+            if relayout && needsLayout {
+                page.layout.resetGrows()
+                page.layout.rebuild(images: page.images, order: page.order, numCols: cols, strip: page.style.isStrip)
+            }
+        }
+        if parts.contains(.background) {
+            page.style.backgroundColor = src.backgroundColor
+            page.style.backgroundKind = src.backgroundKind
+            page.style.backgroundColor2 = src.backgroundColor2
+        }
+        if parts.contains(.border) {
+            page.style.borderColor = src.borderColor
+            page.style.borderThickness = src.borderThickness
+            page.style.borderStyle = src.borderStyle
+            page.style.borderPlacement = src.borderPlacement
+            page.style.linkBorderToBackground = src.linkBorderToBackground
+        }
+        if parts.contains(.canvas) {
+            page.look.canvasMargin = look.canvasMargin
+            page.look.canvasRotation = look.canvasRotation
+        }
+        if parts.contains(.frame) { page.look.canvasFrame = look.canvasFrame }
+        if parts.contains(.overlays) { page.look.overlayLayers = look.overlayLayers }
+        if parts.contains(.edits) {
+            page.look.effects = look.effects
+            page.look.hsl = look.hsl
+            page.look.calibration = look.calibration
+        }
+        if parts.contains(.filter) {
+            page.look.colorFilter = look.colorFilter
+            page.look.filterStrength = look.filterStrength
+        }
+        return page
+    }
+
+    /// Whether All Pages would change any other page: some page differs
+    /// from this one in those parts (as far as it can take them).
+    func otherPagesDiffer(in parts: Set<PageLookPart>) -> Bool {
+        let clip = CopiedPageLook(pageId: currentPage.id, style: currentPage.style, look: currentPage.look)
+        return pages.indices.contains { i in
+            guard i != safePageIndex else { return false }
+            let taken = page(pages[i], taking: parts, from: clip, relayout: false)
+            return taken.style != pages[i].style || taken.look != pages[i].look
+        }
+    }
+
     /// Copies the chosen parts of the clipboard onto the given pages.
     func pastePageLook(_ parts: Set<PageLookPart>, to targets: Set<Int>) {
         guard let clip = copiedPageLook, !parts.isEmpty else { return }
         withAnimation(.easeInOut(duration: 0.25)) {
             for i in targets where pages.indices.contains(i) {
-                var page = pages[i]
-                let src = clip.style, look = clip.look
-                if parts.contains(.layout) {
-                    let cols = max(1, min(src.numCols, max(1, min(6, page.images.count))))
-                    // A single-post page never takes a strip.
-                    let strip = src.isStrip && page.style.slides > 1
-                    let relayout = cols != page.style.numCols || src.isRows != page.style.isRows
-                        || strip != page.style.isStrip
-                    page.style.numCols = cols
-                    page.style.isRows = src.isRows
-                    page.style.isStrip = strip
-                    page.style.gap = src.gap
-                    page.style.cornerRadius = src.cornerRadius
-                    if relayout {
-                        page.layout.resetGrows()
-                        page.layout.rebuild(images: page.images, order: page.order, numCols: cols, strip: page.style.isStrip)
-                    }
-                }
-                if parts.contains(.background) {
-                    page.style.backgroundColor = src.backgroundColor
-                    page.style.backgroundKind = src.backgroundKind
-                    page.style.backgroundColor2 = src.backgroundColor2
-                }
-                if parts.contains(.border) {
-                    page.style.borderColor = src.borderColor
-                    page.style.borderThickness = src.borderThickness
-                    page.style.borderStyle = src.borderStyle
-                    page.style.borderPlacement = src.borderPlacement
-                    page.style.linkBorderToBackground = src.linkBorderToBackground
-                }
-                if parts.contains(.canvas) {
-                    page.look.canvasMargin = look.canvasMargin
-                    page.look.canvasRotation = look.canvasRotation
-                }
-                if parts.contains(.frame) { page.look.canvasFrame = look.canvasFrame }
-                if parts.contains(.overlays) { page.look.overlayLayers = look.overlayLayers }
-                if parts.contains(.edits) {
-                    page.look.effects = look.effects
-                    page.look.hsl = look.hsl
-                    page.look.calibration = look.calibration
-                }
-                if parts.contains(.filter) {
-                    page.look.colorFilter = look.colorFilter
-                    page.look.filterStrength = look.filterStrength
-                }
-                pages[i] = page
+                pages[i] = page(pages[i], taking: parts, from: clip)
             }
         }
         if !overlayLayers.contains(where: { $0.id == selectedOverlayId }) {
