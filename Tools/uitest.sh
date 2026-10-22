@@ -1,13 +1,13 @@
 #!/bin/zsh
 # Runs the UI tests (CollageStudioUITests) on the simulator, or on a device.
-#   zsh Tools/uitest.sh                     all tests, iPhone 17 Pro simulator
+#   zsh Tools/uitest.sh                     all tests, iPhone 15 Pro Max simulator
 #   zsh Tools/uitest.sh -only SmokeTests/testExportOpensShareSheet
 #   zsh Tools/uitest.sh -device <udid>      on a phone (it gets the Debug
 #                                           build; reinstall Release after)
 # Results (with screenshots of failures): /tmp/CollageUITests/<time>.xcresult
 set -e
 cd "$(dirname "$0")/.."
-DEST="id=9616B792-D7D9-41DF-81BD-2D6EFCAF03E7"   # iPhone 17 Pro simulator
+DEST="id=BABABB20-68B9-405B-9899-72A793223457"   # iPhone 15 Pro Max, iOS 27 (like PMS)
 ONLY=()
 while [[ $# -gt 0 ]]; do
   case $1 in

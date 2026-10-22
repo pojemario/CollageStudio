@@ -611,6 +611,9 @@ struct BottomPanelView: View {
                 .padding(.horizontal, 12)
                 .padding(.top, Self.actionRowTop)
                 .frame(height: Self.actionRowHeight)
+                // Gone while one slider is being dragged (only it shows).
+                .panelChrome(state)
+                .allowsHitTesting(state.activeAdjustment == nil)
             }
 
             // Panel content — each tab is only as tall as its own content,

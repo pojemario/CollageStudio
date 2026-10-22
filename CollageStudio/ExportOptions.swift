@@ -176,27 +176,37 @@ struct ExportOptionsView: View {
             // Where it goes: straight into Photos, or the share sheet
             // (Instagram, Messages, Files…). Always in view.
             .safeAreaInset(edge: .bottom) {
-                HStack(spacing: 12) {
-                    Button { export(to: .photos) } label: {
-                        Label("Save to Photos", systemImage: "square.and.arrow.down")
-                            .frame(maxWidth: .infinity)
+                // Both in one text size, the largest at which "Save to
+                // Photos" fits whole on this phone (and its text settings).
+                ViewThatFits(in: .horizontal) {
+                    ForEach([16, 15, 14, 13, 12] as [CGFloat], id: \.self) { size in
+                        exportButtons(fontSize: size)
                     }
-                    .buttonStyle(.bordered)
-                    Button { export(to: .share) } label: {
-                        Label("Share", systemImage: "square.and.arrow.up")
-                            .frame(maxWidth: .infinity)
-                    }
-                    .buttonStyle(.borderedProminent)
                 }
-                .controlSize(.large)
-                // One size for both, small enough that each fits on one line.
-                .font(.subheadline.weight(.semibold))
-                .lineLimit(1)
                 .padding(.horizontal, 16)
                 .padding(.vertical, 10)
                 .background(.bar)
             }
         }
+    }
+
+    private func exportButtons(fontSize: CGFloat) -> some View {
+        HStack(spacing: 12) {
+            Button { export(to: .photos) } label: {
+                Label("Save to Photos", systemImage: "square.and.arrow.down")
+                    .fixedSize()
+                    .frame(maxWidth: .infinity)
+            }
+            .buttonStyle(.bordered)
+            Button { export(to: .share) } label: {
+                Label("Share", systemImage: "square.and.arrow.up")
+                    .fixedSize()
+                    .frame(maxWidth: .infinity)
+            }
+            .buttonStyle(.borderedProminent)
+        }
+        .controlSize(.large)
+        .font(.system(size: fontSize, weight: .semibold))
     }
 
     private func export(to destination: CollageState.ExportDestination) {

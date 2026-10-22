@@ -162,9 +162,26 @@ class CollageUITestCase: XCTestCase {
         wait("exported", timeout: 60, file: file, line: line) { (Int($0) ?? 0) >= 1 }
         let share = app.otherElements["ActivityListView"]
         XCTAssertTrue(share.waitForExistence(timeout: 15), "no share sheet · \(probeText)", file: file, line: line)
-        let close = share.buttons["Close"]
-        if close.exists { close.tap() } else { app.swipeDown(velocity: .fast) }
-        wait("exported", is: 0, timeout: 15, file: file, line: line)
+        closeShareSheet(file: file, line: line)
+    }
+
+    /// Closes the share sheet (its ✕, once it's ready to take a tap) and
+    /// waits for the export files to go; tries again if a tap came too soon.
+    func closeShareSheet(file: StaticString = #filePath, line: UInt = #line) {
+        for attempt in 0..<3 {
+            let close = app.buttons["Close"].firstMatch
+            if close.waitForExistence(timeout: 5), close.isHittable {
+                close.tap()
+            } else {
+                app.swipeDown(velocity: .fast)
+            }
+            let end = Date().addingTimeInterval(attempt == 2 ? 15 : 5)
+            while Date() < end {
+                if int("exported") == 0 { return }
+                RunLoop.current.run(until: Date().addingTimeInterval(0.2))
+            }
+        }
+        XCTFail("the share sheet didn't close · \(probeText)", file: file, line: line)
     }
 
     /// Back to the Collages screen (the logo).
