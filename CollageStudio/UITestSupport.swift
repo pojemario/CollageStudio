@@ -159,6 +159,7 @@ struct UITestProbe: View {
             ("fullscreen", s.toolbarHidden ? 1 : 0),
             ("panel", s.isPanelOpen ? 1 : 0),
             ("tab", s.selectedPanelTab),
+            ("tabshown", s.panelTabShown ? 1 : 0),
             ("selected", s.selectedImageId == nil ? 0 : 1),
             ("photoedit", s.photoEditTargetId == nil ? 0 : 1),
             ("undo", s.canUndo ? 1 : 0),

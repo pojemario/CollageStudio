@@ -113,6 +113,9 @@ class CollageUITestCase: XCTestCase {
     /// Opens a tab's panel: Images, Layout, Frames, Overlay or Looks.
     func openTab(_ name: String, file: StaticString = #filePath, line: UInt = #line) {
         let index = ["Images", "Layout", "Frames", "Overlay", "Looks"].firstIndex(of: name)!
+        // Already open: a tap would put it away.
+        if int("tab") == index && int("panel") == 1 && int("tabshown") == 1 && int("photoedit") == 0
+            && int("cutoutedit") == 0 { return }
         tap(element("tab.\(name)"), file: file, line: line)
         wait("tab", is: index, file: file, line: line)
         wait("panel", is: 1, file: file, line: line)
@@ -169,6 +172,13 @@ class CollageUITestCase: XCTestCase {
         tap(button("Collages"), file: file, line: line)
         wait("photos", is: 0, file: file, line: line)
         XCTAssertTrue(button("New collage").waitForExistence(timeout: 10), file: file, line: line)
+    }
+
+    /// Taps the open tab: its panel goes down and no tab is chosen.
+    func closeTab(_ name: String, file: StaticString = #filePath, line: UInt = #line) {
+        tap(element("tab.\(name)"), file: file, line: line)
+        wait("panel", is: 0, file: file, line: line)
+        wait("tabshown", is: 0, file: file, line: line)
     }
 
     /// Lowers the panel (a tap on the canvas's empty top edge would hit

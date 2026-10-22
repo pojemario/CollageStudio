@@ -162,7 +162,7 @@ struct FloatingTabBar: View {
         .accessibilityShowsLargeContentViewer { Label(Self.tabs[i], systemImage: Self.icons[i]) }
         .accessibilityValue(hasChanges(i) ? "Changed" : "")
         .accessibilityAddTraits(activeTab == i && state.panelTabShown ? [.isButton, .isSelected] : .isButton)
-        .accessibilityAction { select(i) }
+        .accessibilityAction { if isOpen(i) { putAway() } else { select(i) } }
     }
 
     /// The selection lens: a solid accent chip at rest, so the active tab
@@ -249,7 +249,9 @@ struct FloatingTabBar: View {
                 } else {
                     guard isAvailable(i) else { return }
                     if i != activeTab || !state.panelTabShown { glide() }
-                    select(i)
+                    // A tap on the open tab puts it away (a scrub that ends
+                    // on it doesn't).
+                    if isOpen(i) { putAway() } else { select(i) }
                 }
             }
     }
@@ -287,8 +289,24 @@ struct FloatingTabBar: View {
         return min(max(Int(x / tabWidth), 0), Self.tabs.count - 1)
     }
 
-    /// Opens a tab's panel. A tap never closes it (double-tap the panel's
-    /// grabber to put it away).
+    /// The tab's panel is up, with no editor in it.
+    private func isOpen(_ i: Int) -> Bool {
+        i == activeTab && state.panelTabShown && state.isPanelOpen
+            && state.textEditTargetId == nil && state.protrusionTargetId == nil && state.photoEditTargetId == nil
+    }
+
+    /// Second tap on the open tab: panel down, no tab chosen.
+    private func putAway() {
+        Diagnostics.log("tab \(Self.tabs[activeTab]) put away")
+        #if canImport(UIKit)
+        UIImpactFeedbackGenerator(style: .light).impactOccurred()
+        #endif
+        state.collapsePanel()
+        withAnimation(.easeInOut(duration: 0.25)) { state.panelTabShown = false }
+    }
+
+    /// Opens a tab's panel; tapping it again puts it away (so does a
+    /// double-tap on the panel's grabber, or a tap on the canvas).
     private func select(_ i: Int) {
         Diagnostics.log("tab \(Self.tabs[i]) (row \(Int(rowWidth))) · \(state.diagnosticsSummary)")
         #if canImport(UIKit)
@@ -302,7 +320,7 @@ struct FloatingTabBar: View {
             state.endTextEditing()
             state.endProtrusionEditing()
             state.endPhotoEditing()
-            state.selectImage(nil, reopenPanel: false)
+            state.selectImage(nil, keepTab: true)
             state.selectedPanelTab = i
         } else {
             state.selectedPanelTab = i
@@ -315,8 +333,15 @@ struct FloatingTabBar: View {
 /// Replace, Move, Reset, Remove. Move swaps the row for the pages it can
 /// go to.
 struct PhotoToolsRow: View {
-    /// A solid accent pill: clearly photo mode, never mistaken for the tabs.
-    static let background = Color.accentColor.opacity(0.55)
+    /// A dark pill with white tools: clearly photo mode, never mistaken
+    /// for the light tabs. A touch of the accent warms the charcoal.
+    static let background = tone.opacity(0.92)
+    /// Its charcoal, solid.
+    static let tone = Color(red: 0.16, green: 0.14, blue: 0.13)
+    /// The tools on it.
+    static let foreground = Color.white.opacity(0.95)
+    /// Remove, in a red that reads on the dark pill.
+    static let removeTint = Color(red: 1.0, green: 0.42, blue: 0.4)
 
     @EnvironmentObject var state: CollageState
     let image: CollageImage
@@ -346,9 +371,9 @@ struct PhotoToolsRow: View {
         HStack(spacing: 0) {
             tool("Close", sf: "xmark") { state.selectImage(nil) }
             // Sets Close apart from the photo's tools.
-            Rectangle().fill(Color.primary.opacity(0.2)).frame(width: 1, height: 30)
+            Rectangle().fill(Color.white.opacity(0.22)).frame(width: 1, height: 30)
             tool("Cutout", sf: "person.crop.square", available: image.canProtrude) {
-                state.selectImage(nil, reopenPanel: false)
+                state.selectImage(nil, keepTab: true)
                 state.beginProtrusion(id: image.id)
             }
             tool("Replace", sf: "photo.on.rectangle.angled", available: !image.isText) {
@@ -361,7 +386,7 @@ struct PhotoToolsRow: View {
                 withAnimation(.easeInOut(duration: 0.2)) { state.resetTransform(id: image.id) }
             }
             tool("Edit", sf: "slider.horizontal.3", available: isPhoto) { state.beginPhotoEdit(id: image.id) }
-            tool("Remove", sf: "trash", tint: .red) {
+            tool("Remove", sf: "trash", tint: Self.removeTint) {
                 state.selectImage(nil)
                 state.removeImage(id: image.id)
             }
@@ -419,7 +444,7 @@ struct PhotoToolsRow: View {
                     .lineLimit(1)
                     .minimumScaleFactor(0.8)
             }
-            .foregroundStyle(tint == .primary ? Color.primary.opacity(0.8) : tint)
+            .foregroundStyle(tint == .primary ? Self.foreground : tint)
             .frame(maxWidth: .infinity)
             .frame(height: Self.height)
             .contentShape(Rectangle())

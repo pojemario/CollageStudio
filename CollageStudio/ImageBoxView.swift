@@ -115,19 +115,40 @@ struct ImageBoxView: View {
                     }
                     .allowsHitTesting(false)
                 )
+                // Another box is selected: this one fades back (a white
+                // veil, which the GPU just blends; the photo isn't
+                // re-processed), so the selected one stands out. Never in
+                // an export or a thumbnail.
+                .overlay(
+                    Group {
+                        // (Only for a selected box that's really on the
+                        // page: a stale selection must never fade them all.)
+                        if let selected = state.selectedImage?.id, selected != imageId,
+                           !state.isRenderingOffscreen, state.draggingId == nil {
+                            RoundedRectangle(cornerRadius: state.cornerRadius * scale)
+                                .fill(Color.white.opacity(0.5))
+                                .transition(.opacity)
+                        }
+                    }
+                    .animation(.easeOut(duration: 0.15), value: state.selectedImageId)
+                    .allowsHitTesting(false)
+                )
                 // The selected box, whose tools are in the tab bar.
                 .overlay(
                     Group {
                         if state.selectedImageId == imageId, !state.isRenderingOffscreen,
                            state.draggingId == nil {
-                            // Dashed: accent dashes over white, so it reads on
-                            // any picture, warm ones included.
+                            // Solid, in the accent, with a thin white line
+                            // just inside parting it from the photo.
                             let shape = RoundedRectangle(cornerRadius: state.cornerRadius * scale)
                             ZStack {
-                                shape.strokeBorder(Color.white.opacity(0.95), lineWidth: 2)
-                                shape.strokeBorder(Color.accentColor, style: StrokeStyle(lineWidth: 2, dash: [5, 4]))
+                                shape.strokeBorder(Color.accentColor, lineWidth: 3)
+                                shape.inset(by: 3).strokeBorder(Color.white.opacity(0.9), lineWidth: 2)
                             }
                             .shadow(color: .black.opacity(0.25), radius: 1.5)
+                            // All of it inside the box: the shadow falls
+                            // inward only, nothing past the box's edge.
+                            .clipShape(shape)
                             .transition(.opacity)
                         }
                     }

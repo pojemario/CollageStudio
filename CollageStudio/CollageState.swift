@@ -1294,7 +1294,7 @@ class CollageState: ObservableObject {
     /// panel, and nothing selected.
     func enterFullScreen() {
         closeRatio()
-        if selectedImageId != nil { selectImage(nil, reopenPanel: false) }
+        if selectedImageId != nil { selectImage(nil) }
         withAnimation(.easeInOut(duration: 0.25)) {
             collapsePanel()
             chromeHidden = true
@@ -1459,9 +1459,9 @@ class CollageState: ObservableObject {
     }
 
     /// Selects a box (nil: none). Its tools take the panel's place; letting
-    /// it go brings back the chosen tab's panel, unless `reopenPanel` is
-    /// false (a tap on the canvas, another page).
-    func selectImage(_ id: UUID?, reopenPanel: Bool = true) {
+    /// it go always comes back to the plain tab bar: no tab chosen, no
+    /// panel up. `keepTab`: for leaving it to open a tab or an editor.
+    func selectImage(_ id: UUID?, keepTab: Bool = false) {
         lastBoxTap = Date()
         guard id != selectedImageId else { return }
         if id != nil {
@@ -1472,11 +1472,11 @@ class CollageState: ObservableObject {
             closeRatio()
             collapsePanel()
         }
+        let wasSelected = selectedImageId != nil
         withAnimation(.spring(response: 0.3, dampingFraction: 0.85)) { selectedImageId = id }
-        // Letting go brings back the panel of the tab still marked in the
-        // tab bar.
-        if id == nil, reopenPanel, panelTabShown {
-            withAnimation(.easeInOut(duration: 0.25)) { isPanelOpen = true }
+        if id == nil, wasSelected, !keepTab {
+            collapsePanel()
+            withAnimation(.easeInOut(duration: 0.25)) { panelTabShown = false }
         }
     }
 
@@ -1897,15 +1897,20 @@ class CollageState: ObservableObject {
     func handleCanvasTap() {
         DispatchQueue.main.async { [self] in
             guard Date().timeIntervalSince(lastTextTap) > 0.25 else { return }
+            // A tab's panel put away this way lets go of the tab too, as a
+            // second tap on the tab does.
+            let tabPanel = isPanelOpen && textEditTargetId == nil && protrusionTargetId == nil
+                && photoEditTargetId == nil
             endTextEditing()
             collapsePanel()
             closeRatio()
+            if tabPanel { withAnimation(.easeInOut(duration: 0.25)) { panelTabShown = false } }
         }
         // A box's own tap comes a moment later (it first waits to see if
         // it's a double tap): only a tap no box took lets the selection go.
         DispatchQueue.main.asyncAfter(deadline: .now() + 0.4) { [self] in
             guard Date().timeIntervalSince(lastBoxTap) > 0.6 else { return }
-            selectImage(nil, reopenPanel: false)
+            selectImage(nil)
         }
     }
 

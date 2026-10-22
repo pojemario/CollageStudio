@@ -70,6 +70,7 @@ struct OverlayModeLabel: View {
 /// with a light haptic tick per change.
 struct PageTabBar: View {
     @EnvironmentObject var state: CollageState
+    @Environment(\.colorScheme) private var colorScheme
     /// Posts stepped by the drag in progress.
     @State private var scrubbed = 0
     /// Finger travel per post when swiping along the pager.
@@ -156,10 +157,12 @@ struct PageTabBar: View {
 
     private func stepButton(system: String, enabled: Bool, action: @escaping () -> Void) -> some View {
         Button(action: action) {
-            // Quiet, in the inactive dots' grey.
+            // Quiet, in the inactive dots' grey (lighter on a dark screen,
+            // where the same grey all but disappears).
             Image(systemName: system)
                 .font(.system(size: 11, weight: .bold))
-                .foregroundColor(Color.primary.opacity(enabled ? 0.35 : 0.12))
+                .foregroundColor(Color.primary.opacity(enabled ? PictureDots.idleOpacity(colorScheme)
+                                                               : (colorScheme == .dark ? 0.25 : 0.12)))
                 .frame(width: 30, height: 26)
                 // A finger-sized touch area (44 pt) around the small arrow.
                 .contentShape(Rectangle().inset(by: -9))
@@ -171,13 +174,17 @@ struct PageTabBar: View {
 }
 
 /// A dot per post, Instagram style: the one on screen (or the whole page
-/// shown) bigger and in the accent, a spread page's dots joined on one bar.
+/// shown) bigger and solid, a spread page's dots joined on one bar.
 /// Past `window` posts only those around the current one show, the outer
 /// ones shrinking where more follow.
 struct PictureDots: View {
     @EnvironmentObject var state: CollageState
+    @Environment(\.colorScheme) private var colorScheme
     let whole: Bool
     static let window = 9
+
+    /// The grey of dots not on screen (and of the arrows).
+    static func idleOpacity(_ scheme: ColorScheme) -> Double { scheme == .dark ? 0.6 : 0.35 }
 
     var body: some View {
         let count = state.pictureCount
@@ -201,16 +208,18 @@ struct PictureDots: View {
                             let on = onScreen.contains(k)
                             let edge = (k == shown.lowerBound && k > 0)
                                 || (k == shown.upperBound - 1 && k < count - 1)
-                            let d: CGFloat = on ? 8 : edge ? 3.5 : 5.5
+                            // The post on screen: bigger, in full strength
+                            // (white on a dark screen), not the accent.
+                            let d: CGFloat = on ? 9.5 : edge ? 3.5 : 5.5
                             Circle()
-                                .fill(on ? Color.accentColor : Color.primary.opacity(0.35))
+                                .fill(on ? Color.primary : Color.primary.opacity(Self.idleOpacity(colorScheme)))
                                 .frame(width: d, height: d)
-                                .frame(width: 8, height: 8)
+                                .frame(width: 9.5, height: 9.5)
                         }
                     }
                     .padding(n > 1 ? 2 : 0)
                     .background {
-                        if n > 1 { Capsule().fill(Color.primary.opacity(0.12)) }
+                        if n > 1 { Capsule().fill(Color.primary.opacity(colorScheme == .dark ? 0.2 : 0.12)) }
                     }
                 }
             }
@@ -364,7 +373,7 @@ struct ContentView: View {
             if id != nil { PhotoMenuTip().invalidate(reason: .actionPerformed) }
         }
         // The selection belongs to the page it was made on.
-        .onChange(of: state.currentPageIndex) { _, _ in state.selectImage(nil, reopenPanel: false) }
+        .onChange(of: state.currentPageIndex) { _, _ in state.selectImage(nil) }
         // "Undo" / "Redo" after a shake.
         .overlay(alignment: .top) {
             HistoryToast().padding(.top, 70)

@@ -190,6 +190,9 @@ struct ExportOptionsView: View {
                 }
                 .controlSize(.large)
                 .fontWeight(.semibold)
+                // Each on one line, shrinking a little rather than wrapping.
+                .lineLimit(1)
+                .minimumScaleFactor(0.8)
                 .padding(.horizontal, 16)
                 .padding(.vertical, 10)
                 .background(.bar)

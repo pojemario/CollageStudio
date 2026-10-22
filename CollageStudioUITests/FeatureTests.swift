@@ -102,4 +102,26 @@ final class FeatureTests: CollageUITestCase {
         sleep(2)
         XCTAssertEqual(int("savefailed"), 1)
     }
+
+    func testTabTapsOpenAndClose() {
+        launch(photos: 3)
+        newCollage(photos: 3)
+        openTab("Layout")
+        closeTab("Layout")
+        openTab("Looks")
+        wait("tabshown", is: 1)
+    }
+
+    func testLeavingPhotoToolsShowsPlainTabBar() {
+        launch(photos: 3)
+        newCollage(photos: 3)
+        openTab("Looks")
+        closePanel()
+        tap(photo(2))
+        wait("selected", is: 1)
+        tap(button("Close"))
+        wait("selected", is: 0)
+        wait("panel", is: 0)
+        wait("tabshown", is: 0)
+    }
 }
