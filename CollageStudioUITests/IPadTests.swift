@@ -2,8 +2,8 @@ import XCTest
 
 /// The iPad: held upright it works like the phone (tab bar and panel at
 /// the bottom); held sideways the controls are a sidebar of sections, one
-/// open at a time (Canvas Ratio opens and closes on its own), and a
-/// selected photo's tools float at the bottom of the canvas. Skipped on
+/// open at a time, and a selected photo's tools float at the bottom of the
+/// canvas; leaving the photo closes them all. Skipped on
 /// a phone: `zsh Tools/uitest.sh -device <iPad simulator> -only IPadTests`.
 final class IPadTests: CollageUITestCase {
 
@@ -50,31 +50,25 @@ final class IPadTests: CollageUITestCase {
         XCTAssertTrue(section("Canvas Ratio").waitForExistence(timeout: 5), "no sidebar sideways")
         XCTAssertFalse(element("tab.Layout").exists, "a tab bar sideways")
 
-        // First launch: Canvas Ratio and Images open.
-        XCTAssertTrue(isOpen("Canvas Ratio"))
+        // First launch: Images open.
         XCTAssertTrue(isOpen("Images"))
+        XCTAssertFalse(isOpen("Canvas Ratio"))
 
-        // Opening a section closes the other; Canvas Ratio stays.
+        // Opening a section closes the other, Canvas Ratio too.
         tap(section("Layout"))
         XCTAssertTrue(isOpen("Layout"))
         XCTAssertFalse(isOpen("Images"))
-        XCTAssertTrue(isOpen("Canvas Ratio"))
         snapshot("sideways-layout")
+        tap(section("Canvas Ratio"))
+        XCTAssertTrue(isOpen("Canvas Ratio"))
+        XCTAssertFalse(isOpen("Layout"))
         tap(section("Looks"))
         XCTAssertTrue(isOpen("Looks"))
-        XCTAssertFalse(isOpen("Layout"))
-
-        // Canvas Ratio opens and closes by itself.
-        tap(section("Canvas Ratio"))
         XCTAssertFalse(isOpen("Canvas Ratio"))
-        XCTAssertTrue(isOpen("Looks"))
-        tap(section("Canvas Ratio"))
-        XCTAssertTrue(isOpen("Canvas Ratio"))
 
         // The open one closes when tapped: none open.
         tap(section("Looks"))
         XCTAssertFalse(isOpen("Looks"))
-        XCTAssertFalse(isOpen("Layout"))
 
         // A selected photo's tools float at the bottom of the canvas.
         tap(photo(1))
@@ -92,12 +86,33 @@ final class IPadTests: CollageUITestCase {
         XCTAssertTrue(isOpen("Frames"))
         XCTAssertFalse(section("Edit Photo").exists)
 
+        // Leaving the photo (a tap beside the collage) ends its editing
+        // and closes every section.
+        tap(button("Edit"))
+        wait("photoedit", is: 1)
+        app.coordinate(withNormalizedOffset: CGVector(dx: 0.01, dy: 0.5)).tap()
+        wait("selected", is: 0)
+        wait("photoedit", is: 0)
+        XCTAssertFalse(section("Edit Photo").exists)
+        for title in ["Canvas Ratio", "Images", "Layout", "Frames", "Overlay", "Looks"] {
+            XCTAssertFalse(isOpen(title), "\(title) stayed open")
+        }
+
+        // So does Close on the photo's tools.
+        tap(section("Looks"))
+        tap(photo(1))
+        wait("selected", is: 1)
+        tap(button("Close"))
+        wait("selected", is: 0)
+        XCTAssertFalse(isOpen("Looks"))
+
         // Remembered when the app opens again.
+        tap(section("Layout"))
         app.terminate()
         launch(keepData: true)
         tap(collageTiles.firstMatch)
         wait("photos", is: 6, timeout: 30)
-        XCTAssertTrue(section("Frames").waitForExistence(timeout: 5))
-        XCTAssertTrue(isOpen("Frames"))
+        XCTAssertTrue(section("Layout").waitForExistence(timeout: 5))
+        XCTAssertTrue(isOpen("Layout"))
     }
 }

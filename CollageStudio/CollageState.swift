@@ -1436,6 +1436,7 @@ class CollageState: ObservableObject {
             isPanelOpen = false
             textEditTargetId = nil
             protrusionTargetId = nil
+            photoEditTargetId = nil
             panelDrag = 0
             isPanelDragging = false
         }
@@ -1479,6 +1480,9 @@ class CollageState: ObservableObject {
         let wasSelected = selectedImageId != nil
         withAnimation(.spring(response: 0.3, dampingFraction: 0.85)) { selectedImageId = id }
         if id == nil, wasSelected, !keepTab {
+            // Out of the photo's tools: its editing is done too, wherever
+            // it shows (the panel, or the sidebar sideways).
+            endPhotoEditing()
             collapsePanel()
             withAnimation(.easeInOut(duration: 0.25)) { panelTabShown = false }
         }

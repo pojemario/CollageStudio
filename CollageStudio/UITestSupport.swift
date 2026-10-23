@@ -24,9 +24,8 @@ enum UITest {
         let args = ProcessInfo.processInfo.arguments
         if !args.contains("-uiTestKeepData") {
             try? FileManager.default.removeItem(at: ProjectStore.root)
-            // The sidebar as on a first launch: Images and Canvas Ratio open.
+            // The sidebar as on a first launch: Images open.
             UserDefaults.standard.removeObject(forKey: "sidebarOpenSection")
-            UserDefaults.standard.removeObject(forKey: "sidebarRatioOpen")
         }
         // `-uiTestFixtures`: collages saved by earlier builds (the Debug
         // build carries them; see CollageStudioUITests/Fixtures).

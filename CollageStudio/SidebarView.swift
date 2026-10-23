@@ -6,10 +6,8 @@ import PhotosUI
 struct SidebarView: View {
     @EnvironmentObject var state: CollageState
     @State private var showingCustom = false
-    /// The one section open (besides Canvas Ratio, which opens and closes
-    /// on its own). Remembered between launches.
+    /// The one section open. Remembered between launches.
     @AppStorage("sidebarOpenSection") private var openSection = "Images"
-    @AppStorage("sidebarRatioOpen") private var ratioOpen = true
 
     /// A text box, cutout or photo being edited: its editor is the open
     /// section until it's done.
@@ -47,10 +45,7 @@ struct SidebarView: View {
             VStack(alignment: .leading, spacing: 0) {
                 logo
                 SectionDivider()
-                SidebarSection(title: "Canvas Ratio", isOpen: ratioOpen,
-                               toggle: { withAnimation(.easeInOut(duration: 0.25)) { ratioOpen.toggle() } }) {
-                    RatioPanelView()
-                }
+                section("Canvas Ratio") { RatioPanelView() }
                 if let textId = state.textEditTargetId {
                     section("Text Box") { TextEditPanel(imageId: textId) }
                 }
@@ -69,6 +64,12 @@ struct SidebarView: View {
         }
         // Holds still while a photo is dragged to another page.
         .scrollDisabled(state.isMovingThumb)
+        // Out of the photo's tools: back to a plain sidebar, every section
+        // closed (its editor is done; see CollageState.selectImage).
+        .onChange(of: state.selectedImageId) { old, new in
+            guard old != nil, new == nil else { return }
+            withAnimation(.easeInOut(duration: 0.25)) { openSection = "" }
+        }
     }
 
     private func section<Content: View>(_ title: String, @ViewBuilder content: () -> Content) -> some View {
