@@ -311,7 +311,6 @@ extension View {
 
 struct ContentView: View {
     @EnvironmentObject var state: CollageState
-    @Environment(\.horizontalSizeClass) var hSizeClass
     @Environment(\.colorScheme) var colorScheme
 
     // Global-space frames of the ratio popup and its toolbar button, so a tap
@@ -333,16 +332,17 @@ struct ContentView: View {
             #if os(macOS)
             macLayout
             #else
-            // Upright phone: collage above, panel below. Anything wider than
-            // tall (a phone held sideways, any iPad) gets two columns —
-            // collage left, controls right. Decided by the actual shape, not
-            // the size class, which reports some phones' landscape as compact.
+            // Upright (a phone, or an iPad held upright): collage above,
+            // panel below. Anything wider than tall (a phone held sideways,
+            // an iPad held sideways) gets two columns — collage left,
+            // controls right. Decided by the actual shape, not the size
+            // class, which reports some phones' landscape as compact.
             GeometryReader { geo in
-                if hSizeClass == .compact && geo.size.width <= geo.size.height {
-                    iPhoneLayout
-                } else {
-                    iPadLayout
+                let upright = geo.size.width <= geo.size.height
+                Group {
+                    if upright { iPhoneLayout } else { iPadLayout }
                 }
+                .environment(\.phoneLayout, upright)
             }
             #endif
         }
@@ -425,7 +425,13 @@ struct ContentView: View {
     }
     #endif
 
-    /// Two columns (phone held sideways, iPad): the collage on the left,
+    /// A photo is selected (and no editor is open for it).
+    private var photoTools: Bool {
+        state.selectedImage != nil && state.textEditTargetId == nil && state.protrusionTargetId == nil
+            && state.photoEditTargetId == nil
+    }
+
+    /// Two columns (phone or iPad held sideways): the collage on the left,
     /// the controls on the right.
     var iPadLayout: some View {
         HStack(spacing: 0) {
@@ -434,9 +440,26 @@ struct ContentView: View {
                 CanvasContainerView()
                     .frame(maxWidth: .infinity, maxHeight: .infinity)
             }
+            // The selected photo's tools, floating at the bottom of the
+            // canvas (on the phone they stand in for the tabs).
+            .overlay(alignment: .bottom) {
+                if let image = state.selectedImage, photoTools {
+                    PhotoToolsRow(image: image)
+                        .padding(.horizontal, 10)
+                        .padding(.vertical, 5)
+                        .frame(maxWidth: 480)
+                        .background(PhotoToolsRow.background,
+                                    in: RoundedRectangle(cornerRadius: FloatingTabBar.cornerRadius, style: .continuous))
+                        .shadow(color: .black.opacity(0.2), radius: 12, y: 4)
+                        .padding(.horizontal, 16)
+                        .padding(.bottom, 16)
+                        .transition(.move(edge: .bottom).combined(with: .opacity))
+                }
+            }
+            .animation(.spring(response: 0.3, dampingFraction: 0.85), value: photoTools)
             Divider()
             SidebarView()
-                .frame(width: 280)
+                .frame(width: 300)
                 .background(
                     { ColorManager.groupedBackground }()
                 )
@@ -747,3 +770,9 @@ struct ContentView: View {
     }
 }
 
+
+extension EnvironmentValues {
+    /// The upright layout (collage above, tab bar and panel below), on a
+    /// phone or an iPad; false for the sideways one with the sidebar.
+    @Entry var phoneLayout = true
+}

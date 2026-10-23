@@ -7,21 +7,22 @@ struct ImageBoxView: View {
 
     @EnvironmentObject var state: CollageState
     #if !os(macOS)
-    @Environment(\.horizontalSizeClass) private var hSizeClass
+    @Environment(\.phoneLayout) private var phoneLayout
     #endif
     let imageId: UUID
     /// Display scale of the canvas. Used to scale border thickness and corner
     /// radius so the on-screen preview matches the full-resolution export exactly.
     var scale: CGFloat = 1.0
 
-    /// True while the user is previewing full screen on iPhone (bottom panel
+    /// True while the user is previewing in the upright layout (bottom panel
     /// hidden). Editing helpers like the placeholder outline hide with it.
-    /// iPad/macOS use the sidebar, so they never count as previewing.
+    /// The sideways layout and macOS use the sidebar, so they never count
+    /// as previewing.
     private var isPreviewing: Bool {
         #if os(macOS)
         return false
         #else
-        return hSizeClass == .compact && !state.isPanelOpen
+        return phoneLayout && !state.isPanelOpen
         #endif
     }
 

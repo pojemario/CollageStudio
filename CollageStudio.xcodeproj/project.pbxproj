@@ -15,6 +15,7 @@
 		2AAC080ABDA224454A885B91 /* DeviceTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 83E377C37D105C29C8864052 /* DeviceTests.swift */; };
 		42D4A2D2C76203B855BF96ED /* Foundation.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = 8938F040B5DC40AE4ECC73B0 /* Foundation.framework */; };
 		5A18F16F9999512D7B7FA39C /* AboutView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 3AD1EF4B1856180150592A8F /* AboutView.swift */; };
+		778AAD8718D0CE045CD9FA90 /* IPadTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = B5FD7576360B0B4D28E95DA9 /* IPadTests.swift */; };
 		8860D1E6BA5D9095F08E4B51 /* SmokeTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = ACA0B56D1B0BE8DDDFC81911 /* SmokeTests.swift */; };
 		89B741B70ED7889276299F37 /* CollageUITestCase.swift in Sources */ = {isa = PBXBuildFile; fileRef = 9AF5A09792B9DE8D5B561DE5 /* CollageUITestCase.swift */; };
 		A325EEE59868467547638834 /* CompatibilityTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = BA5E5C72CAB81B1B6BCBF1A7 /* CompatibilityTests.swift */; };
@@ -106,6 +107,7 @@
 		AA100011 /* Info.plist */ = {isa = PBXFileReference; lastKnownFileType = text.plist.xml; path = Info.plist; sourceTree = "<group>"; };
 		AAPROD001 /* CollageStudio.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = CollageStudio.app; sourceTree = BUILT_PRODUCTS_DIR; };
 		ACA0B56D1B0BE8DDDFC81911 /* SmokeTests.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = SmokeTests.swift; sourceTree = "<group>"; };
+		B5FD7576360B0B4D28E95DA9 /* IPadTests.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = IPadTests.swift; sourceTree = "<group>"; };
 		BA5E5C72CAB81B1B6BCBF1A7 /* CompatibilityTests.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = CompatibilityTests.swift; sourceTree = "<group>"; };
 		CC0766CC9992BA895524A383 /* Diagnostics.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Diagnostics.swift; sourceTree = "<group>"; };
 		CC138EBBCAF5CCD287E4472D /* History.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = History.swift; sourceTree = "<group>"; };
@@ -245,6 +247,7 @@
 				83E377C37D105C29C8864052 /* DeviceTests.swift */,
 				BA5E5C72CAB81B1B6BCBF1A7 /* CompatibilityTests.swift */,
 				842CB0918A2D2823C2886364 /* FeatureTests.swift */,
+				B5FD7576360B0B4D28E95DA9 /* IPadTests.swift */,
 			);
 			name = CollageStudioUITests;
 			path = CollageStudioUITests;
@@ -463,6 +466,7 @@
 				2AAC080ABDA224454A885B91 /* DeviceTests.swift in Sources */,
 				A325EEE59868467547638834 /* CompatibilityTests.swift in Sources */,
 				C07A2A1CD2A4D214FEBCB1D8 /* FeatureTests.swift in Sources */,
+				778AAD8718D0CE045CD9FA90 /* IPadTests.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};

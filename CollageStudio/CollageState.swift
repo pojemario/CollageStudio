@@ -518,6 +518,10 @@ class CollageState: ObservableObject {
             "Dust916_Fine", "Dust916_Heavy", "Dust916_Hairs",
             "Dust916_Scratches", "Dust916_Grit", "Dust916_Worn",
         ]),
+        OverlayPack(name: "Photocopy", kind: .photocopy, assets: [
+            "Copy916_PC01", "Copy916_PC02", "Copy916_PC03", "Copy916_PC04",
+            "Copy916_PC05", "Copy916_PC06", "Copy916_PC07", "Copy916_PC08",
+        ]),
     ]
 
     /// A texture being tried out: drawn live on the canvas and adjustable

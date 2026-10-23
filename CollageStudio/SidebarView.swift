@@ -6,31 +6,73 @@ import PhotosUI
 struct SidebarView: View {
     @EnvironmentObject var state: CollageState
     @State private var showingCustom = false
+    /// The one section open (besides Canvas Ratio, which opens and closes
+    /// on its own). Remembered between launches.
+    @AppStorage("sidebarOpenSection") private var openSection = "Images"
+    @AppStorage("sidebarRatioOpen") private var ratioOpen = true
+
+    /// A text box, cutout or photo being edited: its editor is the open
+    /// section until it's done.
+    private var editor: String? {
+        if state.textEditTargetId != nil { return "Text Box" }
+        if state.protrusionTargetId != nil { return "Cutout" }
+        if state.photoEditTargetId != nil { return "Edit Photo" }
+        return nil
+    }
+
+    private func isOpen(_ title: String) -> Bool { (editor ?? openSection) == title }
+
+    /// Opens a section and closes the other; tapping the open one closes it.
+    /// An editor that was open is done.
+    private func toggle(_ title: String) {
+        withAnimation(.easeInOut(duration: 0.25)) {
+            if let editor {
+                endEditor()
+                if editor == title { return }
+                openSection = title
+            } else {
+                openSection = openSection == title ? "" : title
+            }
+        }
+    }
+
+    private func endEditor() {
+        state.endTextEditing()
+        state.endProtrusionEditing()
+        state.endPhotoEditing()
+    }
 
     var body: some View {
         ScrollView {
             VStack(alignment: .leading, spacing: 0) {
                 logo
+                SectionDivider()
+                SidebarSection(title: "Canvas Ratio", isOpen: ratioOpen,
+                               toggle: { withAnimation(.easeInOut(duration: 0.25)) { ratioOpen.toggle() } }) {
+                    RatioPanelView()
+                }
                 if let textId = state.textEditTargetId {
-                    SidebarSection(title: "Text Box") {
-                        TextEditPanel(imageId: textId)
-                    }
+                    section("Text Box") { TextEditPanel(imageId: textId) }
                 }
                 if let protrudeId = state.protrusionTargetId {
-                    SidebarSection(title: "Cutout") {
-                        ProtrusionPanel(imageId: protrudeId)
-                    }
+                    section("Cutout") { ProtrusionPanel(imageId: protrudeId) }
+                }
+                if state.photoEditTargetId != nil {
+                    section("Edit Photo") { PhotoEditPanel() }
                 }
                 imagesSection
-                ratioSection
-                layoutSection
-                framesSection
-                overlaySection
-                looksSection
+                section("Layout") { LayoutPanel(spacingRange: 0...40) }
+                section("Frames") { FramesPanel() }
+                section("Overlay") { OverlayPanel(inSidebar: true) }
+                section("Looks") { LooksPanel() }
             }
         }
         // Holds still while a photo is dragged to another page.
         .scrollDisabled(state.isMovingThumb)
+    }
+
+    private func section<Content: View>(_ title: String, @ViewBuilder content: () -> Content) -> some View {
+        SidebarSection(title: title, isOpen: isOpen(title), toggle: { toggle(title) }, content: content)
     }
 
     // MARK: - Logo
@@ -72,7 +114,7 @@ struct SidebarView: View {
     // MARK: - Images
 
     var imagesSection: some View {
-        SidebarSection(title: "Images") {
+        section("Images") {
             HStack(spacing: 8) {
                 // Back to the Collages screen (the open one is saved).
                 ToolbarTile(sf: "square.stack", title: "Collages", prominent: false) { state.goToCollages() }
@@ -92,46 +134,6 @@ struct SidebarView: View {
                 .padding(.top, 8)
         }
     }
-
-    // MARK: - Ratio
-
-    var ratioSection: some View {
-        SidebarSection(title: "Canvas Ratio") {
-            RatioPanelView()
-        }
-    }
-
-    // MARK: - Layout
-
-    var layoutSection: some View {
-        SidebarSection(title: "Layout") {
-            LayoutPanel(spacingRange: 0...40)
-        }
-    }
-
-    // MARK: - Frames (adaptive frames + frame packs)
-
-    var framesSection: some View {
-        SidebarSection(title: "Frames") {
-            FramesPanel()
-        }
-    }
-
-    // MARK: - Overlay (dust, scratches, light leaks)
-
-    var overlaySection: some View {
-        SidebarSection(title: "Overlay") {
-            OverlayPanel(inSidebar: true)
-        }
-    }
-
-    // MARK: - Effects (brightness, contrast, fade, glow, …)
-
-    var looksSection: some View {
-        SidebarSection(title: "Looks") {
-            LooksPanel()
-        }
-    }
 }
 
 // MARK: - Subviews
@@ -140,19 +142,51 @@ struct SectionDivider: View {
     var body: some View { Divider().padding(.horizontal, 0) }
 }
 
+/// A sidebar section: its name, and under it its controls while it's open.
+/// Tapping the name opens or closes it.
 struct SidebarSection<Content: View>: View {
     let title: String
+    let isOpen: Bool
+    let toggle: () -> Void
     @ViewBuilder let content: Content
 
+    init(title: String, isOpen: Bool, toggle: @escaping () -> Void, @ViewBuilder content: () -> Content) {
+        self.title = title
+        self.isOpen = isOpen
+        self.toggle = toggle
+        self.content = content()
+    }
+
     var body: some View {
-        VStack(alignment: .leading, spacing: 12) {
-            Text(title.uppercased())
-                .font(.system(size: 10, weight: .semibold, design: .monospaced))
-                .foregroundColor(.secondary)
-                .tracking(1.2)
-            content
+        VStack(alignment: .leading, spacing: 0) {
+            Button(action: toggle) {
+                HStack {
+                    Text(title.uppercased())
+                        .font(.system(size: 11, weight: .semibold, design: .monospaced))
+                        .tracking(1.2)
+                        .foregroundColor(isOpen ? .primary : .secondary)
+                    Spacer()
+                    Image(systemName: "chevron.down")
+                        .font(.system(size: 12, weight: .semibold))
+                        .foregroundColor(.secondary)
+                        .rotationEffect(.degrees(isOpen ? 0 : -90))
+                }
+                .padding(.horizontal, 16)
+                .frame(height: 46)
+                .contentShape(Rectangle())
+            }
+            .buttonStyle(.plain)
+            .accessibilityAddTraits(isOpen ? .isSelected : [])
+            .accessibilityHint(isOpen ? "Closes this section" : "Opens this section")
+            .accessibilityIdentifier("section.\(title)")
+            if isOpen {
+                VStack(alignment: .leading, spacing: 12) { content }
+                    .padding(.horizontal, 16)
+                    .padding(.bottom, 16)
+                    .transition(.opacity)
+            }
         }
-        .padding(16)
+        .clipped()
         SectionDivider()
     }
 }

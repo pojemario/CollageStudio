@@ -23,3 +23,4 @@ CollageStudio/Products/
 # LUT packs (copied into the app at build time by the "Bundle LUTs" phase).
 # Kept local: commercial LUTs are licensed for use, not redistribution.
 luts/
+__pycache__/

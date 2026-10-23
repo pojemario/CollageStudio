@@ -899,11 +899,16 @@ enum OverlayKind: String {
     case dust = "Dust & Scratches"
     case leak = "Light Leaks"
     case flare = "Flares"
+    case photocopy = "Photocopy"
 
     /// Light leaks and flares add light (screen), so dark areas of the
-    /// picture pick up their glow; dust and scratches simply sit on top.
+    /// picture pick up their glow; dust and scratches, and a copier's
+    /// toner and haze, simply sit on top.
     var blendMode: BlendMode {
-        self == .dust ? .normal : .screen
+        switch self {
+        case .dust, .photocopy: return .normal
+        case .leak, .flare: return .screen
+        }
     }
 }
 
