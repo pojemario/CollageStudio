@@ -554,7 +554,8 @@ enum ContentGrader {
 struct EffectsPanel: View {
     @EnvironmentObject var state: CollageState
     /// The Edit pages (in this order): Light, Color, HSL, camera
-    /// calibration, Detail — and Effects, shown on its own Looks page.
+    /// calibration, Detail — and Effects, shown on its own Looks page
+    /// (as is Detail, under Looks; a single photo's Edit keeps it here).
     enum Page: String, CaseIterable {
         case light = "Light", color = "Color", hsl = "HSL", cc = "CC"
         case detail = "Detail", effects = "Effects"
@@ -580,19 +581,26 @@ struct EffectsPanel: View {
         return .light
     }
     @State private var band: HSLBand = .red
-    /// Shows just this page, without the page chips (Looks → Effects).
-    /// Otherwise every page but Effects, which has its own Looks tab.
+    /// Shows just this page, without the page chips (Looks → Effects,
+    /// Looks → Detail). Otherwise every page but Effects, which has its own
+    /// Looks tab.
     var only: Page? = nil
+    /// Detail has its own Looks tab too: leave it out of the chips.
+    var withoutDetail = false
+
+    private var chips: [Page] {
+        Page.allCases.filter { $0 != .effects && !(withoutDetail && $0 == .detail) }
+    }
 
     var body: some View {
-        let page = only ?? self.page
+        let page = only ?? (chips.contains(self.page) ? self.page : .light)
         VStack(spacing: 8) {
             // All pages fit on one line: tight spacing, equal widths.
             if only == nil {
             HStack(spacing: 4) {
                 // Auto: balances the page's light and color in one go.
                 AutoChip { self.page = .light }
-                ForEach(Page.allCases.filter { $0 != .effects }, id: \.self) { p in
+                ForEach(chips, id: \.self) { p in
                     PackChip(title: p.rawValue, isActive: page == p, marked: isChanged(p),
                              horizontalPadding: 4, fillsWidth: true) { self.page = p }
                         .doubleTapToReset { resetPage(p) }
@@ -809,10 +817,13 @@ private struct SegmentDoubleTap: ViewModifier {
 }
 
 /// The Looks tab: a filter, then fine-tuning — "Filter" (the filter
-/// tiles) and "Edit" (light, color, HSL, calibration, detail, effects).
+/// tiles), "Effects", "Edit" (light, color, HSL, calibration) and
+/// "Detail" (texture, clarity, sharpening…).
 struct LooksPanel: View {
     @EnvironmentObject var state: CollageState
-    enum Page: String, CaseIterable { case filter = "Filter", effects = "Effects", edit = "Edit" }
+    enum Page: String, CaseIterable {
+        case filter = "Filter", effects = "Effects", edit = "Edit", detail = "Detail"
+    }
 
     var body: some View {
         VStack(spacing: 10) {
@@ -823,24 +834,27 @@ struct LooksPanel: View {
             // A dot by each part whose settings are changed.
             .segmentDots(Page.allCases.map(\.rawValue), marked: Page.allCases.map(isChanged))
             // Double-tapping a part resets it: Filter to none, Effects to
-            // zero, Edit everything under it (Light, Color, HSL, CC, Detail).
+            // zero, Edit everything under it (Light, Color, HSL, CC), Detail
+            // its sliders.
             .doubleTapSegment(Page.allCases.count) { reset(Page.allCases[$0]) }
             .panelChrome(state)
             switch state.looksPage {
             case .filter: FilterControls()
             case .effects: EffectsPanel(only: .effects)
-            case .edit: EffectsPanel()
+            case .edit: EffectsPanel(withoutDetail: true)
+            case .detail: EffectsPanel(only: .detail)
             }
         }
     }
 
-    private static let edits = CollageEffect.light + CollageEffect.color + CollageEffect.detail
+    private static let edits = CollageEffect.light + CollageEffect.color
 
     private func isChanged(_ page: Page) -> Bool {
         switch page {
         case .filter: return state.colorFilter != .none
         case .effects: return state.hasEffects(in: CollageEffect.looks)
         case .edit: return state.hasEffects(in: Self.edits) || !state.hsl.isIdentity || !state.calibration.isIdentity
+        case .detail: return state.hasEffects(in: CollageEffect.detail)
         }
     }
 
@@ -855,6 +869,8 @@ struct LooksPanel: View {
             state.resetEffects(in: Self.edits)
             state.resetHSL()
             state.calibration = CameraCalibration()
+        case .detail:
+            state.resetEffects(in: CollageEffect.detail)
         }
     }
 }

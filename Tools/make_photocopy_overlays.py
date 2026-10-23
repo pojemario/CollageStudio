@@ -7,7 +7,8 @@ What a picture goes through on an office copier: blotchy toner in the
 darks, the lamp's soft band of light, streaks from a scratched drum, the
 shadow of the lid, a warm paper cast, white dropouts. 1152x2048 straight-
 alpha PNGs, laid over the collage as they are (normal blend); each also
-gets a "_Thumb" picker thumbnail over a sample photo.
+gets a "_Thumb" picker thumbnail over the same sample photo as the Dust &
+Scratches thumbnails.
 
 Usage:  venv/bin/python Tools/make_photocopy_overlays.py [--preview out.png]
         (same venv as make_analog_overlays.py: pillow numpy scipy)
@@ -21,7 +22,7 @@ from PIL import Image
 from scipy.ndimage import gaussian_filter, zoom
 
 sys.path.insert(0, os.path.dirname(__file__))
-from make_analog_overlays import ROOT, write_folder, write_imageset  # noqa: E402
+from make_analog_overlays import ROOT, sample_photo as dust_sample_photo, write_folder, write_imageset  # noqa: E402
 
 W, H = 1152, 2048
 TW, TH = 180, 320
@@ -242,7 +243,7 @@ def main():
     folder = os.path.join(ROOT, PACK)
     shutil.rmtree(folder, ignore_errors=True)
     write_folder(folder)
-    photo = sample_photo()
+    photo = dust_sample_photo()             # the Dust & Scratches thumbnails' photo
     big = sample_photo(576, 1024)
     shots = []
     for name, seed, build in PACK_ITEMS:

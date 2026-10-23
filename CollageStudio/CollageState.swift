@@ -514,13 +514,13 @@ class CollageState: ObservableObject {
             "Flare916_Haze", "Flare916_Orbs", "Flare916_Star",
             "Flare916_Ghosts", "Flare916_Streak", "Flare916_Ring",
         ]),
-        OverlayPack(name: "Dust & Scratches", kind: .dust, assets: [
-            "Dust916_Fine", "Dust916_Heavy", "Dust916_Hairs",
-            "Dust916_Scratches", "Dust916_Grit", "Dust916_Worn",
-        ]),
         OverlayPack(name: "Photocopy", kind: .photocopy, assets: [
             "Copy916_PC01", "Copy916_PC02", "Copy916_PC03", "Copy916_PC04",
             "Copy916_PC05", "Copy916_PC06", "Copy916_PC07", "Copy916_PC08",
+        ]),
+        OverlayPack(name: "Dust & Scratches", kind: .dust, assets: [
+            "Dust916_Fine", "Dust916_Heavy", "Dust916_Hairs",
+            "Dust916_Scratches", "Dust916_Grit", "Dust916_Worn",
         ]),
     ]
 
