@@ -333,15 +333,29 @@ struct FloatingTabBar: View {
 /// Replace, Move, Reset, Remove. Move swaps the row for the pages it can
 /// go to.
 struct PhotoToolsRow: View {
-    /// A dark pill with white tools: clearly photo mode, never mistaken
-    /// for the light tabs. A touch of the accent warms the charcoal.
-    static let background = tone.opacity(0.92)
-    /// Its charcoal, solid.
-    static let tone = Color(red: 0.16, green: 0.14, blue: 0.13)
+    /// The tab bar inverted, so photo mode is never mistaken for the tabs:
+    /// light appearance (dark tabs on light glass) gets a solid charcoal
+    /// pill with white tools, dark appearance a solid warm-white pill with
+    /// black tools. Solid: nothing of the collage shows through it.
+    static let background = adaptive(light: (0.16, 0.14, 0.13, 1), dark: (0.96, 0.94, 0.91, 1))
     /// The tools on it.
-    static let foreground = Color.white.opacity(0.95)
-    /// Remove, in a red that reads on the dark pill.
-    static let removeTint = Color(red: 1.0, green: 0.42, blue: 0.4)
+    static let foreground = adaptive(light: (1, 1, 1, 0.95), dark: (0.08, 0.07, 0.06, 0.95))
+    /// The line setting Close apart.
+    static let separator = adaptive(light: (1, 1, 1, 0.22), dark: (0, 0, 0, 0.18))
+    /// Remove, in a red that reads on the pill.
+    static let removeTint = adaptive(light: (1.0, 0.42, 0.4, 1), dark: (0.82, 0.13, 0.11, 1))
+
+    private static func adaptive(light: (CGFloat, CGFloat, CGFloat, CGFloat),
+                                 dark: (CGFloat, CGFloat, CGFloat, CGFloat)) -> Color {
+        #if canImport(UIKit)
+        Color(UIColor { traits in
+            let c = traits.userInterfaceStyle == .dark ? dark : light
+            return UIColor(red: c.0, green: c.1, blue: c.2, alpha: c.3)
+        })
+        #else
+        Color(red: light.0, green: light.1, blue: light.2, opacity: light.3)
+        #endif
+    }
 
     @EnvironmentObject var state: CollageState
     let image: CollageImage
@@ -371,7 +385,7 @@ struct PhotoToolsRow: View {
         HStack(spacing: 0) {
             tool("Close", sf: "xmark") { state.selectImage(nil) }
             // Sets Close apart from the photo's tools.
-            Rectangle().fill(Color.white.opacity(0.22)).frame(width: 1, height: 30)
+            Rectangle().fill(Self.separator).frame(width: 1, height: 30)
             tool("Cutout", sf: "person.crop.square", available: image.canProtrude) {
                 state.selectImage(nil, keepTab: true)
                 state.beginProtrusion(id: image.id)
