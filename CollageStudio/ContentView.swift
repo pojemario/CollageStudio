@@ -45,21 +45,30 @@ struct SavingOverlay: View {
     }
 }
 
-/// Edge-to-edge strip above the tab pill: canvas touches currently edit
-/// the overlay, not the collage. Purely informational — touches pass through.
+/// A pill at the top of the screen while canvas touches edit the overlay,
+/// not the collage — so photos that won't move never look broken. Purely
+/// informational: touches pass through.
 struct OverlayModeLabel: View {
     var body: some View {
-        HStack(spacing: 6) {
+        HStack(spacing: 7) {
             Image(systemName: "sparkles")
-                .font(.system(size: 10, weight: .semibold))
-            Text("OVERLAY mode: zoom and rotate overlay")
-                .font(.system(size: 11, weight: .semibold))
+                .font(.system(size: 13, weight: .bold))
+            Text("Overlay mode")
+                .font(.system(size: 14, weight: .bold))
+            Text("· gestures move the overlay, not photos")
+                .font(.system(size: 13, weight: .medium))
+                .lineLimit(1)
+                .minimumScaleFactor(0.8)
         }
         .foregroundColor(.white)
-        .frame(maxWidth: .infinity)
-        .padding(.vertical, 6)
-        .background(Color.black.opacity(0.5))
+        .padding(.horizontal, 14)
+        .padding(.vertical, 9)
+        .background(Capsule().fill(Color.accentColor))
+        .overlay(Capsule().strokeBorder(Color.white.opacity(0.35), lineWidth: 1))
+        .shadow(color: .black.opacity(0.35), radius: 10, y: 3)
+        .padding(.horizontal, 16)
         .allowsHitTesting(false)
+        .accessibilityElement(children: .combine)
     }
 }
 
@@ -378,6 +387,16 @@ struct ContentView: View {
         .overlay(alignment: .top) {
             HistoryToast().padding(.top, 70)
         }
+        // Overlay mode, at the top: why the photos don't move.
+        .overlay(alignment: .top) {
+            if state.overlayModeActive && state.hasAnyImages && !state.toolbarHidden {
+                OverlayModeLabel()
+                    // Under the toolbar, and under the pager when it shows.
+                    .padding(.top, state.pictureCount > 1 ? 96 : 58)
+                    .transition(.move(edge: .top).combined(with: .opacity))
+            }
+        }
+        .animation(.easeInOut(duration: 0.25), value: state.overlayModeActive)
         .overlay(alignment: .top) {
             if state.saveFailed && state.hasAnyImages && !state.toolbarHidden {
                 SaveFailedBanner().padding(.top, 54).padding(.horizontal, 16)
@@ -713,16 +732,6 @@ struct ContentView: View {
                         FloatingTabBar(merged: state.isPanelOpen && state.panelDrag == 0)
                             .panelChrome(state)
                             .popoverTip(TabBarTip(), arrowEdge: .bottom)
-                            // In overlay mode an "OVERLAY" label floats above
-                            // the pill, so a frozen collage never looks broken.
-                            .overlay(alignment: .top) {
-                                if state.overlayModeActive && state.panelHiddenFraction > 0.5 {
-                                    OverlayModeLabel()
-                                        .offset(y: -34)
-                                        .transition(.opacity)
-                                }
-                            }
-                            .animation(.easeInOut(duration: 0.2), value: state.overlayModeActive)
                     }
                     .transition(.move(edge: .bottom).combined(with: .opacity))
                 }

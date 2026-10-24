@@ -34,6 +34,15 @@ struct FramesPanel: View {
             }
 
             FramePickerRow(pack: selectedPack)
+
+            if state.canvasFrame != nil && state.slides == 1 {
+                // Room around the frame, or (negative) the whole framed
+                // canvas zoomed in so the frame's outer part goes past the
+                // edges and the photos get more room.
+                LabeledSlider(label: "Frame margin", value: $state.frameMargin, range: -100...100, step: 1,
+                              format: "%.0f", resetValue: 0)
+                    .swipeNumbersToReset(canReset: state.frameMargin != 0) { state.frameMargin = 0 }
+            }
         }
         .onAppear {
             // Open on the collection the current frame comes from.

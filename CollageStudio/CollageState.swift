@@ -379,6 +379,11 @@ class CollageState: ObservableObject {
         get { currentPage.look.canvasFrame }
         set { currentPage.look.canvasFrame = newValue }
     }
+    /// Room around the frame (negative: zoomed in past its outer edge).
+    var frameMargin: Double {
+        get { currentPage.look.frameMargin }
+        set { currentPage.look.frameMargin = newValue }
+    }
 
     /// Bundled frame sets with their per-ratio variants. Asset names encode
     /// margins and ratio — see CanvasFrameSet. The r1x1 variant doubles as
@@ -572,7 +577,9 @@ class CollageState: ObservableObject {
     // hides it at once for a clear view; an "OVERLAY" label by the panel
     // handle marks the mode) until another tab is picked. The always-visible
     // sidebar is only in the mode while a layer is edited.
-    @Published var overlayTabMode = false
+    @Published var overlayTabMode = false {
+        didSet { if overlayTabMode != oldValue { Diagnostics.log("overlay mode \(overlayTabMode ? "on" : "off")") } }
+    }
     @Published var overlaySidebarShowing = false
 
     var overlayModeActive: Bool {
@@ -631,6 +638,8 @@ class CollageState: ObservableObject {
         updateEditedOverlay { layer in
             layer = layer.applying(scaleBy: scaleBy, rotateBy: rotateBy,
                                    translation: translation, canvasSize: overlayRegion(layer, in: canvasSize).size)
+            Diagnostics.log(String(format: "overlay %@ · scale %.2f turn %.0f° offset %.0f,%.0f", layer.label,
+                                   layer.scale, layer.rotation * 180 / .pi, layer.offset.width, layer.offset.height))
         }
     }
 

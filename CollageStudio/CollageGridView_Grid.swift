@@ -21,6 +21,15 @@ struct CollageGridView_Grid: View {
     /// and the haptic tick).
     @State private var snappedX = false
     @State private var snappedY = false
+    /// The overlay touch surface's identity. A pinch whose fingers run off
+    /// the screen is cancelled, not ended, and can leave the surface's
+    /// gestures dead (no move, pinch or double-tap) until it's rebuilt —
+    /// so a cancelled gesture bumps this and the surface starts fresh.
+    @State private var overlaySurfaceID = 0
+    /// The pinch / drag in flight, as last seen: committed if the gesture is
+    /// cancelled, so what was on screen stays. Nil once it ended normally.
+    @State private var pendingOverlayPinch: (scale: CGFloat, angle: CGFloat)?
+    @State private var pendingOverlayDrag: CGSize?
 
     var body: some View {
         GeometryReader { geo in
@@ -36,10 +45,18 @@ struct CollageGridView_Grid: View {
                     return canvasSize
                 }
                 let k = min(canvasSize.width / img.size.width, canvasSize.height / img.size.height)
-                return CGSize(width: img.size.width * k, height: img.size.height * k)
+                let fitted = CGSize(width: img.size.width * k, height: img.size.height * k)
+                // Frame margin: that much room around the frame (in canvas
+                // pixels, on the short side); negative zooms it in past the
+                // canvas edges, its outer part cut off.
+                let room = CGFloat(state.frameMargin) * scale * 2
+                let zoom = min(max((min(fitted.width, fitted.height) - room) / max(min(fitted.width, fitted.height), 1),
+                                   0.5), 1.6)
+                return CGSize(width: fitted.width * zoom, height: fitted.height * zoom)
             }()
-            let gapX = max(0, (canvasSize.width - frameDrawSize.width) / 2)
-            let gapY = max(0, (canvasSize.height - frameDrawSize.height) / 2)
+            // Negative when the frame is zoomed past the canvas edges.
+            let gapX = (canvasSize.width - frameDrawSize.width) / 2
+            let gapY = (canvasSize.height - frameDrawSize.height) / 2
             // The frame's margins are in pixels of a canvas of its own ratio
             // with this canvas's long side; fitted smaller, they shrink with it.
             let frameScale: CGFloat = {
@@ -50,10 +67,11 @@ struct CollageGridView_Grid: View {
             }()
             // Effective margins: the gap around the frame plus its built-in minimums.
             let base = state.frameBaseMargins
-            let insetL = gapX + base.left * scale * frameScale
-            let insetT = gapY + base.top * scale * frameScale
-            let insetR = gapX + base.right * scale * frameScale
-            let insetB = gapY + base.bottom * scale * frameScale
+            // (Never past the canvas: a zoomed-in frame's opening is cut to it.)
+            let insetL = max(gapX + base.left * scale * frameScale, 0)
+            let insetT = max(gapY + base.top * scale * frameScale, 0)
+            let insetR = max(gapX + base.right * scale * frameScale, 0)
+            let insetB = max(gapY + base.bottom * scale * frameScale, 0)
             let contentSize = CGSize(width: max(canvasSize.width - insetL - insetR, 0),
                                      height: max(canvasSize.height - insetT - insetB, 0))
             // The user margin is an OUTER margin: the whole collage block is
@@ -138,6 +156,9 @@ struct CollageGridView_Grid: View {
                         // canvas, centered.
                         if let resolvedFrame {
                             frameOverlay(image: resolvedFrame.image, size: frameDrawSize)
+                                // Zoomed in, its outer part is cut off at the canvas edge.
+                                .frame(width: canvasSize.width, height: canvasSize.height)
+                                .clipped()
                         }
 
                         overlayLayers(aboveFrame: true, canvasSize: canvasSize)
@@ -276,6 +297,7 @@ struct CollageGridView_Grid: View {
                     }
                     .onChanged { value in
                         state.beginOverlayGesture()
+                        pendingOverlayDrag = overlayPinching ? nil : value.translation
                         guard !overlayPinching, let layer = state.editedOverlay else { return }
                         let snap = snapped(layer, translation: CGSize(width: value.translation.width / scale,
                                                                       height: value.translation.height / scale))
@@ -290,6 +312,7 @@ struct CollageGridView_Grid: View {
                         }
                     }
                     .onEnded { value in
+                        pendingOverlayDrag = nil
                         state.endOverlayGesture()
                         snappedX = false
                         snappedY = false
@@ -302,8 +325,10 @@ struct CollageGridView_Grid: View {
             )
             .simultaneousGesture(
                 SimultaneousGesture(MagnificationGesture(), RotationGesture())
-                    .onChanged { _ in
+                    .onChanged { value in
                         state.beginOverlayGesture()
+                        pendingOverlayPinch = (value.first ?? pendingOverlayPinch?.scale ?? 1,
+                                               CGFloat((value.second ?? .zero).radians))
                     }
                     .updating($overlayPinching) { _, pinching, _ in pinching = true }
                     .updating($overlayPinchScale) { value, zoom, _ in
@@ -313,6 +338,7 @@ struct CollageGridView_Grid: View {
                         if let a = value.second { angle = a }
                     }
                     .onEnded { value in
+                        pendingOverlayPinch = nil
                         lastOverlayPinchEnd = Date()
                         state.endOverlayGesture()
                         let turn = CGFloat((value.second ?? .zero).radians)
@@ -339,6 +365,36 @@ struct CollageGridView_Grid: View {
                     }
                     .onEnded { _ in state.endOverlayGesture() }
             )
+            // Fresh gestures for each layer edited, and after a cancel.
+            .id("\(overlaySurfaceID)-\(state.editedOverlayId?.uuidString ?? "")")
+            // The gesture states reset without an end: cancelled (fingers
+            // off the screen, a system gesture, a call…).
+            .onChange(of: overlayPinching) { was, now in
+                if was && !now { DispatchQueue.main.async { overlayGestureCancelled() } }
+            }
+            .onChange(of: overlayDrag == .zero) { was, now in
+                if !was && now { DispatchQueue.main.async { overlayGestureCancelled() } }
+            }
+    }
+
+    /// Keeps what a cancelled pinch or move showed (clamped as on a normal
+    /// end) and rebuilds the touch surface so the next gesture works.
+    private func overlayGestureCancelled() {
+        guard pendingOverlayPinch != nil || pendingOverlayDrag != nil else { return }
+        if let pinch = pendingOverlayPinch {
+            lastOverlayPinchEnd = Date()
+            state.transformEditedOverlay(scaleBy: pinch.scale, rotateBy: pinch.angle)
+        } else if let drag = pendingOverlayDrag, Date().timeIntervalSince(lastOverlayPinchEnd) > 0.25 {
+            // (A pinch's stray one-finger drift is never a move.)
+            state.transformEditedOverlay(translation: CGSize(width: drag.width / scale, height: drag.height / scale))
+        }
+        Diagnostics.log("overlay \(pendingOverlayPinch != nil ? "pinch" : "move") cancelled · kept, touch surface rebuilt")
+        pendingOverlayPinch = nil
+        pendingOverlayDrag = nil
+        snappedX = false
+        snappedY = false
+        state.endOverlayGesture()
+        overlaySurfaceID += 1
     }
 
     // MARK: - Grid

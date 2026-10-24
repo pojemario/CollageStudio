@@ -227,6 +227,8 @@ struct ProjectFile: Codable {
         var canvasMargin: Double
         var canvasRotation: Double
         var frame: String?
+        /// Missing in files from before build 114: none.
+        var frameMargin: Double? = nil
         var overlays: [Overlay]
         var effects: [String: Double]
         var hsl: [String: [Double]]
@@ -286,6 +288,7 @@ extension PageLook {
     var file: ProjectFile.Look {
         ProjectFile.Look(
             canvasMargin: canvasMargin, canvasRotation: canvasRotation, frame: canvasFrame?.baseName,
+            frameMargin: frameMargin == 0 ? nil : frameMargin,
             overlays: overlayLayers.map {
                 ProjectFile.Overlay(asset: $0.asset, kind: $0.kind.rawValue, opacity: $0.opacity, blur: $0.blur,
                                     aboveFrame: $0.aboveFrame, scale: Double($0.scale), rotation: Double($0.rotation),
@@ -301,6 +304,7 @@ extension PageLook {
         self.init(
             canvasMargin: f.canvasMargin, canvasRotation: f.canvasRotation,
             canvasFrame: f.frame.flatMap { name in frames.first { $0.baseName == name } },
+            frameMargin: min(max(f.frameMargin ?? 0, -100), 100),
             overlayLayers: f.overlays.compactMap { o in
                 guard let kind = OverlayKind(rawValue: o.kind) else { return nil }
                 var layer = OverlayLayer(asset: o.asset, kind: kind)
@@ -1394,6 +1398,10 @@ extension CollageState {
             DispatchQueue.main.asyncAfter(deadline: .now() + 2) {
                 if let f = Self.framePacks.flatMap(\.frames).first(where: { $0.variantAssets.contains(name) }) {
                     self.canvasFrame = f
+                }
+                // `-frameMargin N` with it.
+                if let m = args.firstIndex(of: "-frameMargin"), m + 1 < args.count, let v = Double(args[m + 1].trimmingCharacters(in: .whitespaces)) {
+                    self.frameMargin = v
                 }
             }
         }

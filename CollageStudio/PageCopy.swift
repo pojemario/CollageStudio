@@ -101,7 +101,10 @@ extension CollageState {
             page.look.canvasMargin = look.canvasMargin
             page.look.canvasRotation = look.canvasRotation
         }
-        if parts.contains(.frame) { page.look.canvasFrame = look.canvasFrame }
+        if parts.contains(.frame) {
+            page.look.canvasFrame = look.canvasFrame
+            page.look.frameMargin = look.frameMargin
+        }
         if parts.contains(.overlays) { page.look.overlayLayers = look.overlayLayers }
         if parts.contains(.edits) {
             page.look.effects = look.effects
@@ -288,7 +291,8 @@ struct PastePageLookView: View {
         case .canvas:
             return "Margin \(Int(l.canvasMargin)) · \(Int(l.canvasRotation))°"
         case .frame:
-            return l.canvasFrame?.displayName ?? "None"
+            guard let frame = l.canvasFrame else { return "None" }
+            return l.frameMargin == 0 ? frame.displayName : "\(frame.displayName) · margin \(Int(l.frameMargin))"
         case .overlays:
             let n = l.overlayLayers.count
             return n == 0 ? "None" : "\(n) layer\(n == 1 ? "" : "s")"

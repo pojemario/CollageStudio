@@ -803,6 +803,10 @@ struct PageLook: Equatable {
     var canvasMargin: Double = 0
     var canvasRotation: Double = 0
     var canvasFrame: CanvasFrameSet? = nil
+    /// Frame margin, in canvas pixels: positive shrinks the frame (and the
+    /// collage in it) leaving white around it; negative zooms the whole
+    /// framed canvas in, its outer edge cut off — more room for the photos.
+    var frameMargin: Double = 0
     var overlayLayers: [OverlayLayer] = []
     var effects: [CollageEffect: Double] = [:]
     var hsl = HSLAdjustments()
