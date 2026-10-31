@@ -251,7 +251,8 @@ struct CanvasContainerView: View {
             // hold to see the collage without its edits, effects and filter;
             // on a spread page, zoom out to the whole spread or in to a post.
             .overlay(alignment: .topTrailing) {
-                let compare = state.hasAnyImages && state.hasLookEdits
+                // Not in overlay mode: there the gestures belong to the overlay.
+                let compare = state.hasAnyImages && state.hasLookEdits && !state.overlayModeActive
                 let spread = state.hasAnyImages && state.slides > 1
                 if !state.toolbarHidden && (compare || spread) {
                     HStack(spacing: 8) {

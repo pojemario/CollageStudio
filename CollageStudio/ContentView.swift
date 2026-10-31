@@ -52,23 +52,39 @@ struct OverlayModeLabel: View {
     var body: some View {
         HStack(spacing: 7) {
             Image(systemName: "sparkles")
-                .font(.system(size: 13, weight: .bold))
-            Text("Overlay mode")
-                .font(.system(size: 14, weight: .bold))
+                .font(.system(size: 12, weight: .bold))
+            Text("OVERLAY MODE")
+                .font(.system(size: 13, weight: .heavy))
+                .tracking(0.8)
             Text("· gestures move the overlay, not photos")
-                .font(.system(size: 13, weight: .medium))
-                .lineLimit(1)
-                .minimumScaleFactor(0.8)
+                .font(.system(size: 12, weight: .medium))
+                .opacity(0.85)
         }
+        .lineLimit(1)
+        .minimumScaleFactor(0.7)
         .foregroundColor(.white)
         .padding(.horizontal, 14)
-        .padding(.vertical, 9)
-        .background(Capsule().fill(Color.accentColor))
-        .overlay(Capsule().strokeBorder(Color.white.opacity(0.35), lineWidth: 1))
-        .shadow(color: .black.opacity(0.35), radius: 10, y: 3)
-        .padding(.horizontal, 16)
+        .frame(maxWidth: .infinity, minHeight: 32)
+        // The accent, deepened, so the white letters stand out.
+        .background(RoundedRectangle(cornerRadius: 10, style: .continuous)
+            .fill(Color.accentColor)
+            .overlay(RoundedRectangle(cornerRadius: 10, style: .continuous).fill(Color.black.opacity(0.45))))
+        .padding(.horizontal, 12)
+        .padding(.bottom, 6)
         .allowsHitTesting(false)
         .accessibilityElement(children: .combine)
+    }
+}
+
+extension ContentView {
+    /// Overlay mode, in its own row under the toolbar (never over the
+    /// collage): why the photos don't move.
+    @ViewBuilder
+    var overlayModeRow: some View {
+        if state.overlayModeActive && state.hasAnyImages && !state.toolbarHidden {
+            OverlayModeLabel()
+                .transition(.move(edge: .top).combined(with: .opacity))
+        }
     }
 }
 
@@ -387,15 +403,6 @@ struct ContentView: View {
         .overlay(alignment: .top) {
             HistoryToast().padding(.top, 70)
         }
-        // Overlay mode, at the top: why the photos don't move.
-        .overlay(alignment: .top) {
-            if state.overlayModeActive && state.hasAnyImages && !state.toolbarHidden {
-                OverlayModeLabel()
-                    // Under the toolbar, and under the pager when it shows.
-                    .padding(.top, state.pictureCount > 1 ? 96 : 58)
-                    .transition(.move(edge: .top).combined(with: .opacity))
-            }
-        }
         .animation(.easeInOut(duration: 0.25), value: state.overlayModeActive)
         .overlay(alignment: .top) {
             if state.saveFailed && state.hasAnyImages && !state.toolbarHidden {
@@ -455,6 +462,7 @@ struct ContentView: View {
     var iPadLayout: some View {
         HStack(spacing: 0) {
             VStack(spacing: 0) {
+                overlayModeRow.padding(.top, 6)
                 PageTabBar()
                 CanvasContainerView()
                     .frame(maxWidth: .infinity, maxHeight: .infinity)
@@ -634,6 +642,8 @@ struct ContentView: View {
                     )
                     .transition(.move(edge: .top).combined(with: .opacity))
             }
+
+            overlayModeRow
 
             // Canvas fills the remaining space; the controls float on top as a
             // glass panel so the canvas gets maximum room.

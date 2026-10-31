@@ -798,7 +798,7 @@ struct CollagePage: Identifiable {
 
 /// How a page is finished: canvas margin and rotation, frame, overlays,
 /// edits and filter. Each page has its own (new pages start from the page
-/// they were made from).
+/// they were made from, minus its overlays and Looks).
 struct PageLook: Equatable {
     var canvasMargin: Double = 0
     var canvasRotation: Double = 0

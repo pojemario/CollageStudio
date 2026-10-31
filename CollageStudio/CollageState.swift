@@ -2159,8 +2159,16 @@ class CollageState: ObservableObject {
 
     func addPage() {
         guard canAddPost else { return }
-        // New pages start with the current page's style
-        pages.append(CollagePage(style: currentPage.style.single, look: currentPage.look))
+        // New pages start with the current page's style, canvas and frame;
+        // overlays and Looks (filter, effects, edits, detail) start clean.
+        var look = currentPage.look
+        look.overlayLayers = []
+        look.effects = [:]
+        look.hsl = HSLAdjustments()
+        look.calibration = CameraCalibration()
+        look.colorFilter = .none
+        look.filterStrength = 100
+        pages.append(CollagePage(style: currentPage.style.single, look: look))
         currentPageIndex = pages.count - 1
     }
 

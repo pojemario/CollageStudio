@@ -1916,8 +1916,13 @@ struct PageAddPhotosButton: View {
 
     var body: some View {
         PhotosPicker(selection: $items, maxSelectionCount: 30, matching: .images, preferredItemEncoding: .current) {
-            Image(systemName: "plus")
-                .font(.system(size: 20, weight: .semibold))
+            VStack(spacing: 1) {
+                Image(systemName: "plus")
+                    .font(.system(size: 18, weight: .semibold))
+                Text("Image")
+                    .font(.system(size: 11, weight: .semibold))
+                    .lineLimit(1)
+            }
                 .foregroundColor(.white)
                 .frame(width: size, height: size)
                 .appButtonBackground(prominent: true)
