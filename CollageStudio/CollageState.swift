@@ -904,6 +904,11 @@ class CollageState: ObservableObject {
 
     /// The picture a box should draw: its proxy (or the original while
     /// exporting) with the current grade applied.
+    /// The picture as it is, no Looks (the photo background in the margin).
+    func ungradedDisplayImage(for img: CollageImage) -> PlatformImage {
+        renderFullResolution ? (exportSources[img.id] ?? img.image) : img.proxy
+    }
+
     func gradedDisplayImage(for img: CollageImage) -> PlatformImage {
         let source = renderFullResolution ? (exportSources[img.id] ?? img.image) : img.proxy
         let grade = grade(for: img)
@@ -1333,6 +1338,8 @@ class CollageState: ObservableObject {
     /// moves to a corner none of them cover.
     @Published var canvasVisibleRect: CGRect = .zero
     @Published var pagerFrame: CGRect = .zero
+    /// How wide the canvas shows on screen (the OVERLAY MODE band matches it).
+    @Published var canvasShownWidth: CGFloat = 0
     /// The phone toolbar's Undo button, for the Redo bubble below it.
     @Published var undoButtonFrame: CGRect = .zero
     /// The round buttons right of the pager (compare, spread zoom).

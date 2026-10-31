@@ -88,6 +88,11 @@ struct CollageGridView_Grid: View {
             // frame's opening (the whole canvas without a frame).
             let contentWindow = CGRect(x: insetL, y: insetT,
                                        width: contentSize.width, height: contentSize.height)
+            // ...and within it, only the collage itself: the Looks stop at
+            // the canvas margin (scaled and tilted with the collage).
+            let collageBlock = CGSize(width: contentSize.width * marginScale,
+                                      height: contentSize.height * marginScale)
+            let effectWindow = resolvedFrame != nil ? contentWindow : CGRect(origin: .zero, size: canvasSize)
 
             ZStack {
                 // Empty canvas is transparent so the app background shows
@@ -102,13 +107,11 @@ struct CollageGridView_Grid: View {
                     // (Left out of the effect-source snapshot so glow and
                     // halation don't bleed in from the frame's surround.)
                     if decorated { Color.white }
-                    CollageBackground()
-                        .modifier(EffectToning(state: state, enabled: decorated))
+                    background(decorated: decorated, block: collageBlock)
                         .frame(width: contentSize.width, height: contentSize.height)
                         .offset(x: (insetL - insetR) / 2, y: (insetT - insetB) / 2)
                 } else {
-                    CollageBackground()
-                        .modifier(EffectToning(state: state, enabled: decorated))
+                    background(decorated: decorated, block: collageBlock)
                 }
 
                 if cols.isEmpty {
@@ -146,9 +149,7 @@ struct CollageGridView_Grid: View {
                         // Looks that need their own layers: fade haze, glow
                         // and halation maps, vignette, grain.
                         EffectLayers(maps: state.effectMaps, canvasSize: canvasSize,
-                                     window: resolvedFrame != nil
-                                        ? contentWindow
-                                        : CGRect(origin: .zero, size: canvasSize))
+                                     window: effectWindow, collage: collageBlock)
 
                         overlayLayers(aboveFrame: false, canvasSize: canvasSize)
 
@@ -173,6 +174,22 @@ struct CollageGridView_Grid: View {
                 }
             }
             .frame(width: canvasSize.width, height: canvasSize.height)
+        }
+    }
+
+    /// The page background: as chosen in the margin around the collage,
+    /// graded and toned like the photos under the collage itself.
+    @ViewBuilder
+    private func background(decorated: Bool, block: CGSize) -> some View {
+        if decorated {
+            ZStack {
+                CollageBackground(graded: false)
+                CollageBackground()
+                    .modifier(EffectToning(state: state, enabled: true))
+                    .mask { CollageBlockShape(size: block, rotation: state.canvasRotation) }
+            }
+        } else {
+            CollageBackground()
         }
     }
 
@@ -238,8 +255,30 @@ struct CollageGridView_Grid: View {
                 .opacity(layer.opacity / 100)
                 .blendMode(layer.kind.blendMode)
                 .allowsHitTesting(false)
+
+                // While a finger is on it: a thin dotted outline of the
+                // overlay's own edges, so it's clear what moves and where.
+                // On screen only.
+                if live && overlayTouching && !state.isRenderingOffscreen && !state.isExporting {
+                    overlayOutline(width: region.width * shown.scale, height: region.height * shown.scale)
+                        .rotationEffect(.radians(shown.rotation))
+                        .offset(x: shown.offset.width * scale, y: shown.offset.height * scale)
+                        .frame(width: region.width, height: region.height)
+                        .offset(x: region.minX)
+                        .frame(width: canvasSize.width, height: canvasSize.height, alignment: .topLeading)
+                        .allowsHitTesting(false)
+                }
             }
         }
+    }
+
+    /// Dotted, thin: white dots over a faint dark line, seen on any picture.
+    private func overlayOutline(width: CGFloat, height: CGFloat) -> some View {
+        ZStack {
+            Rectangle().stroke(Color.black.opacity(0.35), lineWidth: 1.5)
+            Rectangle().stroke(Color.white, style: StrokeStyle(lineWidth: 1, lineCap: .round, dash: [1, 4]))
+        }
+        .frame(width: width, height: height)
     }
 
     /// A move / turn of an overlay with snapping: its center sticks to the

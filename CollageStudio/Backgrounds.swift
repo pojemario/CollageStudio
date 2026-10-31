@@ -40,12 +40,14 @@ extension CollageState {
 }
 
 /// The page background, in any of its kinds, graded like the photos (the
-/// toning effects are applied by the caller).
+/// toning effects are applied by the caller) — or as chosen, ungraded, for
+/// the margin around the collage, which the Looks leave alone.
 struct CollageBackground: View {
     @EnvironmentObject var state: CollageState
+    var graded = true
 
     var body: some View {
-        let grade = state.contentGrade
+        let grade = graded ? state.contentGrade : ContentGrade()
         let color = ContentGrader.apply(grade, to: state.backgroundColor)
         switch state.backgroundKind {
         case .color:
@@ -56,7 +58,7 @@ struct CollageBackground: View {
         case .photo:
             GeometryReader { geo in
                 if let img = state.images.first(where: { $0.canProtrude }) {
-                    let picture = state.gradedDisplayImage(for: img)
+                    let picture = graded ? state.gradedDisplayImage(for: img) : state.ungradedDisplayImage(for: img)
                     Group {
                         #if canImport(UIKit)
                         Image(uiImage: picture).resizable()

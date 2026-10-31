@@ -276,6 +276,11 @@ struct CanvasContainerView: View {
             .onChange(of: photoItems) { _, newItems in
                 loadPhotos(newItems)
             }
+            .onChange(of: windowW, initial: true) { _, w in
+                guard w.differs(from: state.canvasShownWidth) else { return }
+                Diagnostics.count("canvasShownWidth")
+                state.canvasShownWidth = w
+            }
             .onChange(of: geo.frame(in: .global), initial: true) { _, f in
                 guard f.differs(from: state.canvasVisibleRect) else { return }
                 Diagnostics.count("canvasVisibleRect")

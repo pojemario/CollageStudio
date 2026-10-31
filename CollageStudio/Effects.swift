@@ -30,15 +30,31 @@ struct EffectToning: ViewModifier {
 
 // MARK: - Layers (effects that add something on top)
 
+/// The collage's own area, for masking the Looks to it: `size` (the content
+/// area scaled by the canvas margin), tilted by the canvas rotation, centred
+/// in whatever frame it is given.
+struct CollageBlockShape: View {
+    let size: CGSize
+    let rotation: Double
+
+    var body: some View {
+        Rectangle()
+            .frame(width: size.width, height: size.height)
+            .rotationEffect(.degrees(rotation))
+    }
+}
+
 /// Stacked right above the collage, under the overlays and the frame.
 /// `window` is the content area (the frame's opening, or the whole canvas
-/// without a frame): the layers are masked to it, so nothing lands on the
-/// frame even where its PNG is see-through.
+/// without a frame); `collage` the collage's own size in its middle (smaller
+/// with a canvas margin, tilted with the canvas rotation). The layers are
+/// masked to the collage, so nothing lands on the margin or the frame.
 struct EffectLayers: View {
     @EnvironmentObject var state: CollageState
     @ObservedObject var maps: EffectMaps
     let canvasSize: CGSize
     let window: CGRect
+    let collage: CGSize
 
     var body: some View {
         let temperature = state.effectAmount(.temperature)
@@ -48,54 +64,64 @@ struct EffectLayers: View {
         let halation = state.effectAmount(.halation)
         let vignette = state.effectAmount(.vignette)
         let grain = state.effectAmount(.grain)
-        let longEdge = max(window.width, window.height)
+        // The vignette darkens toward the collage's corners, not the canvas's.
+        let longEdge = max(min(collage.width, window.width), min(collage.height, window.height))
 
         ZStack {
             // Temperature: an amber or blue wash, soft-light blended so it
             // shifts the midtones and leaves blacks and whites mostly alone.
             if temperature != 0 {
-                (temperature > 0 ? Color(red: 1, green: 0.55, blue: 0.12)
-                                 : Color(red: 0.15, green: 0.45, blue: 1))
-                    .opacity(0.65 * abs(temperature))
+                masked((temperature > 0 ? Color(red: 1, green: 0.55, blue: 0.12)
+                                        : Color(red: 0.15, green: 0.45, blue: 1))
+                    .opacity(0.65 * abs(temperature)))
                     .blendMode(.softLight)
             }
             // Tint: the same kind of wash on the green–magenta axis.
             if tint != 0 {
-                (tint > 0 ? Color(red: 0.95, green: 0.2, blue: 0.75)
-                          : Color(red: 0.25, green: 0.85, blue: 0.3))
-                    .opacity(0.55 * abs(tint))
+                masked((tint > 0 ? Color(red: 0.95, green: 0.2, blue: 0.75)
+                                 : Color(red: 0.25, green: 0.85, blue: 0.3))
+                    .opacity(0.55 * abs(tint)))
                     .blendMode(.softLight)
             }
             // Fade: a screened haze lifts the blacks into a matte gray.
             if fade > 0 {
-                Color(white: 0.34 * fade).blendMode(.screen)
+                masked(Color(white: 0.34 * fade)).blendMode(.screen)
             }
             if glow > 0, let map = maps.glow {
-                mapLayer(map).opacity(glow).blendMode(.screen)
+                masked(mapLayer(map).opacity(glow)).blendMode(.screen)
             }
             if halation > 0, let map = maps.halation {
-                mapLayer(map).opacity(halation).blendMode(.screen)
+                masked(mapLayer(map).opacity(halation)).blendMode(.screen)
             }
             if vignette > 0 {
                 // Starts closer to the center and goes fully dark at the
                 // corners when maxed.
-                RadialGradient(colors: [.clear, .black.opacity(0.5 * vignette), .black.opacity(1.0 * vignette)],
-                               center: UnitPoint(x: window.midX / max(canvasSize.width, 1),
-                                                 y: window.midY / max(canvasSize.height, 1)),
-                               startRadius: longEdge * (0.30 - 0.12 * vignette),
-                               endRadius: longEdge * 0.68)
+                masked(RadialGradient(colors: [.clear, .black.opacity(0.5 * vignette), .black.opacity(1.0 * vignette)],
+                                      center: UnitPoint(x: window.midX / max(canvasSize.width, 1),
+                                                        y: window.midY / max(canvasSize.height, 1)),
+                                      startRadius: longEdge * (0.30 - 0.12 * vignette),
+                                      endRadius: longEdge * 0.68))
             }
             if grain > 0, let texture = PlatformImage.named("EffectGrain") {
-                grainLayer(texture).opacity(0.75 * grain).blendMode(.overlay)
+                masked(grainLayer(texture).opacity(0.75 * grain)).blendMode(.overlay)
             }
         }
         .frame(width: canvasSize.width, height: canvasSize.height)
-        .mask(alignment: .topLeading) {
-            Rectangle()
-                .frame(width: window.width, height: window.height)
-                .offset(x: window.minX, y: window.minY)
-        }
         .allowsHitTesting(false)
+    }
+
+    /// One layer cut to the collage. Each layer is masked on its own, its
+    /// blend mode applied after: masking the whole stack would blend the
+    /// layers into an empty group instead of onto the photos.
+    private func masked(_ layer: some View) -> some View {
+        layer
+            .frame(width: canvasSize.width, height: canvasSize.height)
+            .mask(alignment: .topLeading) {
+                CollageBlockShape(size: collage, rotation: state.canvasRotation)
+                    .frame(width: window.width, height: window.height)
+                    .clipped()
+                    .offset(x: window.minX, y: window.minY)
+            }
     }
 
     /// Grain as fine on a carousel strip as on a single picture: one tile of

@@ -64,21 +64,18 @@ struct OverlayModeLabel: View {
         .minimumScaleFactor(0.7)
         .foregroundColor(.white)
         .padding(.horizontal, 14)
-        .frame(maxWidth: .infinity, minHeight: 32)
-        // The accent, deepened, so the white letters stand out.
-        .background(RoundedRectangle(cornerRadius: 10, style: .continuous)
-            .fill(Color.accentColor)
-            .overlay(RoundedRectangle(cornerRadius: 10, style: .continuous).fill(Color.black.opacity(0.45))))
-        .padding(.horizontal, 12)
-        .padding(.bottom, 6)
+        .frame(maxWidth: .infinity, minHeight: 32, maxHeight: .infinity)
+        // A band from edge to edge: the accent, deepened, so the white
+        // letters stand out.
+        .background(Color.accentColor.overlay(Color.black.opacity(0.45)))
         .allowsHitTesting(false)
         .accessibilityElement(children: .combine)
     }
 }
 
 extension ContentView {
-    /// Overlay mode, in its own row under the toolbar (never over the
-    /// collage): why the photos don't move.
+    /// Overlay mode, in its own row above the canvas (sideways; upright it
+    /// takes the toolbar's place): why the photos don't move.
     @ViewBuilder
     var overlayModeRow: some View {
         if state.overlayModeActive && state.hasAnyImages && !state.toolbarHidden {
@@ -462,7 +459,7 @@ struct ContentView: View {
     var iPadLayout: some View {
         HStack(spacing: 0) {
             VStack(spacing: 0) {
-                overlayModeRow.padding(.top, 6)
+                overlayModeRow.frame(height: 36)
                 PageTabBar()
                 CanvasContainerView()
                     .frame(maxWidth: .infinity, maxHeight: .infinity)
@@ -613,10 +610,36 @@ struct ContentView: View {
         .zIndex(1)
     }
 
+    /// How tall the panel may grow: up to just under the pager (or the
+    /// toolbar).
+    private func updatePanelLimit() {
+        let limit = (state.pages.count > 1 ? max(pagerBottomY, canvasTopY) : canvasTopY) + 8
+        guard limit.differs(from: state.panelTopLimitY) else { return }
+        Diagnostics.count("panelTopLimitY")
+        state.panelTopLimitY = limit
+    }
+
     var iPhoneLayout: some View {
         VStack(spacing: 0) {
             if !state.toolbarHidden {
+                // Overlay mode: the toolbar gives way to the OVERLAY MODE
+                // band, in the same place and size, so nothing below moves.
+                let overlayMode = state.overlayModeActive && state.hasAnyImages
                 toolbar
+                    .opacity(overlayMode ? 0 : 1)
+                    .allowsHitTesting(!overlayMode)
+                    .accessibilityHidden(overlayMode)
+                    .overlay {
+                        if overlayMode {
+                            // As wide as the collage below it.
+                            OverlayModeLabel()
+                                .frame(width: state.canvasShownWidth > 0 ? state.canvasShownWidth : nil)
+                                .transition(.opacity)
+                        }
+                    }
+                    .animation(.easeInOut(duration: 0.2), value: overlayMode)
+                    // A thin gap above the canvas.
+                    .padding(.bottom, 6)
             }
             // Ratio panel takes real layout space, so the canvas below
             // resizes and shows the chosen ratio exactly
@@ -642,8 +665,6 @@ struct ContentView: View {
                     )
                     .transition(.move(edge: .top).combined(with: .opacity))
             }
-
-            overlayModeRow
 
             // Canvas fills the remaining space; the controls float on top as a
             // glass panel so the canvas gets maximum room.
@@ -680,12 +701,7 @@ struct ContentView: View {
             // The panel may grow up to just under the pager (or the toolbar).
             .onGeometryChange(for: CGFloat.self) { $0.frame(in: .global).minY } action: { canvasTopY = $0 }
             .onChange(of: PanelLimitKey(canvasTop: canvasTopY, pagerBottom: pagerBottomY, pages: state.pages.count),
-                      initial: true) { _, k in
-                let limit = (k.pages > 1 ? max(k.pagerBottom, k.canvasTop) : k.canvasTop) + 8
-                guard limit.differs(from: state.panelTopLimitY) else { return }
-                Diagnostics.count("panelTopLimitY")
-                state.panelTopLimitY = limit
-            }
+                      initial: true) { _, _ in updatePanelLimit() }
             .overlay(alignment: .bottom) {
                 // No chrome until there are images — the empty canvas just
                 // shows the big "add images" button.
