@@ -121,6 +121,7 @@ extension ColorFilter {
         case .classicNegative2: return "classicNegative2"
         case .portra400: return "portra400"
         case .ginger: return "ginger"
+        case .tealOrange: return "tealOrange"
         case .lut(let key): return "lut:" + key
         }
     }
@@ -137,6 +138,7 @@ extension ColorFilter {
         case "classicNegative2": self = .classicNegative2
         case "portra400": self = .portra400
         case "ginger": self = .ginger
+        case "tealOrange": self = .tealOrange
         default: self = key.hasPrefix("lut:") ? .lut(String(key.dropFirst(4))) : .none
         }
     }

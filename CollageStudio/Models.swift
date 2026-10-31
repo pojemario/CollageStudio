@@ -1528,6 +1528,11 @@ enum ColorFilter: Hashable, Identifiable {
     /// to amber, quiet blues, near-true blacks under teal-green shadows,
     /// warm cream mids and highlights rolled off under white.
     case ginger
+    /// Cinematic teal & orange, matched to a night-street poster: skin, lamps
+    /// and warm tones held to a natural orange, greens / cyans / blues folded
+    /// into one deep teal, punchy contrast, teal shadows and warm highlights,
+    /// with skin kept out of the shadow tint.
+    case tealOrange
 
     /// A 3D LUT (.cube) bundled from the project's luts/ folder, by its key
     /// "Group/Name" (see LUTLibrary).
@@ -1535,7 +1540,7 @@ enum ColorFilter: Hashable, Identifiable {
 
     /// The built-in looks, in tile order.
     static let builtIns: [ColorFilter] = [.none, .amber, .amber2, .heritage, .tealSplit, .brownie, .melancholy, .classicNegative,
-                                          .classicNegative2, .portra400, .ginger]
+                                          .classicNegative2, .portra400, .ginger, .tealOrange]
     /// Every filter offered: built-ins, then the bundled LUTs.
     static var allCases: [ColorFilter] { groups.flatMap(\.filters) }
 
@@ -1560,6 +1565,7 @@ enum ColorFilter: Hashable, Identifiable {
         case .classicNegative2: return "Classic Fade"
         case .portra400: return "P400"
         case .ginger: return "Ginger"
+        case .tealOrange: return "Teal Orange"
         case .lut(let key): return LUTLibrary.displayName(key)
         }
     }
@@ -1587,6 +1593,8 @@ enum ColorFilter: Hashable, Identifiable {
             return Self.portra400(r, g, b)
         case .ginger:
             return Self.ginger(r, g, b)
+        case .tealOrange:
+            return Self.tealOrange(r, g, b)
         case .classicNegative2:
             return Self.classicNegative(r, g, b, shadow: [-0.070, 0.046, 0.060])    // strong teal
         case .melancholy:
@@ -2079,6 +2087,72 @@ enum ColorFilter: Hashable, Identifiable {
         let mid = [0.0, 0.008, 0.0]             // whisper of green in the mids
         let high = [0.008, -0.004, -0.002]      // faint warm-pink highlights
         let out = (0..<3).map { min(max(c[$0] + wm * mid[$0] + wh * high[$0], 0), 1) }
+        return (out[0], out[1], out[2])
+    }
+
+    /// Matched to the teal & orange reference: reds and skin toward a natural
+    /// orange, yellows to amber, greens folded into teal and muted, cyans and
+    /// blues to a deep teal, punchy contrast over teal-tinted blacks, warm
+    /// highlights rolled off under white. Warm colors are kept out of the
+    /// shadow tint so skin never goes gray-green.
+    private static func tealOrange(_ r: Double, _ g: Double, _ b: Double) -> (r: Double, g: Double, b: Double) {
+        func bump(_ h: Double, _ center: Double, _ width: Double) -> Double {
+            var d = (h - center + 180).truncatingRemainder(dividingBy: 360)
+            if d < 0 { d += 360 }
+            d -= 180
+            let w = min(max(1 - abs(d) / width, 0), 1)
+            return w * w * (3 - 2 * w)
+        }
+        /// `h` moved `amount` of the short way round toward `target`.
+        func toward(_ h: Double, _ target: Double, _ amount: Double) -> Double {
+            var d = (target - h).truncatingRemainder(dividingBy: 360)
+            if d > 180 { d -= 360 } else if d < -180 { d += 360 }
+            return h + d * amount
+        }
+        var (h, s, v) = hsv(r, g, b)
+        // Reds a little toward orange; skin and oranges gathered at orange
+        // and a touch richer; yellows to amber.
+        let wr = bump(h, 6, 20)
+        h = toward(h, 14, wr * 0.3)
+        let wo = bump(h, 28, 24)
+        h = toward(h, 25, wo * 0.4)
+        s = min(s * (1 + 0.10 * wo), 1)
+        let wy = bump(h, 58, 24)
+        h = toward(h, 38, wy * 0.55)
+        s *= 1 - 0.15 * wy
+        // Greens and yellow-greens folded toward teal and muted; cyans and
+        // blues to a deep teal, a little richer.
+        let wg = bump(h, 115, 70)
+        h = toward(h, 172, wg * 0.5)
+        s *= 1 - 0.45 * wg
+        let wt = bump(h, 210, 60)
+        h = toward(h, 192, wt * 0.65)
+        s = min(s * (1 + 0.12 * wt), 1)
+        s *= 0.96
+        h = h.truncatingRemainder(dividingBy: 360)
+        if h < 0 { h += 360 }
+        var c = rgb(h, s, v)
+        // Punchy contrast, blacks barely lifted, whites rolled off under 1 —
+        // mostly on luminance, so color holds through the curve.
+        func tone(_ x: Double) -> Double {
+            let sc = x * x * (3 - 2 * x)
+            let y = x * 0.4 + sc * 0.6
+            let top = y > 0.78 ? 0.78 + (y - 0.78) * 0.7 : y
+            return 0.012 + (0.975 - 0.012) * top
+        }
+        let l0 = 0.299 * c[0] + 0.587 * c[1] + 0.114 * c[2]
+        let k = l0 > 1e-4 ? tone(l0) / l0 : 1
+        c = c.map { x in tone(x) * 0.3 + min(x * k, 1) * 0.7 }
+        // Teal shadows and lower mids, warm highlights; warm colors (skin)
+        // only lightly touched by the teal.
+        let l = 0.299 * c[0] + 0.587 * c[1] + 0.114 * c[2]
+        let (hc, sc, _) = hsv(c[0], c[1], c[2])
+        let warm = bump(hc, 25, 30) * min(sc / 0.15, 1)
+        let ws = pow(min(max(1 - l / 0.6, 0), 1), 1.1) * (1 - 0.75 * warm)
+        let wh = pow(min(max((l - 0.55) / 0.4, 0), 1), 1.2)
+        let shadow = [-0.060, 0.015, 0.045]     // teal
+        let high = [0.035, 0.008, -0.035]       // warm orange
+        let out = (0..<3).map { min(max(c[$0] + ws * shadow[$0] + wh * high[$0], 0), 1) }
         return (out[0], out[1], out[2])
     }
 
