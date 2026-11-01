@@ -205,7 +205,9 @@ struct RatioPanelView: View {
     var body: some View {
         VStack(spacing: 10) {
             LazyVGrid(columns: [GridItem(.flexible()), GridItem(.flexible()), GridItem(.flexible())], spacing: 8) {
-                ForEach(CanvasRatio.allCases) { r in
+                // Custom size is hidden; a collage already in one keeps
+                // showing it (and its size row) so it can be left.
+                ForEach(CanvasRatio.allCases.filter { $0 != .custom || state.ratio == .custom }) { r in
                     RatioButton(ratio: r, isActive: state.ratio == r) {
                         state.setRatio(r)
                     }
