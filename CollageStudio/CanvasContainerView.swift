@@ -381,8 +381,7 @@ private struct CompareButton: View {
     @GestureState private var holding = false
 
     var body: some View {
-        Image(systemName: "square.split.2x1")
-            .font(.system(size: 15, weight: .semibold))
+        BeforeAfterIcon()
             .foregroundColor(holding ? .white : .primary)
             .frame(width: 38, height: 38)
             .background(Circle().fill(holding ? AnyShapeStyle(Color.accentColor) : AnyShapeStyle(.ultraThinMaterial)))
@@ -403,6 +402,27 @@ private struct CompareButton: View {
             .accessibilityLabel("Compare with original")
             .accessibilityHint("Touch and hold to see the photos without edits, effects and filter")
             .accessibilityAddTraits(.isButton)
+    }
+}
+
+/// Before / after: an outlined picture and a filled one side by side,
+/// a dotted line between them.
+private struct BeforeAfterIcon: View {
+    var body: some View {
+        HStack(spacing: 2.5) {
+            RoundedRectangle(cornerRadius: 2.5)
+                .strokeBorder(lineWidth: 1.6)
+                .frame(width: 8, height: 15)
+            Path { p in
+                p.move(to: CGPoint(x: 0.75, y: 0))
+                p.addLine(to: CGPoint(x: 0.75, y: 19))
+            }
+            .stroke(style: StrokeStyle(lineWidth: 1.5, lineCap: .round, dash: [0.1, 3.1]))
+            .frame(width: 1.5, height: 19)
+            RoundedRectangle(cornerRadius: 2.5)
+                .frame(width: 8, height: 15)
+        }
+        .accessibilityHidden(true)
     }
 }
 

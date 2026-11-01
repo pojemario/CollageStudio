@@ -1169,18 +1169,21 @@ struct CollagesHome: View {
     }
 
     private var pillLabel: some View {
-        HStack(spacing: 14) {
+        HStack(spacing: 0) {
+            // Centered between the pill's left edge and the line.
             Image(systemName: "plus")
                 .font(.system(size: 21, weight: .bold))
+                .frame(width: 60)
             Rectangle()
                 .fill(Color.white.opacity(0.45))
-                .frame(width: 1, height: 24)
+                .frame(width: 1, height: 60)   // the pill's full height
             Text("NEW COLLAGE")
                 .font(.system(size: 18, weight: .heavy))
                 .tracking(1)
+                .padding(.leading, 16)
+                .padding(.trailing, 30)
         }
         .foregroundColor(.white)
-        .padding(.horizontal, 30)
         .frame(height: 60)
         .background(Capsule().fill(Color.accentColor))
         .overlay(Capsule().fill(Color.white.opacity(pillGlow ? 0.18 : 0)))
