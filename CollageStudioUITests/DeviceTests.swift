@@ -25,7 +25,7 @@ final class DeviceTests: CollageUITestCase {
         wait("cutouts", is: 1, timeout: 10)
 
         // Leaving Cutout keeps it.
-        openTab("Images")
+        openTab("Content")
         wait("cutoutedit", is: 0)
         XCTAssertEqual(int("cutouts"), 1)
 

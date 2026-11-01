@@ -321,7 +321,17 @@ class CollageState: ObservableObject {
 
     var borderThickness: Double {
         get { currentPage.style.borderThickness }
-        set { currentPage.style.borderThickness = newValue }
+        set {
+            // A border just turned on, its color untouched (the default, or
+            // still following the background): it starts in the spacing
+            // color's opposite, so it shows.
+            let turningOn = currentPage.style.borderThickness <= 0 && newValue > 0
+            currentPage.style.borderThickness = newValue
+            if turningOn && (linkBorderToBackground || borderColor == PageStyle().borderColor) {
+                let c = backgroundColor.srgbComponents
+                borderColor = Color(.sRGB, red: 1 - c[0], green: 1 - c[1], blue: 1 - c[2], opacity: 1)
+            }
+        }
     }
     var borderStyle: BorderStyle {
         get { currentPage.style.borderStyle }
@@ -1642,6 +1652,7 @@ class CollageState: ObservableObject {
     /// opens it for editing.
     func addTextImage() {
         var style = TextBoxStyle.lastUsed
+        style.text = TextBoxStyle.nextGreeting()
         // The text must read against what's behind it: its own fill, or —
         // when that's see-through — the page's background. Too close
         // (white on white), it starts black or white instead.
@@ -1653,6 +1664,7 @@ class CollageState: ObservableObject {
         let image = CollageImage.textImage(style: style)
         addPreparedImages([image])
         if currentPage.images.contains(where: { $0.id == image.id }) {
+            fitTextBoxHeight(id: image.id)
             focusTextOnOpen = true
             beginEditText(id: image.id)
         }
@@ -1671,6 +1683,39 @@ class CollageState: ObservableObject {
             guard images.contains(where: { $0.id == id }) else { return }
             beginEditText(id: id)
         }
+    }
+
+    /// A new text box starts only as tall as its text plus a natural margin
+    /// (about twice the letter size above and below), its column's
+    /// other boxes taking the rest. Only in columns, sharing a column, and
+    /// only ever shorter than its even share.
+    func fitTextBoxHeight(id: UUID) {
+        guard !isRows, !isStrip,
+              let pi = pageIndex(containing: id),
+              let style = textStyle(for: id),
+              let (ci, bi) = pages[pi].layout.position(of: id) else { return }
+        var layout = pages[pi].layout
+        guard ci < layout.boxGrows.count, layout.columns[ci].count > 1 else { return }
+        let size = canvasSize
+        guard let box = layout.rects(canvasSize: size, gap: gap)[id], box.width > 1 else { return }
+        // The text as it will be drawn: its size follows the box's long edge,
+        // which is the width once the box is flatter than square.
+        let fontSize = style.fontSize * box.width / 1200
+        let inset: CGFloat = 2      // the bitmap's own small margin
+        let font = style.fontChoice.platformFont(size: fontSize)
+        let textHeight = (style.text as NSString).boundingRect(
+            with: CGSize(width: box.width - inset * 2, height: .greatestFiniteMagnitude),
+            options: [.usesLineFragmentOrigin],
+            attributes: [.font: font, .kern: fontSize * style.letterSpacing / 100], context: nil).height
+        let target = min(textHeight.rounded(.up) + fontSize * 4.2, box.width)
+        guard target < box.height else { return }
+        // Its share of the column so the box comes out `target` tall.
+        let grows = layout.boxGrows[ci]
+        let others = grows.reduce(0, +) - grows[bi]
+        let availH = size.height - gap * CGFloat(grows.count + 1)
+        guard others > 0, availH > target else { return }
+        layout.boxGrows[ci][bi] = target * others / (availH - target)
+        pages[pi].layout = layout
     }
 
     /// The edit button on a text box edits it live: the panel swaps to the text
@@ -2491,7 +2536,7 @@ class CollageState: ObservableObject {
     /// Resets the visual style to a plain default look.
     /// Whether the Layout settings differ from their defaults.
     var hasStyleChanges: Bool {
-        gap != PageStyle().gap || cornerRadius != PageStyle().cornerRadius || borderThickness != 0 || borderStyle != .solid
+        gap != PageStyle().gap || cornerRadius != PageStyle().cornerRadius || borderThickness != 0 || borderStyle != PageStyle().borderStyle
             || backgroundColor != .white || borderColor != .white || backgroundKind != .color
     }
 
@@ -2505,14 +2550,14 @@ class CollageState: ObservableObject {
 
     /// The border back to none (the Border page's reset).
     func resetBorder() {
-        borderStyle = .solid
+        borderStyle = PageStyle().borderStyle
         borderThickness = 0
         borderColor = .white
-        borderPlacement = .center
+        borderPlacement = PageStyle().borderPlacement
     }
 
     var hasBorderChanges: Bool {
-        borderThickness != 0 || borderStyle != .solid || borderColor != .white || borderPlacement != .center
+        borderThickness != 0 || borderStyle != PageStyle().borderStyle || borderColor != .white || borderPlacement != PageStyle().borderPlacement
     }
 
     /// Empties the canvas for a new collage, which starts from the default
@@ -2639,6 +2684,9 @@ class CollageState: ObservableObject {
         if let h = d.string(forKey: DefaultsKey.customHeight) { customHeight = h }
         useLastRatio()
     }
+
+    /// The open collage's ratio becomes the one new collages start with.
+    func rememberRatio() { saveRatio() }
 
     private func saveRatio() {
         let d = UserDefaults.standard

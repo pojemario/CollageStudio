@@ -16,24 +16,28 @@ struct FramesPanel: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: 10) {
-            if state.slides > 1 {
-                Label("Frames are off on a spread page. Set Spread across to 1 post (Layout) to see them.",
-                      systemImage: "rectangle.split.3x1")
-                    .font(.footnote)
-                    .foregroundStyle(.secondary)
-            }
-            SelectionScroller(selection: selectedPackId) {
-                HStack(spacing: 8) {
-                    ForEach(CollageState.framePacks) { pack in
-                        PackChip(title: pack.title, isActive: selectedPackId == pack.id) {
-                            selectedPackId = pack.id
+            // While the slider moves, only it shows (the collage in view).
+            Group {
+                if state.slides > 1 {
+                    Label("Frames are off on a spread page. Set Spread across to 1 post (Layout) to see them.",
+                          systemImage: "rectangle.split.3x1")
+                        .font(.footnote)
+                        .foregroundStyle(.secondary)
+                }
+                SelectionScroller(selection: selectedPackId) {
+                    HStack(spacing: 8) {
+                        ForEach(CollageState.framePacks) { pack in
+                            PackChip(title: pack.title, isActive: selectedPackId == pack.id) {
+                                selectedPackId = pack.id
+                            }
+                            .id(pack.id)
                         }
-                        .id(pack.id)
                     }
                 }
-            }
 
-            FramePickerRow(pack: selectedPack)
+                FramePickerRow(pack: selectedPack)
+            }
+            .panelChrome(state)
 
             if state.canvasFrame != nil && state.slides == 1 {
                 // Room around the frame, or (negative) the whole framed

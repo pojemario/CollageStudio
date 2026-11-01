@@ -853,7 +853,7 @@ struct LooksPanel: View {
 
     var body: some View {
         VStack(spacing: 10) {
-            Picker("Looks", selection: $state.looksPage) {
+            Picker("Style", selection: $state.looksPage) {
                 ForEach(Page.allCases, id: \.self) { Text($0.rawValue).tag($0) }
             }
             .pickerStyle(.segmented)

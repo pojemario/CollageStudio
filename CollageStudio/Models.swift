@@ -88,8 +88,9 @@ extension PlatformImage {
 /// Everything needed to (re)render a "Text image": a text box that lives in
 /// the collage as a normal rendered image and can be re-edited at any time.
 struct TextBoxStyle: Equatable {
-    var text: String = "Your text"
-    var fontChoice: FontChoice = .classic
+    var text: String = "Hello"
+    /// New text boxes start handwritten (Note).
+    var fontChoice: FontChoice = .note
     /// Point size on a bitmap whose long edge is 1200 px.
     var fontSize: CGFloat = 120
     var hAlignment: HAlign = .center
@@ -118,7 +119,8 @@ struct TextBoxStyle: Equatable {
     }
 
     /// Fonts offered for text boxes, grouped sans → thin → serif → script
-    /// and handwriting. All are built into iOS.
+    /// and handwriting. All are built into iOS. The order is the buttons'
+    /// order (two rows, split in half): Note, the default, opens row two.
     enum FontChoice: String, CaseIterable, Identifiable {
         // Sans
         case classic = "Classic"
@@ -132,13 +134,13 @@ struct TextBoxStyle: Equatable {
         // Serif
         case serif = "Serif"
         case didot = "Didot"
+        // Handwriting (the default first), typewriter, script
+        case note = "Note"
         case typewriter = "Typewriter"
-        // Script & handwriting
         case script = "Script"
         case savoye = "Savoye"
         case zapfino = "Zapfino"
         case handwritten = "Handwritten"
-        case note = "Note"
         case chalk = "Chalk"
         case marker = "Marker"
 
@@ -714,8 +716,10 @@ struct PageStyle: Equatable {
     var backgroundColor2: Color = Color(.sRGB, red: 0.85, green: 0.87, blue: 0.93, opacity: 1)
     var borderColor: Color = .white
     var borderThickness: Double = 0
-    var borderStyle: BorderStyle = .solid
-    var borderPlacement: BorderPlacement = .center
+    /// A new border starts dashed and inside the photos (and, see
+    /// CollageState.borderThickness, in the spacing color's opposite).
+    var borderStyle: BorderStyle = .dashed
+    var borderPlacement: BorderPlacement = .inner
     var linkBorderToBackground: Bool = true
 }
 

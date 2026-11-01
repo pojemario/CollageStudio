@@ -7,7 +7,7 @@ struct SidebarView: View {
     @EnvironmentObject var state: CollageState
     @State private var showingCustom = false
     /// The one section open. Remembered between launches.
-    @AppStorage("sidebarOpenSection") private var openSection = "Images"
+    @AppStorage("sidebarOpenSection") private var openSection = "Content"
 
     /// A text box, cutout or photo being edited: its editor is the open
     /// section until it's done.
@@ -18,7 +18,12 @@ struct SidebarView: View {
         return nil
     }
 
-    private func isOpen(_ title: String) -> Bool { (editor ?? openSection) == title }
+    /// (Old names, still remembered on some iPads: Images is now Content,
+    /// Looks is Style.)
+    private func isOpen(_ title: String) -> Bool {
+        let renamed = ["Images": "Content", "Looks": "Style"]
+        return (editor ?? renamed[openSection] ?? openSection) == title
+    }
 
     /// Opens a section and closes the other; tapping the open one closes it.
     /// An editor that was open is done.
@@ -59,7 +64,7 @@ struct SidebarView: View {
                 section("Layout") { LayoutPanel(spacingRange: 0...40) }
                 section("Frames") { FramesPanel() }
                 section("Overlay") { OverlayPanel(inSidebar: true) }
-                section("Looks") { LooksPanel() }
+                section("Style") { LooksPanel() }
             }
         }
         // Holds still while a photo is dragged to another page.
@@ -115,7 +120,7 @@ struct SidebarView: View {
     // MARK: - Images
 
     var imagesSection: some View {
-        section("Images") {
+        section("Content") {
             HStack(spacing: 8) {
                 // Back to the Collages screen (the open one is saved).
                 ToolbarTile(sf: "square.stack", title: "Collages", prominent: false) { state.goToCollages() }

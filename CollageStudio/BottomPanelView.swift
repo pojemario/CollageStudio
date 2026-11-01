@@ -28,7 +28,7 @@ struct FloatingTabBar: View {
     @State private var gliding = false
     @State private var glideToken = 0
 
-    static let tabs = ["Images", "Layout", "Frames", "Overlay", "Looks"]
+    static let tabs = ["Content", "Layout", "Frames", "Overlay", "Style"]
     static let icons = ["photo.on.rectangle.angled", "square.grid.2x2",
                         "photo.artframe", "sparkles", "camera.filters"]
     /// Vertical room the pill takes at the bottom of the screen (pill +

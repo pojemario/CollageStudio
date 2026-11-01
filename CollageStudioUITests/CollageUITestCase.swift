@@ -112,7 +112,7 @@ class CollageUITestCase: XCTestCase {
 
     /// Opens a tab's panel: Images, Layout, Frames, Overlay or Looks.
     func openTab(_ name: String, file: StaticString = #filePath, line: UInt = #line) {
-        let index = ["Images", "Layout", "Frames", "Overlay", "Looks"].firstIndex(of: name)!
+        let index = ["Content", "Layout", "Frames", "Overlay", "Style"].firstIndex(of: name)!
         // Already open: a tap would put it away.
         if int("tab") == index && int("panel") == 1 && int("tabshown") == 1 && int("photoedit") == 0
             && int("cutoutedit") == 0 { return }
@@ -125,7 +125,7 @@ class CollageUITestCase: XCTestCase {
     /// shown when nil. Returns the key picked.
     @discardableResult
     func pickFilter(_ key: String? = nil, file: StaticString = #filePath, line: UInt = #line) -> String {
-        openTab("Looks", file: file, line: line)
+        openTab("Style", file: file, line: line)
         let segment = app.segmentedControls.buttons["Filter"]
         if segment.exists && !segment.isSelected { segment.tap() }
         let tile: XCUIElement

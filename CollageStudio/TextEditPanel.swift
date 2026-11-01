@@ -82,7 +82,7 @@ struct TextEditPanel: View {
         }
         // The starting text is meant to be replaced: select it all as typing begins.
         .onChange(of: typing) { _, now in
-            guard now, style.wrappedValue.text == TextBoxStyle().text else { return }
+            guard now, TextBoxStyle.greetings.contains(style.wrappedValue.text) else { return }
             Task {
                 try? await Task.sleep(nanoseconds: 150_000_000)
                 selectAllInFocusedField()

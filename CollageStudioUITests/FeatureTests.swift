@@ -55,7 +55,7 @@ final class FeatureTests: CollageUITestCase {
         wait("pages") { (Int($0) ?? 0) >= 2 }
         let allPages = app.buttons.matching(NSPredicate(format: "label BEGINSWITH 'Apply Looks settings'")).firstMatch
         // Every page looks the same: nothing to apply, no button.
-        openTab("Looks")
+        openTab("Style")
         XCTAssertFalse(allPages.waitForExistence(timeout: 2), "All Pages shown with nothing to apply")
         let filter = pickFilter()
         tap(allPages)
@@ -103,14 +103,14 @@ final class FeatureTests: CollageUITestCase {
         newCollage(photos: 3)
         openTab("Layout")
         closeTab("Layout")
-        openTab("Looks")
+        openTab("Style")
         wait("tabshown", is: 1)
     }
 
     func testLeavingPhotoToolsShowsPlainTabBar() {
         launch(photos: 3)
         newCollage(photos: 3)
-        openTab("Looks")
+        openTab("Style")
         closePanel()
         tap(photo(2))
         wait("selected", is: 1)

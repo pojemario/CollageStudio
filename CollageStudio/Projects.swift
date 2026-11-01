@@ -17,13 +17,15 @@ extension PageStyle: Codable {
         isRows = try c.decodeIfPresent(Bool.self, forKey: .isRows) ?? isRows
         isStrip = try c.decodeIfPresent(Bool.self, forKey: .isStrip) ?? isStrip
         slides = min(max(try c.decodeIfPresent(Int.self, forKey: .slides) ?? slides, 1), CollageState.maxSlides)
-        gap = try c.decodeIfPresent(Double.self, forKey: .gap) ?? gap
-        cornerRadius = try c.decodeIfPresent(Double.self, forKey: .cornerRadius) ?? cornerRadius
+        // Missing values take the defaults of the time they weren't saved
+        // (spacing 5, rounding 8, solid, centered), not today's.
+        gap = try c.decodeIfPresent(Double.self, forKey: .gap) ?? 5
+        cornerRadius = try c.decodeIfPresent(Double.self, forKey: .cornerRadius) ?? 8
         if let v = try c.decodeIfPresent([Double].self, forKey: .backgroundColor), let col = Color(srgbComponents: v) { backgroundColor = col }
         if let v = try c.decodeIfPresent([Double].self, forKey: .borderColor), let col = Color(srgbComponents: v) { borderColor = col }
         borderThickness = try c.decodeIfPresent(Double.self, forKey: .borderThickness) ?? borderThickness
-        if let v = try c.decodeIfPresent(String.self, forKey: .borderStyle), let s = BorderStyle(rawValue: v) { borderStyle = s }
-        if let v = try c.decodeIfPresent(String.self, forKey: .borderPlacement), let p = BorderPlacement(rawValue: v) { borderPlacement = p }
+        borderStyle = try c.decodeIfPresent(String.self, forKey: .borderStyle).flatMap(BorderStyle.init(rawValue:)) ?? .solid
+        borderPlacement = try c.decodeIfPresent(String.self, forKey: .borderPlacement).flatMap(BorderPlacement.init(rawValue:)) ?? .center
         linkBorderToBackground = try c.decodeIfPresent(Bool.self, forKey: .linkBorderToBackground) ?? linkBorderToBackground
         if let v = try c.decodeIfPresent(String.self, forKey: .backgroundKind), let k = BackgroundKind(rawValue: v) { backgroundKind = k }
         if let v = try c.decodeIfPresent([Double].self, forKey: .backgroundColor2), let col = Color(srgbComponents: v) { backgroundColor2 = col }
@@ -53,6 +55,29 @@ extension TextBoxStyle {
     /// Set once the remembered look has dropped the old white background
     /// (from before transparent became the default).
     private static let transparentKey = "lastTextStyleTransparentDefault"
+    /// Set once the remembered look has moved to Note (the new default font).
+    private static let noteKey = "lastTextStyleNoteDefault"
+    private static let greetingKey = "nextTextGreeting"
+
+    /// "Hello" in the world's most spoken languages (and ours): each new
+    /// text box starts with the next one, round and round. Mandarin and
+    /// Hindi only where they're at home (by the phone's languages or
+    /// region), not in Europe or the US.
+    static let greetings: [String] = {
+        var list = ["Hello", "Bok", "Hola", "Bonjour", "Hallo", "Hoi", "Ciao", "Olá"]
+        let languages = Locale.preferredLanguages.map { Locale(identifier: $0).language.languageCode?.identifier ?? "" }
+        let region = Locale.current.region?.identifier ?? ""
+        if languages.contains("zh") || ["CN", "TW", "HK", "MO", "SG"].contains(region) { list.append("你好") }
+        if languages.contains("hi") || ["IN", "NP"].contains(region) { list.append("नमस्ते") }
+        return list
+    }()
+
+    /// The next greeting for a new text box (the turn is remembered).
+    static func nextGreeting() -> String {
+        let i = UserDefaults.standard.integer(forKey: greetingKey) % greetings.count
+        UserDefaults.standard.set(i + 1, forKey: greetingKey)
+        return greetings[i]
+    }
 
     /// The look of the text box edited last (font, size, alignment, colors),
     /// for new text boxes to start from — with fresh starting text.
@@ -64,6 +89,11 @@ extension TextBoxStyle {
             if !UserDefaults.standard.bool(forKey: transparentKey) {
                 style.backgroundColor = .clear
                 UserDefaults.standard.set(true, forKey: transparentKey)
+                UserDefaults.standard.set(try? JSONEncoder().encode(style), forKey: lastUsedKey)
+            }
+            if !UserDefaults.standard.bool(forKey: noteKey) {
+                style.fontChoice = .note
+                UserDefaults.standard.set(true, forKey: noteKey)
                 UserDefaults.standard.set(try? JSONEncoder().encode(style), forKey: lastUsedKey)
             }
             return style
@@ -898,6 +928,8 @@ extension CollageState {
             customWidth: file.customWidth, customHeight: file.customHeight,
             customUnit: CustomUnit(rawValue: file.customUnit) ?? .px)
         applyDocument(snapshot)
+        // Its ratio is now the latest used: a new collage starts with it.
+        rememberRatio()
         // (Going to its saved page zooms to that page's first post.)
         showWholeCollage()
         Diagnostics.log("opened collage \(diagnosticsSummary)")
