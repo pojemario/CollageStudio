@@ -1170,9 +1170,11 @@ struct CollagesHome: View {
 
     private var pillLabel: some View {
         HStack(spacing: 0) {
-            // Centered between the pill's left edge and the line.
+            // Between the pill's left edge and the line, nudged right: the
+            // rounded end makes the true center look too far left.
             Image(systemName: "plus")
                 .font(.system(size: 21, weight: .bold))
+                .offset(x: 4)
                 .frame(width: 60)
             Rectangle()
                 .fill(Color.white.opacity(0.45))
