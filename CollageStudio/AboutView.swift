@@ -6,6 +6,7 @@ import StoreKit
 /// much memory and storage it's using, and the open collage. "Copy" puts
 /// it all on the clipboard, for a bug report.
 struct AboutView: View {
+    @Environment(\.scenePhase) private var scenePhase
     @EnvironmentObject var state: CollageState
     @Environment(\.dismiss) private var dismiss
     @State private var source = "…"
@@ -22,8 +23,9 @@ struct AboutView: View {
 
     var body: some View {
         NavigationStack {
-            // Memory and the like change while it's open.
-            TimelineView(.periodic(from: .now, by: 1)) { _ in
+            // Memory and the like change while it's open (not while the
+            // app is away).
+            TimelineView(.animation(minimumInterval: 1, paused: scenePhase != .active)) { _ in
                 Form {
                     ForEach(sections, id: \.title) { section in
                         Section(section.title) {

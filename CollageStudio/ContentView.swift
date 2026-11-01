@@ -328,6 +328,8 @@ struct Shimmer: ViewModifier {
     let active: Bool
     @State private var phase: CGFloat = -1
     @State private var visible = false
+    /// Not while the app is away: the endless sweep stops (its layer goes).
+    @Environment(\.scenePhase) private var scenePhase
 
     func body(content: Content) -> some View {
         content
@@ -354,8 +356,8 @@ struct Shimmer: ViewModifier {
             // Only reveal the shimmer once an action has run past ~0.5s, so
             // quick operations don't flash it — only genuinely slow ones
             // (like importing images) show the indicator.
-            .task(id: active) {
-                guard active else { visible = false; return }
+            .task(id: active && scenePhase == .active) {
+                guard active, scenePhase == .active else { visible = false; return }
                 try? await Task.sleep(nanoseconds: 500_000_000)
                 guard !Task.isCancelled else { return }
                 phase = -1

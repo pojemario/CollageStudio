@@ -698,6 +698,8 @@ struct BottomPanelView: View {
         .background {
             card
                 .fill(.ultraThinMaterial)
+                // 10% darker than the bare glass.
+                .overlay(card.fill(Color.black.opacity(0.10)))
                 .overlay(card.strokeBorder(ColorManager.glassStroke, lineWidth: 0.8))
                 .shadow(color: .black.opacity(0.12), radius: 18, y: 6)
                 .padding(.bottom, merged ? -(FloatingTabBar.zoneHeight - FloatingTabBar.bottomMargin + FloatingTabBar.openLift) : 0)

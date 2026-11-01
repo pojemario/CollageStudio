@@ -314,6 +314,10 @@ struct ProjectFile: Codable {
     }
 
     var imageCount: Int { pages.reduce(0) { $0 + $1.images.count } }
+    /// Elements that are photos (not text boxes or empty boxes).
+    var photoCount: Int {
+        pages.reduce(0) { $0 + $1.images.filter { !$0.isPlaceholder && $0.textStyle == nil }.count }
+    }
 }
 
 extension PageLook {
@@ -360,9 +364,19 @@ struct ProjectSummary: Identifiable, Equatable {
     let id: UUID
     var name: String
     var modified: Date
+    /// Every element: photos, text boxes and empty boxes.
     var imageCount: Int
+    var photoCount: Int
     var pageCount: Int
     var thumbURL: URL
+}
+
+extension ProjectSummary {
+    /// "4 photos", or "5 elements" once text or empty boxes are among them.
+    var contentsLabel: String {
+        let noun = photoCount == imageCount ? "photo" : "element"
+        return "\(imageCount) \(noun)\(imageCount == 1 ? "" : "s")"
+    }
 }
 
 // MARK: - Store
@@ -408,6 +422,7 @@ final class ProjectStore: ObservableObject {
         guard let file = readFile(id), file.imageCount > 0 else { return nil }
         return ProjectSummary(id: id, name: file.name ?? defaultName(created: file.created),
                               modified: file.modified, imageCount: file.imageCount,
+                              photoCount: file.photoCount,
                               pageCount: file.pages.count, thumbURL: thumbURL(id))
     }
 
@@ -964,9 +979,10 @@ extension CollageState {
 
 // MARK: - Collages screen
 
-/// The start screen: a "New Collage" tile (straight to the photo picker)
-/// and every saved collage, newest first. Shown whenever the open collage
-/// has no photos — at launch, and after "Collages" in the editor.
+/// The start screen: every saved collage, newest first, under a header that
+/// stays put (Select), and a floating New Collage pill at the bottom
+/// (straight to the photo picker). Shown whenever the open collage has no
+/// photos — at launch, and after "Collages" in the editor.
 struct CollagesHome: View {
     @EnvironmentObject var state: CollageState
     @ObservedObject var store: ProjectStore
@@ -980,26 +996,43 @@ struct CollagesHome: View {
     @State private var selecting = false
     @State private var selected: Set<UUID> = []
     @State private var confirmingBatch = false
+    @Environment(\.scenePhase) private var scenePhase
+    /// The New Collage pill's light sweep (0 → 1) and brief brightening.
+    @State private var pillSweep: CGFloat = 0
+    @State private var pillGlow = false
 
     private let columns = [GridItem(.adaptive(minimum: 150), spacing: 14)]
 
     var body: some View {
         ScrollView {
-            VStack(spacing: 12) {
-                if !store.summaries.isEmpty { header }
-                LazyVGrid(columns: columns, spacing: 18) {
-                    newTile
-                        .disabled(selecting)
-                        .opacity(selecting ? 0.35 : 1)
-                    ForEach(store.summaries) { p in
-                        tile(p)
-                    }
+            LazyVGrid(columns: columns, spacing: 18) {
+                ForEach(store.summaries) { p in
+                    tile(p)
                 }
             }
-            .padding(16)
+            .padding(.horizontal, 16)
+            .padding(.top, 4)
+            // Room to scroll the last row out from under the pill.
+            .padding(.bottom, 24)
+        }
+        .overlay {
+            if store.summaries.isEmpty {
+                Text("Your collages will show up here.")
+                    .font(.subheadline)
+                    .foregroundStyle(.secondary)
+            }
+        }
+        // The header stays at the top however far the list scrolls.
+        .safeAreaInset(edge: .top, spacing: 0) {
+            if !store.summaries.isEmpty {
+                header
+                    .padding(.horizontal, 16)
+                    .padding(.vertical, 10)
+                    .background(ColorManager.canvasAreaBackground)
+            }
         }
         .safeAreaInset(edge: .bottom) {
-            if selecting { deleteBar }
+            if selecting { deleteBar } else { newPill }
         }
         .animation(.easeInOut(duration: 0.2), value: selecting)
         .onChange(of: store.summaries) { _, list in
@@ -1083,29 +1116,71 @@ struct CollagesHome: View {
         .transition(.move(edge: .bottom).combined(with: .opacity))
     }
 
-    private var newTile: some View {
-        Button(action: onNewCollage) {
-            VStack(spacing: 8) {
-                RoundedRectangle(cornerRadius: 14, style: .continuous)
-                    .strokeBorder(Color.accentColor.opacity(0.5), style: StrokeStyle(lineWidth: 1.5, dash: [6, 5]))
-                    .aspectRatio(1, contentMode: .fit)
-                    .overlay {
-                        Image(systemName: "plus")
-                            .font(.system(size: 34, weight: .light))
-                            .foregroundColor(.accentColor)
-                    }
-                Text("New Collage")
-                    .font(.subheadline.weight(.semibold))
-                    .foregroundColor(.accentColor)
-                Text(" ").font(.caption)
+    /// New Collage: a floating accent pill, bottom center.
+    private var newPill: some View {
+        Button(action: onNewCollage) { pillLabel }
+            .buttonStyle(PressInButtonStyle())
+            // Soon after the screen shows, then every 20 seconds while it's
+            // up and the app is in front: the task ends when the screen goes
+            // and when the app is sent away (and starts again on return).
+            .task(id: scenePhase == .active) {
+                guard scenePhase == .active else { pillSweep = 0; pillGlow = false; return }
+                try? await Task.sleep(nanoseconds: 800_000_000)
+                while !Task.isCancelled {
+                    pillSweep = 0
+                    withAnimation(.easeInOut(duration: 0.9)) { pillSweep = 1 }
+                    withAnimation(.easeOut(duration: 0.35)) { pillGlow = true }
+                    try? await Task.sleep(nanoseconds: 650_000_000)
+                    withAnimation(.easeIn(duration: 0.5)) { pillGlow = false }
+                    try? await Task.sleep(nanoseconds: 20_000_000_000)
+                }
             }
-            // The whole tile takes the tap, not just the + and the dashed
-            // line (the box's inside is empty, so it wouldn't otherwise).
-            .contentShape(Rectangle())
+            .padding(.top, 70)
+            .padding(.bottom, 8)
+            .frame(maxWidth: .infinity)
+            .background(pillFade)
+            .transition(.move(edge: .bottom).combined(with: .opacity))
+            .accessibilityLabel("New collage")
+            .accessibilityHint("Choose photos for a new collage")
+    }
+
+    private var pillLabel: some View {
+        HStack(spacing: 14) {
+            Image(systemName: "plus")
+                .font(.system(size: 21, weight: .bold))
+            Rectangle()
+                .fill(Color.white.opacity(0.45))
+                .frame(width: 1, height: 24)
+            Text("NEW COLLAGE")
+                .font(.system(size: 18, weight: .heavy))
+                .tracking(1)
         }
-        .buttonStyle(.plain)
-        .accessibilityLabel("New collage")
-        .accessibilityHint("Choose photos for a new collage")
+        .foregroundColor(.white)
+        .padding(.horizontal, 30)
+        .frame(height: 60)
+        .background(Capsule().fill(Color.accentColor))
+        .overlay(Capsule().fill(Color.white.opacity(pillGlow ? 0.18 : 0)))
+        // A light sweeps across now and then, like the Overlay mode band's.
+        .overlay(pillSweepLight)
+        .clipShape(Capsule())
+        .contentShape(Capsule())
+    }
+
+    private var pillSweepLight: some View {
+        GeometryReader { g in
+            let band = g.size.width * 0.4
+            LinearGradient(colors: [.clear, .white.opacity(0.55), .clear], startPoint: .leading, endPoint: .trailing)
+                .frame(width: band)
+                .offset(x: -band + pillSweep * (g.size.width + band))
+        }
+        .allowsHitTesting(false)
+    }
+
+    /// The list fades out above the pill, so it always stands clear.
+    private var pillFade: some View {
+        LinearGradient(colors: [ColorManager.canvasAreaBackground.opacity(0), ColorManager.canvasAreaBackground],
+                       startPoint: .top, endPoint: UnitPoint(x: 0.5, y: 0.6))
+            .ignoresSafeArea(edges: .bottom)
     }
 
     private func tile(_ p: ProjectSummary) -> some View {
@@ -1117,15 +1192,12 @@ struct CollagesHome: View {
                 state.openProject(p.id)
             }
         } label: {
-            VStack(spacing: 8) {
-                // A square tile; the thumbnail fills it.
+            VStack(alignment: .leading, spacing: 8) {
+                // A square place; the collage sits in it on its own, no box
+                // around it.
                 Color.clear
                     .aspectRatio(1, contentMode: .fit)
                     .overlay { ProjectThumb(url: p.thumbURL, version: p.modified) }
-                    .clipShape(RoundedRectangle(cornerRadius: 14, style: .continuous))
-                    .overlay(RoundedRectangle(cornerRadius: 14, style: .continuous)
-                        .strokeBorder(Color.primary.opacity(0.1), lineWidth: 1))
-                    .shadow(color: .black.opacity(0.12), radius: 6, y: 3)
                     .overlay {
                         if isSelected {
                             RoundedRectangle(cornerRadius: 14, style: .continuous)
@@ -1143,15 +1215,18 @@ struct CollagesHome: View {
                                 .padding(8)
                         }
                     }
-                // Toned down, so the thumbnails lead.
-                Text(p.name)
-                    .font(.subheadline.weight(.semibold))
-                    .foregroundColor(.primary.opacity(0.6))
-                    .lineLimit(1)
-                Text("\(p.imageCount) photo\(p.imageCount == 1 ? "" : "s") · \(p.modified.formatted(.relative(presentation: .named)))")
-                    .font(.caption)
-                    .foregroundColor(.secondary.opacity(0.7))
-                    .lineLimit(1)
+                // Toned down, so the thumbnails lead; left-aligned, in line
+                // with the thumbnail's margin.
+                VStack(alignment: .leading, spacing: 3) {
+                    Text(p.name)
+                        .font(.subheadline.weight(.semibold))
+                        .foregroundColor(.primary.opacity(0.6))
+                    Text("\(p.modified.formatted(.relative(presentation: .named))) · \(p.contentsLabel)")
+                        .font(.caption)
+                        .foregroundColor(.secondary.opacity(0.7))
+                }
+                .lineLimit(1)
+                .padding(.horizontal, 6)
             }
             // Whole tile, even before (or without) its thumbnail.
             .contentShape(Rectangle())
@@ -1168,7 +1243,7 @@ struct CollagesHome: View {
             } label: { Label("Export…", systemImage: "square.and.arrow.up") }
             Button(role: .destructive) { removing = p } label: { Label("Remove", systemImage: "trash") }
         }
-        .accessibilityLabel("\(p.name), \(p.imageCount) photos")
+        .accessibilityLabel("\(p.name), \(p.contentsLabel)")
         .accessibilityIdentifier("collage.\(p.id.uuidString)")
         .accessibilityAddTraits(isSelected ? .isSelected : [])
     }
@@ -1194,6 +1269,19 @@ enum ProjectThumbCache {
     }
 }
 
+/// Lifted well off the list (a wide dark shadow and a tighter one); pressed,
+/// it sinks in: a few points down and right, its shadow pulled in.
+private struct PressInButtonStyle: ButtonStyle {
+    func makeBody(configuration: Configuration) -> some View {
+        let pressed = configuration.isPressed
+        configuration.label
+            .shadow(color: .black.opacity(0.7), radius: pressed ? 8 : 22, y: pressed ? 3 : 10)
+            .shadow(color: .black.opacity(0.5), radius: pressed ? 1 : 4, y: pressed ? 1 : 2)
+            .offset(x: pressed ? 2 : 0, y: pressed ? 3 : 0)
+            .animation(.easeOut(duration: 0.1), value: pressed)
+    }
+}
+
 private struct ProjectThumb: View {
     let url: URL
     let version: Date
@@ -1207,7 +1295,6 @@ private struct ProjectThumb: View {
 
     var body: some View {
         ZStack {
-            Color.primary.opacity(0.06)
             if let image = image ?? cache[key] {
                 // The whole collage, fitted (its shape shows on the tile).
                 Group {
@@ -1217,8 +1304,13 @@ private struct ProjectThumb: View {
                     Image(nsImage: image).resizable().scaledToFit()
                     #endif
                 }
-                .shadow(color: .black.opacity(0.15), radius: 3, y: 1)
-                .padding(10)
+                .shadow(color: .black.opacity(0.25), radius: 4, y: 2)
+                .padding(6)
+            } else {
+                // Until it's loaded: a faint stand-in.
+                RoundedRectangle(cornerRadius: 10, style: .continuous)
+                    .fill(Color.primary.opacity(0.06))
+                    .padding(6)
             }
         }
         .onAppear(perform: load)

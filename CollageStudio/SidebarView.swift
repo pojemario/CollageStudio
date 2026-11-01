@@ -406,61 +406,80 @@ struct ModernSlider: View {
             // One track pressed into the panel along its whole length, filled
             // part included: shaded inside from the top, a hairline rim, and
             // a light lip along its lower edge. Flat gray from its start to
-            // the knob, and a slim glowing knob.
+            // the knob, and a round knob.
             let trackH: CGFloat = 10
             let track = Capsule(style: .continuous)
             let trackShadow = ShadowStyle.inner(color: .black.opacity(isDark ? 0.6 : 0.28), radius: 1.5, y: 1)
+            // Off its default (the double-tap reset value)?
+            let target = min(max(resetValue ?? 0, range.lowerBound), range.upperBound)
+            let modified = abs(value - target) > 1e-6
+            let knob: CGFloat = isDragging ? 26 : 22
+            let grooveFill = Color.black.opacity(isDark ? 0.35 : 0.09)
+            let grooveLip = Color.white.opacity(isDark ? 0.10 : 0.85)
             ZStack(alignment: .leading) {
-                Group {
-                    if let trackColors {
-                        // A color track shows its colors in the inset.
-                        track.fill(LinearGradient(colors: trackColors, startPoint: .leading, endPoint: .trailing)
-                            .shadow(trackShadow))
-                    } else {
-                        track.fill(Color.black.opacity(isDark ? 0.35 : 0.09).shadow(trackShadow))
+                ZStack(alignment: .leading) {
+                    Group {
+                        if let trackColors {
+                            // A color track shows its colors in the inset.
+                            track.fill(LinearGradient(colors: trackColors, startPoint: .leading, endPoint: .trailing)
+                                .shadow(trackShadow))
+                        } else {
+                            track.fill(grooveFill.shadow(trackShadow))
+                        }
+                    }
+                    .overlay(track.strokeBorder(isDark ? Color.white.opacity(0.14) : Color.black.opacity(0.14),
+                                                lineWidth: 0.5))
+                    // The lip: light caught by the groove's lower edge.
+                    .background(track.fill(grooveLip).offset(y: 0.9))
+                    .frame(height: trackH)
+
+                    // Flat neutral gray from the start to the knob, clearly
+                    // darker (lighter on dark) than the empty groove.
+                    if trackColors == nil {
+                        let fillW = max(thumbX, trackH)
+                        track
+                            .fill(Color(white: isDark ? 0.62 : 0.56)
+                                .shadow(.inner(color: .black.opacity(isDark ? 0.55 : 0.35), radius: 1.5, y: 1)))
+                            .overlay(track.strokeBorder(Color.black.opacity(0.14), lineWidth: 0.5))
+                            .frame(width: fillW, height: trackH)
                     }
                 }
-                .overlay(track.strokeBorder(isDark ? Color.white.opacity(0.14) : Color.black.opacity(0.14),
-                                            lineWidth: 0.5))
-                // The lip: light caught by the groove's lower edge.
-                .background(track.fill(Color.white.opacity(isDark ? 0.10 : 0.85)).offset(y: 0.9))
-                .frame(height: trackH)
-
-                // Flat neutral gray from the start to the knob, clearly
-                // darker (lighter on dark) than the empty groove.
-                if trackColors == nil {
-                    let fillW = max(thumbX, trackH)
-                    track
-                        .fill(Color(white: isDark ? 0.62 : 0.56)
-                            .shadow(.inner(color: .black.opacity(isDark ? 0.55 : 0.35), radius: 1.5, y: 1)))
-                        .overlay(track.strokeBorder(Color.black.opacity(0.14), lineWidth: 0.5))
-                        .frame(width: fillW, height: trackH)
+                // The knob's inside is filled like the empty groove: the track
+                // is cut away under it, so that's the groove's own color, not
+                // the track showing through.
+                .mask(alignment: .leading) {
+                    ZStack(alignment: .leading) {
+                        Rectangle()
+                        Circle()
+                            .frame(width: knob, height: knob)
+                            .offset(x: thumbX - knob / 2)
+                            .blendMode(.destinationOut)
+                    }
+                    .compositingGroup()
                 }
 
-                // Soft glow around the knob: accent once the value is off its
-                // default (the double-tap reset value), neutral gray at it.
-                let target = min(max(resetValue ?? 0, range.lowerBound), range.upperBound)
-                let modified = abs(value - target) > 1e-6
-                let glow = modified ? Color.accentColor : Color(white: isDark ? 0.75 : 0.35)
-                Circle()
-                    .fill(glow.opacity(isDragging ? 0.45 : 0.28))
-                    .frame(width: 24, height: 24)
-                    .blur(radius: 7)
-                    .offset(x: thumbX - 12)
-                    .allowsHitTesting(false)
-
-                // A round knob, a little bigger while dragged.
-                let knob: CGFloat = isDragging ? 26 : 22
-                Circle()
-                    // Warm cream when changed, plain white-gray at the default.
-                    .fill(LinearGradient(colors: [Color(white: 1),
-                                                  modified ? Color(red: 1, green: 0.95, blue: 0.86) : Color(white: 0.93)],
-                                         startPoint: .top, endPoint: .bottom))
-                    .overlay(Circle().strokeBorder(Color.black.opacity(0.12), lineWidth: 0.5))
-                    .frame(width: knob, height: knob)
-                    .shadow(color: glow.opacity(modified ? 0.8 : 0.5), radius: isDragging ? 6 : 4)
-                    .shadow(color: .black.opacity(0.25), radius: 1.5, y: 1)
-                    .offset(x: thumbX - knob / 2)
+                // A round knob, a little bigger while dragged, no glow: a
+                // white ring filled like the empty groove (its own two layers:
+                // the light lip shows through the see-through fill); once a
+                // value is set, a white dot inside it too, a small gap from
+                // the ring, so changed and untouched sliders read at a glance.
+                // (No shadow under the see-through inside: it would darken
+                // it; only the ring casts one.)
+                ZStack {
+                    Circle()
+                        .fill(grooveFill)
+                        .background(Circle().fill(grooveLip))
+                    Circle()
+                        .strokeBorder(Color.white, lineWidth: 3.5)
+                        .shadow(color: .black.opacity(0.3), radius: 1, y: 0.5)
+                    if modified {
+                        Circle()
+                            .fill(Color.white)
+                            .padding(3.5 + 1.5)
+                    }
+                }
+                .frame(width: knob, height: knob)
+                .offset(x: thumbX - knob / 2)
             }
             .frame(maxHeight: .infinity, alignment: .leading)
             .contentShape(Rectangle())
@@ -679,11 +698,12 @@ struct LabeledSlider: View {
             .accessibleSlider(value: $value, range: range, step: step, label: label, resetValue: resetValue)
     }
 
-    /// The value, signed on two-way sliders ("+12").
+    /// The value: only a minus shows a sign (no "+" on two-way sliders).
     private func valueBox(width: CGFloat) -> some View {
-        let text = String(format: format, value)
-        let signed = range.lowerBound < 0 && value > 0 && !text.hasPrefix("+") ? "+" + text : text
-        return Text(signed)
+        var text = String(format: format, value)
+        // A value just under zero rounds to "-0": no sign on a zero.
+        if text.hasPrefix("-"), Double(text.filter { "0123456789.".contains($0) }) == 0 { text.removeFirst() }
+        return Text(text)
             .font(.system(size: 13, weight: resetArmed ? .bold : .medium, design: .monospaced))
             .foregroundColor(resetArmed ? .accentColor : .primary.opacity(0.55))
             .lineLimit(1)
