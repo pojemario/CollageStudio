@@ -139,16 +139,14 @@ struct ImageBoxView: View {
                     Group {
                         if state.selectedImageId == imageId, !state.isRenderingOffscreen,
                            state.draggingId == nil {
-                            // Dotted, in the accent: round dots, each with a
-                            // thin white rim so they show on any photo.
+                            // Dotted, no rim or shadow, in difference mode
+                            // (like an overlay's outline): it inverts what's
+                            // under it — dark on a light photo, light on a
+                            // dark one.
                             let shape = RoundedRectangle(cornerRadius: state.cornerRadius * scale)
-                            let dots = StrokeStyle(lineWidth: 4, lineCap: .round, dash: [0.01, 8])
-                            ZStack {
-                                shape.inset(by: 4).stroke(Color.white.opacity(0.95),
-                                                          style: StrokeStyle(lineWidth: 6.5, lineCap: .round, dash: [0.01, 8]))
-                                shape.inset(by: 4).stroke(Color.accentColor, style: dots)
-                            }
-                            .shadow(color: .black.opacity(0.3), radius: 1.5)
+                            shape.inset(by: 2.5)
+                                .stroke(Color.white, style: StrokeStyle(lineWidth: 3, lineCap: .round, dash: [0.01, 6.5]))
+                                .blendMode(.difference)
                             // All of it inside the box: the shadow falls
                             // inward only, nothing past the box's edge.
                             .clipShape(shape)
