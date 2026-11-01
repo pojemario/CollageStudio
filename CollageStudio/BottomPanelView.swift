@@ -382,6 +382,29 @@ struct PhotoToolsRow: View {
     /// Every tool keeps its place; one that doesn't apply to this box (a
     /// text box can't be cut out, say) is hidden, so the others never move.
     private var tools: some View {
+        Group {
+            if image.isText { textTools } else { imageTools }
+        }
+        .transition(.opacity)
+    }
+
+    /// A text box: Close | Edit, Move … Remove — in the photo tools' slots
+    /// (the empty ones kept), so the row reads the same.
+    private var textTools: some View {
+        HStack(spacing: 0) {
+            tool("Close", sf: "xmark") { state.selectImage(nil) }
+            Rectangle().fill(Self.separator).frame(width: 1, height: 30)
+            tool("Edit", sf: "slider.horizontal.3") { state.openTextEditor(id: image.id) }
+            tool("Move", sf: "arrow.up.right.square", available: canMove) { moving = true }
+            ForEach(0..<3, id: \.self) { _ in Color.clear.frame(maxWidth: .infinity, maxHeight: 1) }
+            tool("Remove", sf: "trash", tint: Self.removeTint) {
+                state.selectImage(nil)
+                state.removeImage(id: image.id)
+            }
+        }
+    }
+
+    private var imageTools: some View {
         HStack(spacing: 0) {
             tool("Close", sf: "xmark") { state.selectImage(nil) }
             // Sets Close apart from the photo's tools.
@@ -399,16 +422,12 @@ struct PhotoToolsRow: View {
             tool("Reset", sf: "arrow.counterclockwise", available: isPhoto) {
                 withAnimation(.easeInOut(duration: 0.2)) { state.resetTransform(id: image.id) }
             }
-            // A photo's edits, or a text box's editor (the same as its pencil).
-            tool("Edit", sf: "slider.horizontal.3", available: isPhoto || image.isText) {
-                if image.isText { state.openTextEditor(id: image.id) } else { state.beginPhotoEdit(id: image.id) }
-            }
+            tool("Edit", sf: "slider.horizontal.3", available: isPhoto) { state.beginPhotoEdit(id: image.id) }
             tool("Remove", sf: "trash", tint: Self.removeTint) {
                 state.selectImage(nil)
                 state.removeImage(id: image.id)
             }
         }
-        .transition(.opacity)
     }
 
     /// Where the photo can go: each page with room, or a new one.
