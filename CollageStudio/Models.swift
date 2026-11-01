@@ -971,6 +971,9 @@ struct OverlayLayer: Identifiable, Equatable {
     /// On a carousel strip, the slide it fills (and is cut to); nil: the
     /// whole canvas.
     var slide: Int? = nil
+    /// Hidden (a long press on its layer): kept with all its settings, but
+    /// not drawn on the canvas or in the export.
+    var isHidden = false
 
     /// Drawn long edge limits, in canvas pixels — the failsafe that keeps a
     /// texture from being pinched into a speck or blown up past recognition.
@@ -1558,8 +1561,8 @@ enum ColorFilter: Hashable, Identifiable {
     case lut(String)
 
     /// The built-in looks, in tile order.
-    static let builtIns: [ColorFilter] = [.none, .amber, .amber2, .heritage, .tealSplit, .brownie, .melancholy, .classicNegative,
-                                          .classicNegative2, .portra400, .ginger, .tealOrange]
+    static let builtIns: [ColorFilter] = [.none, .amber, .amber2, .heritage, .tealSplit, .tealOrange, .ginger, .brownie,
+                                          .melancholy, .classicNegative, .classicNegative2, .portra400]
     /// Every filter offered: built-ins, then the bundled LUTs.
     static var allCases: [ColorFilter] { groups.flatMap(\.filters) }
 

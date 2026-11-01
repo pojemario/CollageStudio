@@ -565,11 +565,17 @@ class CollageState: ObservableObject {
     }
 
     func visibleOverlays(aboveFrame: Bool) -> [OverlayLayer] {
-        var layers = overlayLayers.filter { $0.aboveFrame == aboveFrame }
+        var layers = overlayLayers.filter { $0.aboveFrame == aboveFrame && !$0.isHidden }
         if let preview = overlayPreview, preview.aboveFrame == aboveFrame, !isExporting {
             layers.append(preview)
         }
         return layers
+    }
+
+    /// A long press on a layer hides it, or shows it again.
+    func toggleOverlayHidden(id: UUID) {
+        guard let idx = overlayLayers.firstIndex(where: { $0.id == id }) else { return }
+        overlayLayers[idx].isHidden.toggle()
     }
 
     /// Tapping a texture adds it as a layer right away (and selects it for
