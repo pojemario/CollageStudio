@@ -170,8 +170,12 @@ struct ExportOptionsView: View {
             .navigationTitle("Export Options")
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
-                ToolbarItem(placement: .cancellationAction) {
-                    Button("Cancel") { dismiss() }
+                // An X on the right, where a right thumb reaches it.
+                ToolbarItem(placement: .topBarTrailing) {
+                    Button { dismiss() } label: {
+                        Image(systemName: "xmark")
+                    }
+                    .accessibilityLabel("Close")
                 }
             }
             // Where it goes: straight into Photos, or the share sheet
