@@ -61,6 +61,86 @@ private struct ToolbarPillGlass: View {
     }
 }
 
+/// The phone's action bar, just above the tabs (or the open panel): undo
+/// and redo on the left, the pager in the middle, compare, full screen and
+/// export on the right — in thumb reach, with no toolbar over the collage.
+/// In overlay mode the OVERLAY MODE band takes its place.
+struct ActionBar: View {
+    @EnvironmentObject var state: CollageState
+    static let height: CGFloat = 44
+
+    var body: some View {
+        ZStack {
+            if state.overlayModeActive {
+                OverlayModeLabel()
+                    .frame(width: state.canvasShownWidth > 0 ? state.canvasShownWidth : nil)
+                    .transition(.opacity)
+            } else {
+                HStack(spacing: 8) {
+                    // Only what can be used now: undo / redo while there's
+                    // something to undo / redo, compare while there are edits.
+                    if state.canUndo || state.canRedo {
+                        HStack(spacing: 0) {
+                            if state.canUndo { historyButton("arrow.uturn.backward", "Undo") { state.undo() } }
+                            // Both there: a thin line between them.
+                            if state.canUndo && state.canRedo {
+                                Rectangle()
+                                    .fill(Color.primary.opacity(0.25))
+                                    .frame(width: 1, height: 20)
+                            }
+                            if state.canRedo { historyButton("arrow.uturn.forward", "Redo") { state.redo() } }
+                        }
+                        // No side padding: one button alone sits in a
+                        // perfect circle (40 × 40).
+                        .frame(height: 40)
+                        .background { ToolbarPillGlass() }
+                        .transition(.opacity.combined(with: .scale(scale: 0.8)))
+                    }
+                    Spacer(minLength: 0)
+                    HStack(spacing: 0) {
+                        if state.slides > 1 { SpreadZoomButton() }
+                        if state.hasLookEdits { CompareButton().transition(.opacity) }
+                        Button { state.enterFullScreen() } label: {
+                            Image(systemName: "arrow.up.left.and.arrow.down.right")
+                                .font(.system(size: 16, weight: .medium))
+                                .foregroundColor(.primary)
+                                .frame(width: 40, height: 44)
+                                .contentShape(Rectangle())
+                        }
+                        .buttonStyle(.plain)
+                        .accessibilityLabel("Full screen")
+                    }
+                    .padding(.horizontal, 3)
+                    .frame(height: 40)
+                    .background { ToolbarPillGlass() }
+                }
+                // The pager in the middle of the row, whatever the sides hold.
+                .overlay {
+                    PageTabBar()
+                }
+                .transition(.opacity)
+            }
+        }
+        .frame(height: Self.height)
+        .animation(.easeInOut(duration: 0.2), value: state.overlayModeActive)
+        .animation(.spring(response: 0.3, dampingFraction: 0.85), value: state.canUndo)
+        .animation(.spring(response: 0.3, dampingFraction: 0.85), value: state.canRedo)
+        .animation(.easeInOut(duration: 0.2), value: state.hasLookEdits)
+    }
+
+    private func historyButton(_ sf: String, _ label: String, action: @escaping () -> Void) -> some View {
+        Button(action: action) {
+            Image(systemName: sf)
+                .font(.system(size: 15, weight: .medium))
+                .foregroundColor(.primary)
+                .frame(width: 40, height: 40)
+                .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
+        .accessibilityLabel(label)
+    }
+}
+
 struct OverlayModeLabel: View {
     private static let title = "OVERLAY MODE"
     private static let note = "Gestures move overlays, not photos"
@@ -426,8 +506,6 @@ struct ContentView: View {
             }
             #endif
         }
-        // Redo, dropped down below the toolbar's Undo button.
-        .overlay { RedoBubbleLayer() }
         #if DEBUG
         .overlay(alignment: .topLeading) {
             if UITest.isOn { UITestProbe() }
@@ -456,12 +534,12 @@ struct ContentView: View {
         .onChange(of: state.currentPageIndex) { _, _ in state.selectImage(nil) }
         // "Undo" / "Redo" after a shake.
         .overlay(alignment: .top) {
-            HistoryToast().padding(.top, 70)
+            HistoryToast().padding(.top, state.hasAnyImages ? 16 : 70)
         }
         .animation(.easeInOut(duration: 0.25), value: state.overlayModeActive)
         .overlay(alignment: .top) {
             if state.saveFailed && state.hasAnyImages && !state.toolbarHidden {
-                SaveFailedBanner().padding(.top, 54).padding(.horizontal, 16)
+                SaveFailedBanner().padding(.top, 8).padding(.horizontal, 16)
                     .transition(.move(edge: .top).combined(with: .opacity))
             }
         }
@@ -673,7 +751,8 @@ struct ContentView: View {
     /// How tall the panel may grow: up to just under the pager (or the
     /// toolbar).
     private func updatePanelLimit() {
-        let limit = (state.pages.count > 1 ? max(pagerBottomY, canvasTopY) : canvasTopY) + 8
+        // Room above it for the action bar over the canvas's top.
+        let limit = canvasTopY + 8 + ActionBar.height + 6
         guard limit.differs(from: state.panelTopLimitY) else { return }
         Diagnostics.count("panelTopLimitY")
         state.panelTopLimitY = limit
@@ -681,25 +760,15 @@ struct ContentView: View {
 
     var iPhoneLayout: some View {
         VStack(spacing: 0) {
-            if !state.toolbarHidden {
-                // Overlay mode: the toolbar gives way to the OVERLAY MODE
-                // band, in the same place and size, so nothing below moves.
-                let overlayMode = state.overlayModeActive && state.hasAnyImages
+            if !state.toolbarHidden && !state.hasAnyImages {
+                // Only on the Collages screen (logo, ratio): a collage being
+                // edited starts right under the status bar, its controls in
+                // the action bar above the tabs.
                 toolbar
-                    .opacity(overlayMode ? 0 : 1)
-                    .allowsHitTesting(!overlayMode)
-                    .accessibilityHidden(overlayMode)
-                    .overlay {
-                        if overlayMode {
-                            // As wide as the collage below it.
-                            OverlayModeLabel()
-                                .frame(width: state.canvasShownWidth > 0 ? state.canvasShownWidth : nil)
-                                .transition(.opacity)
-                        }
-                    }
-                    .animation(.easeInOut(duration: 0.2), value: overlayMode)
                     // A thin gap above the canvas.
                     .padding(.bottom, 6)
+            } else if !state.toolbarHidden {
+                Color.clear.frame(height: 6)
             }
             // Ratio panel takes real layout space, so the canvas below
             // resizes and shows the chosen ratio exactly
@@ -743,19 +812,20 @@ struct ContentView: View {
             }
             // Floating page counter pill over the top of the canvas.
             .animation(.spring(response: 0.3, dampingFraction: 0.85), value: state.selectedImageId)
+            // The action bar, floating over the top of the canvas (where the
+            // pager was); the panel stops just under it.
             .overlay(alignment: .top) {
-                if !state.toolbarHidden {
-                    PageTabBar().padding(.top, 2)
+                if state.hasAnyImages && !state.chromeHidden {
+                    ActionBar()
+                        .padding(.horizontal, 12)
                         .onGeometryChange(for: CGRect.self) { $0.frame(in: .global) } action: { f in
-                            pagerBottomY = f.maxY
-                            let frame = state.pictureCount > 1 ? f : .zero
-                            guard frame.differs(from: state.pagerFrame) else { return }
+                            guard f.differs(from: state.pagerFrame) else { return }
                             Diagnostics.count("pagerFrame")
-                            state.pagerFrame = frame
+                            state.pagerFrame = f
                         }
-                        .onChange(of: state.pictureCount > 1) { _, shown in
-                            if !shown { state.pagerFrame = .zero }
-                        }
+                        .onDisappear { state.pagerFrame = .zero }
+                        .panelChrome(state)
+                        .transition(.opacity)
                 }
             }
             // The panel may grow up to just under the pager (or the toolbar).

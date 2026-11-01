@@ -250,30 +250,7 @@ struct CanvasContainerView: View {
                 .animation(.easeInOut(duration: 0.12), value: state.compareOriginal)
                 .allowsHitTesting(false)
             }
-            // Round buttons on the pager's line, filling in from the right:
-            // hold to see the collage without its edits, effects and filter;
-            // on a spread page, zoom out to the whole spread or in to a post.
-            .overlay(alignment: .topTrailing) {
-                // Not in overlay mode: there the gestures belong to the overlay.
-                let compare = state.hasAnyImages && state.hasLookEdits && !state.overlayModeActive
-                let spread = state.hasAnyImages && state.slides > 1
-                if !state.toolbarHidden && (compare || spread) {
-                    HStack(spacing: 8) {
-                        if spread { SpreadZoomButton().transition(.opacity) }
-                        if compare { CompareButton().transition(.opacity) }
-                    }
-                    // Centered on the pager's line (pager: 40 tall, 2 down).
-                    .padding(.top, 3)
-                    .onGeometryChange(for: CGRect.self) { $0.frame(in: .global) } action: { f in
-                        guard f.differs(from: state.compareButtonFrame) else { return }
-                        Diagnostics.count("compareButtonFrame")
-                        state.compareButtonFrame = f
-                    }
-                    .onDisappear { state.compareButtonFrame = .zero }
-                    .padding(.trailing, 10)
-                    .transition(.opacity)
-                }
-            }
+            // (Compare and the spread zoom are in the action bar, ContentView.)
             .animation(.easeInOut(duration: 0.2), value: state.slides > 1)
             .animation(.easeInOut(duration: 0.2), value: state.hasLookEdits)
             .onChange(of: photoItems) { _, newItems in
@@ -352,7 +329,7 @@ struct CanvasContainerView: View {
 
 /// Press and hold: the collage without its edits, effects and filter.
 /// On a spread page: the whole spread at once, or one post at a time.
-private struct SpreadZoomButton: View {
+struct SpreadZoomButton: View {
     @EnvironmentObject var state: CollageState
 
     var body: some View {
@@ -365,28 +342,27 @@ private struct SpreadZoomButton: View {
             Image(systemName: whole ? "plus.magnifyingglass" : "minus.magnifyingglass")
                 .font(.system(size: 15, weight: .semibold))
                 .foregroundColor(.primary)
-                .frame(width: 38, height: 38)
-                .background(Circle().fill(.ultraThinMaterial))
-                .overlay(Circle().strokeBorder(ColorManager.glassStroke, lineWidth: 0.8))
-                .shadow(color: .black.opacity(0.15), radius: 6, y: 2)
-                .contentShape(Circle())
+                // Plain, in the action bar's pill.
+                .frame(width: 40, height: 44)
+                .contentShape(Rectangle())
         }
         .buttonStyle(.plain)
         .accessibilityLabel(whole ? "One post at a time" : "Whole spread")
     }
 }
 
-private struct CompareButton: View {
+struct CompareButton: View {
     @EnvironmentObject var state: CollageState
     @GestureState private var holding = false
 
     var body: some View {
         BeforeAfterIcon()
             .foregroundColor(holding ? .white : .primary)
-            .frame(width: 38, height: 38)
-            .background(Circle().fill(holding ? AnyShapeStyle(Color.accentColor) : AnyShapeStyle(.ultraThinMaterial)))
-            .overlay(Circle().strokeBorder(ColorManager.glassStroke, lineWidth: 0.8))
-            .shadow(color: .black.opacity(0.15), radius: 6, y: 2)
+            // Plain in the action bar's pill; an accent disc while held.
+            .frame(width: 34, height: 34)
+            .background(Circle().fill(holding ? Color.accentColor : Color.clear))
+            .frame(width: 40, height: 44)
+            .contentShape(Rectangle())
             .scaleEffect(holding ? 0.92 : 1)
             .animation(.spring(response: 0.25, dampingFraction: 0.7), value: holding)
             .gesture(

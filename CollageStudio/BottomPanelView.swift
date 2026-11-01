@@ -65,16 +65,24 @@ struct FloatingTabBar: View {
 
     var body: some View {
         HStack(spacing: 0) {
-            ForEach(Self.tabs.indices, id: \.self) { i in
-                tabLabel(i)
+            HStack(spacing: 0) {
+                ForEach(Self.tabs.indices, id: \.self) { i in
+                    tabLabel(i)
+                }
             }
+            .background(alignment: .leading) { lens }
+            .onGeometryChange(for: CGFloat.self) { $0.size.width } action: { rowWidth = $0 }
+            .coordinateSpace(.named(Self.rowSpace))
+            .contentShape(Rectangle())
+            .gesture(scrubGesture)
+            .layoutPriority(1)
+            // Last in the row: Export (an action, not a tab).
+            exportButton
         }
-        .background(alignment: .leading) { lens }
-        .onGeometryChange(for: CGFloat.self) { $0.size.width } action: { rowWidth = $0 }
-        .coordinateSpace(.named(Self.rowSpace))
         // A selected photo's tools stand in for the tabs.
         .opacity(photoTools ? 0 : 1)
         .offset(y: photoTools ? 12 : 0)
+        .allowsHitTesting(!photoTools)
         .accessibilityHidden(photoTools)
         .overlay {
             if let image = state.selectedImage, photoTools {
@@ -92,9 +100,6 @@ struct FloatingTabBar: View {
         .animation(.spring(response: 0.3, dampingFraction: 0.85), value: photoTools)
         .padding(.vertical, Self.rowInset)
         .padding(.horizontal, 10)
-        .contentShape(Rectangle())
-        // (Off while the photo tools show: their buttons take the touches.)
-        .gesture(scrubGesture, including: photoTools ? .subviews : .all)
         .background {
             if !merged { pillGlass }
         }
@@ -118,6 +123,26 @@ struct FloatingTabBar: View {
         .animation(.easeInOut(duration: 0.25), value: merged)
         .padding(.horizontal, 10)
         .padding(.bottom, Self.bottomMargin)
+    }
+
+    /// Export, styled like a tab, after the tabs.
+    private var exportButton: some View {
+        Button { state.showExportOptions = true } label: {
+            VStack(spacing: 3) {
+                Image(systemName: "square.and.arrow.up")
+                    .font(.system(size: 19, weight: .regular))
+                    .frame(height: 24)
+                Text("Export")
+                    .font(.system(size: 9.5, weight: .semibold))
+                    .lineLimit(1)
+                    .minimumScaleFactor(0.8)
+            }
+            .foregroundStyle(Color.primary.opacity(0.72))
+            .frame(width: 58, height: Self.tabHeight)
+            .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
+        .accessibilityLabel("Export")
     }
 
     private func tabLabel(_ i: Int) -> some View {
@@ -795,6 +820,23 @@ struct BottomPanelView: View {
             HStack(spacing: 8) {
                 // Back to the Collages screen (the open one is saved).
                 ToolbarTile(sf: "square.stack", title: "Collages", prominent: false) { state.goToCollages() }
+
+                // The canvas ratio, ticked; Custom only for a collage already
+                // in one.
+                Menu {
+                    Picker("Ratio", selection: Binding(get: { state.ratio }, set: { state.setRatio($0) })) {
+                        ForEach(CanvasRatio.allCases.filter { $0 != .custom || state.ratio == .custom }) { r in
+                            Text(r.rawValue.replacingOccurrences(of: ":", with: " × ")).tag(r)
+                        }
+                    }
+                } label: {
+                    ToolbarTileLabel(prominent: false, title: "Ratio \(state.ratio.rawValue.replacingOccurrences(of: ":", with: "×"))") {
+                        Image(systemName: "aspectratio")
+                    }
+                }
+                .menuOrder(.fixed)
+                .buttonStyle(.plain)
+                .accessibilityLabel("Canvas ratio, \(state.ratio.rawValue.replacingOccurrences(of: ":", with: " by "))")
 
                 // Everything that adds to the collage, in one menu: a page, a
                 // text box, a spacer (an intentional empty slot) — top to
