@@ -312,7 +312,7 @@ struct ImageBoxView: View {
                     // Always there, except when only the collage is showing.
                     if imgData?.isText == true, !state.isRenderingOffscreen, !state.toolbarHidden {
                         TextEditButton(active: state.textEditTargetId == imageId) {
-                            state.beginEditText(id: imageId)
+                            state.openTextEditor(id: imageId)
                         }
                         .padding(Self.editButtonInset)
                     }

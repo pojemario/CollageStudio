@@ -1485,6 +1485,9 @@ class CollageState: ObservableObject {
     func selectImage(_ id: UUID?, keepTab: Bool = false) {
         lastBoxTap = Date()
         guard id != selectedImageId else { return }
+        // A text editor that's just opening keeps the panel: a stray tap
+        // selecting a box now would close it (see openTextEditor).
+        if id != nil, textEditJustOpened { return }
         if id != nil {
             endTextEditing()
             endProtrusionEditing()
@@ -1652,6 +1655,21 @@ class CollageState: ObservableObject {
         if currentPage.images.contains(where: { $0.id == image.id }) {
             focusTextOnOpen = true
             beginEditText(id: image.id)
+        }
+    }
+
+    /// Edit on a text box — its pencil on the collage, or Edit in the
+    /// selection's tools — goes through here, so both act alike: the
+    /// selection is let go first, then the editor opens last, on the next
+    /// tick. The tap that got here may also reach the box and the canvas (in
+    /// no set order); for a moment those stand down (textEditJustOpened), so
+    /// none of them can flip the selection back and close the editor.
+    func openTextEditor(id: UUID) {
+        lastTextTap = Date()
+        if selectedImageId != nil { selectImage(nil, keepTab: true) }
+        DispatchQueue.main.async { [self] in
+            guard images.contains(where: { $0.id == id }) else { return }
+            beginEditText(id: id)
         }
     }
 
@@ -1919,12 +1937,12 @@ class CollageState: ObservableObject {
     /// when the tap just opened a text box.
     private var lastTextTap: Date = .distantPast
     /// A text box's editor was opened by the tap being handled now.
-    var textEditJustOpened: Bool { Date().timeIntervalSince(lastTextTap) < 0.25 }
+    var textEditJustOpened: Bool { Date().timeIntervalSince(lastTextTap) < 0.4 }
 
     /// Canvas taps dismiss whatever is open: text editing, panel, ratio sheet.
     func handleCanvasTap() {
         DispatchQueue.main.async { [self] in
-            guard Date().timeIntervalSince(lastTextTap) > 0.25 else { return }
+            guard !textEditJustOpened else { return }
             // A tab's panel put away this way lets go of the tab too, as a
             // second tap on the tab does.
             let tabPanel = isPanelOpen && textEditTargetId == nil && protrusionTargetId == nil

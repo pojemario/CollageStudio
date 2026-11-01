@@ -399,7 +399,10 @@ struct PhotoToolsRow: View {
             tool("Reset", sf: "arrow.counterclockwise", available: isPhoto) {
                 withAnimation(.easeInOut(duration: 0.2)) { state.resetTransform(id: image.id) }
             }
-            tool("Edit", sf: "slider.horizontal.3", available: isPhoto) { state.beginPhotoEdit(id: image.id) }
+            // A photo's edits, or a text box's editor (the same as its pencil).
+            tool("Edit", sf: "slider.horizontal.3", available: isPhoto || image.isText) {
+                if image.isText { state.openTextEditor(id: image.id) } else { state.beginPhotoEdit(id: image.id) }
+            }
             tool("Remove", sf: "trash", tint: Self.removeTint) {
                 state.selectImage(nil)
                 state.removeImage(id: image.id)
