@@ -77,14 +77,28 @@ struct ActionBar: View {
                     .transition(.opacity)
             } else {
                 HStack(spacing: 8) {
-                    UndoRedoButtons(size: 40)
+                    // Only what can be used now: undo / redo while there's
+                    // something to undo / redo, compare while there are edits.
+                    if state.canUndo || state.canRedo {
+                        HStack(spacing: 0) {
+                            if state.canUndo { historyButton("arrow.uturn.backward", "Undo") { state.undo() } }
+                            // Both there: a thin line between them.
+                            if state.canUndo && state.canRedo {
+                                Rectangle()
+                                    .fill(Color.primary.opacity(0.25))
+                                    .frame(width: 1, height: 20)
+                            }
+                            if state.canRedo { historyButton("arrow.uturn.forward", "Redo") { state.redo() } }
+                        }
                         .padding(.horizontal, 3)
                         .frame(height: 40)
                         .background { ToolbarPillGlass() }
+                        .transition(.opacity.combined(with: .scale(scale: 0.8)))
+                    }
                     Spacer(minLength: 0)
                     HStack(spacing: 0) {
                         if state.slides > 1 { SpreadZoomButton() }
-                        if state.hasLookEdits { CompareButton() }
+                        if state.hasLookEdits { CompareButton().transition(.opacity) }
                         Button { state.enterFullScreen() } label: {
                             Image(systemName: "arrow.up.left.and.arrow.down.right")
                                 .font(.system(size: 16, weight: .medium))
@@ -94,15 +108,6 @@ struct ActionBar: View {
                         }
                         .buttonStyle(.plain)
                         .accessibilityLabel("Full screen")
-                        Button { state.showExportOptions = true } label: {
-                            Image(systemName: "square.and.arrow.up")
-                                .font(.system(size: 17, weight: .medium))
-                                .foregroundColor(.primary)
-                                .frame(width: 40, height: 44)
-                                .contentShape(Rectangle())
-                        }
-                        .buttonStyle(.plain)
-                        .accessibilityLabel("Export")
                     }
                     .padding(.horizontal, 3)
                     .frame(height: 40)
@@ -117,6 +122,21 @@ struct ActionBar: View {
         }
         .frame(height: Self.height)
         .animation(.easeInOut(duration: 0.2), value: state.overlayModeActive)
+        .animation(.spring(response: 0.3, dampingFraction: 0.85), value: state.canUndo)
+        .animation(.spring(response: 0.3, dampingFraction: 0.85), value: state.canRedo)
+        .animation(.easeInOut(duration: 0.2), value: state.hasLookEdits)
+    }
+
+    private func historyButton(_ sf: String, _ label: String, action: @escaping () -> Void) -> some View {
+        Button(action: action) {
+            Image(systemName: sf)
+                .font(.system(size: 15, weight: .medium))
+                .foregroundColor(.primary)
+                .frame(width: 40, height: 44)
+                .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
+        .accessibilityLabel(label)
     }
 }
 
