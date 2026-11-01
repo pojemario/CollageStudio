@@ -281,15 +281,18 @@ struct PictureDots: View {
                     HStack(spacing: 4) {
                         ForEach(posts, id: \.self) { k in
                             let on = onScreen.contains(k)
-                            let edge = (k == shown.lowerBound && k > 0)
-                                || (k == shown.upperBound - 1 && k < count - 1)
-                            // The post on screen: bigger, in full strength
-                            // (white on a dark screen), not the accent.
-                            let d: CGFloat = on ? 9.5 : edge ? 3.5 : 5.5
-                            Circle()
-                                .fill(on ? Color.primary : Color.primary.opacity(Self.idleOpacity(colorScheme)))
-                                .frame(width: d, height: d)
-                                .frame(width: 9.5, height: 9.5)
+                            // All one size: the post on screen filled, in
+                            // full strength (white on a dark screen), the
+                            // others outlined rings.
+                            ZStack {
+                                if on {
+                                    Circle().fill(Color.primary)
+                                } else {
+                                    Circle().strokeBorder(Color.primary.opacity(Self.idleOpacity(colorScheme)),
+                                                          lineWidth: 1.3)
+                                }
+                            }
+                            .frame(width: 8, height: 8)
                         }
                     }
                     .padding(n > 1 ? 2 : 0)
