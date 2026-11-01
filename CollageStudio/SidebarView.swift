@@ -1156,10 +1156,6 @@ struct LayoutPanel: View {
 
     private var canvasPage: some View {
         VStack(spacing: LabeledSlider.inlineRowSpacing) {
-            // The canvas ratio (on the phone it left the toolbar for here).
-            RatioPanelView()
-                .panelChrome(state)
-                .padding(.bottom, 4)
             LabeledSlider(label: "Margin", value: $state.canvasMargin, range: -100...100, step: 1, format: "%.0f",
                           resetValue: 0)
             LabeledSlider(label: "Rotation", value: $state.canvasRotation, range: -15...15, step: 0.1, format: "%.1f°",

@@ -730,7 +730,7 @@ struct ContentView: View {
     /// How tall the panel may grow: up to just under the pager (or the
     /// toolbar).
     private func updatePanelLimit() {
-        // Room above it for the action bar, which rides on the panel.
+        // Room above it for the action bar over the canvas's top.
         let limit = canvasTopY + 8 + ActionBar.height + 6
         guard limit.differs(from: state.panelTopLimitY) else { return }
         Diagnostics.count("panelTopLimitY")
@@ -791,30 +791,20 @@ struct ContentView: View {
             }
             // Floating page counter pill over the top of the canvas.
             .animation(.spring(response: 0.3, dampingFraction: 0.85), value: state.selectedImageId)
-            // The action bar: just above the tabs, or riding on top of the
-            // open panel; out of the way while the panel is dragged.
-            .overlay {
+            // The action bar, floating over the top of the canvas (where the
+            // pager was); the panel stops just under it.
+            .overlay(alignment: .top) {
                 if state.hasAnyImages && !state.chromeHidden {
-                    GeometryReader { geo in
-                        let originY = geo.frame(in: .global).minY
-                        let open = state.isPanelOpen && state.panelTopGlobalY > 0
-                        let bottom = open ? state.panelTopGlobalY - originY - 6
-                                          : geo.size.height - FloatingTabBar.zoneHeight - 2
-                        ActionBar()
-                            .padding(.horizontal, 12)
-                            .frame(width: geo.size.width)
-                            .position(x: geo.size.width / 2, y: bottom - ActionBar.height / 2)
-                            .onGeometryChange(for: CGRect.self) { $0.frame(in: .global) } action: { f in
-                                guard f.differs(from: state.pagerFrame) else { return }
-                                Diagnostics.count("pagerFrame")
-                                state.pagerFrame = f
-                            }
-                            .onDisappear { state.pagerFrame = .zero }
-                    }
-                    .opacity(state.isPanelDragging || state.panelDrag != 0 ? 0 : 1)
-                    .panelChrome(state)
-                    .animation(.easeInOut(duration: 0.25), value: state.isPanelOpen)
-                    .transition(.opacity)
+                    ActionBar()
+                        .padding(.horizontal, 12)
+                        .onGeometryChange(for: CGRect.self) { $0.frame(in: .global) } action: { f in
+                            guard f.differs(from: state.pagerFrame) else { return }
+                            Diagnostics.count("pagerFrame")
+                            state.pagerFrame = f
+                        }
+                        .onDisappear { state.pagerFrame = .zero }
+                        .panelChrome(state)
+                        .transition(.opacity)
                 }
             }
             // The panel may grow up to just under the pager (or the toolbar).

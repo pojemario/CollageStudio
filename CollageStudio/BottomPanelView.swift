@@ -796,6 +796,23 @@ struct BottomPanelView: View {
                 // Back to the Collages screen (the open one is saved).
                 ToolbarTile(sf: "square.stack", title: "Collages", prominent: false) { state.goToCollages() }
 
+                // The canvas ratio, ticked; Custom only for a collage already
+                // in one.
+                Menu {
+                    Picker("Ratio", selection: Binding(get: { state.ratio }, set: { state.setRatio($0) })) {
+                        ForEach(CanvasRatio.allCases.filter { $0 != .custom || state.ratio == .custom }) { r in
+                            Text(r.rawValue.replacingOccurrences(of: ":", with: " × ")).tag(r)
+                        }
+                    }
+                } label: {
+                    ToolbarTileLabel(prominent: false, title: "Ratio \(state.ratio.rawValue.replacingOccurrences(of: ":", with: "×"))") {
+                        Image(systemName: "aspectratio")
+                    }
+                }
+                .menuOrder(.fixed)
+                .buttonStyle(.plain)
+                .accessibilityLabel("Canvas ratio, \(state.ratio.rawValue.replacingOccurrences(of: ":", with: " by "))")
+
                 // Everything that adds to the collage, in one menu: a page, a
                 // text box, a spacer (an intentional empty slot) — top to
                 // bottom whichever way the menu opens.
