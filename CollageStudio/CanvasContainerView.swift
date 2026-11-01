@@ -189,7 +189,9 @@ struct CanvasContainerView: View {
             // While images load, a subtle gray spinner (over the start
             // screen too, after photos are picked or a collage is opened).
             .overlay {
-                if state.isLoading || state.isRestoringProject {
+                // (And after a collage opens, until its filter and effects
+                // are on the pictures.)
+                if state.isLoading || state.isRestoringProject || state.openedGradesPending {
                     VStack(spacing: 12) {
                         ProgressView()
                             .progressViewStyle(.circular)
@@ -207,6 +209,7 @@ struct CanvasContainerView: View {
                 }
             }
             .animation(.easeInOut(duration: 0.2), value: state.isLoading)
+            .animation(.easeInOut(duration: 0.2), value: state.settlingAfterOpen)
             // No photos yet: the start screen — New Collage and the saved ones.
             .overlay {
                 if !state.hasAnyImages && !state.isRestoringProject && !state.isLoading {

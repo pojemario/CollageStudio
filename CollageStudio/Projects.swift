@@ -851,6 +851,7 @@ extension CollageState {
         unloadedImageFiles = []
         overlayPreview = nil
         savedImageFiles = [:]
+        settlingAfterOpen = false
     }
 
     /// Loads the pictures off the main thread, then puts the collage in place.
@@ -967,6 +968,7 @@ extension CollageState {
         isRestoringProject = false
         isLoading = false
         isBusy = false
+        beginSettlingAfterOpen()
         resetHistory()
         hasUnsavedChanges = false
         detectFocusPoints()

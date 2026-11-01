@@ -895,6 +895,34 @@ class CollageState: ObservableObject {
     /// original.
     private var exportSources: [UUID: PlatformImage] = [:]
 
+    /// A collage just opened: the loading spinner stays up until the
+    /// pictures on its page have their filter and effects (see
+    /// `openedGradesPending`), or 10 s at most.
+    @Published var settlingAfterOpen = false
+
+    /// Pictures on the page still drawn without their grade, right after a
+    /// collage opened.
+    var openedGradesPending: Bool {
+        guard settlingAfterOpen, needsGrading else { return false }
+        return currentPage.images.contains { img in
+            guard !img.isPlaceholder, !img.isText else { return false }
+            let g = grade(for: img)
+            guard !g.isIdentity else { return false }
+            if let s = sharpCopies[img.id], s.source === img.original, s.graded?.grade == g { return false }
+            return !(gradedProxies[img.id] ?? []).contains { $0.source === img.proxy && $0.grade == g }
+        }
+    }
+
+    func beginSettlingAfterOpen() {
+        settlingAfterOpen = true
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.3) { [weak self] in self?.endSettlingIfDone() }
+        DispatchQueue.main.asyncAfter(deadline: .now() + 10) { [weak self] in self?.settlingAfterOpen = false }
+    }
+
+    private func endSettlingIfDone() {
+        if settlingAfterOpen, !openedGradesPending { settlingAfterOpen = false }
+    }
+
     func dropGradesIfIdentity() {
         if !needsGrading, !gradedProxies.isEmpty { gradedProxies = [:] }
     }
@@ -1054,6 +1082,7 @@ class CollageState: ObservableObject {
             }
             self.gradedProxies = all
             self.gradeFlushCount += 1
+            self.endSettlingIfDone()
             for img in self.currentPage.images where done[img.id] != nil { self.gradeIfNeeded(img) }
         }
     }

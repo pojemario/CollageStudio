@@ -109,7 +109,8 @@ struct ExportOptionsView: View {
     @EnvironmentObject var state: CollageState
     @Environment(\.dismiss) private var dismiss
     @State private var settings = ExportSettings.saved
-    @State private var allPages = true
+    // Opens on this page every time; all pages is a pick away.
+    @State private var allPages = false
 
     private var exportablePages: Int { state.pages.filter { !$0.images.isEmpty }.count }
     /// Pictures those pages make (wide pages make several).
