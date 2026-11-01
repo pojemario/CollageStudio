@@ -19,9 +19,9 @@ struct SidebarView: View {
     }
 
     /// (Old names, still remembered on some iPads: Images is now Content,
-    /// Looks is Style.)
+    /// Looks Style, Frames Frame, Overlay Texture.)
     private func isOpen(_ title: String) -> Bool {
-        let renamed = ["Images": "Content", "Looks": "Style"]
+        let renamed = ["Images": "Content", "Looks": "Style", "Frames": "Frame", "Overlay": "Texture"]
         return (editor ?? renamed[openSection] ?? openSection) == title
     }
 
@@ -62,8 +62,8 @@ struct SidebarView: View {
                 }
                 imagesSection
                 section("Layout") { LayoutPanel(spacingRange: 0...40) }
-                section("Frames") { FramesPanel() }
-                section("Overlay") { OverlayPanel(inSidebar: true) }
+                section("Frame") { FramesPanel() }
+                section("Texture") { OverlayPanel(inSidebar: true) }
                 section("Style") { LooksPanel() }
             }
         }
@@ -130,7 +130,7 @@ struct SidebarView: View {
                     .opacity(!state.canAddPost ? 0.5 : 1)
 
                 // Adds a transparent placeholder — an intentional empty slot.
-                ToolbarTile(sf: "rectangle.dashed.badge.record", title: "Empty Box") { state.addEmptyImage() }
+                ToolbarTile(sf: "rectangle.dashed.badge.record", title: "Spacer") { state.addEmptyImage() }
 
                 // Adds an editable text box rendered as an image.
                 ToolbarTile(sf: "character.textbox", title: "Text Box") { state.addTextImage() }
@@ -227,7 +227,7 @@ struct PageWidthRow: View {
 
     var body: some View {
         // Like the sliders above it: label, slider, number.
-        LabeledSlider(label: "Spread across", value: Binding(
+        LabeledSlider(label: "Posts", value: Binding(
             get: { Double(min(state.slides, Self.sliderMax)) },
             set: { v in
                 // One post at a time, and only while there's room for more
@@ -239,8 +239,7 @@ struct PageWidthRow: View {
             }
         ), range: 1...Double(Self.sliderMax), step: 1, format: "%.0f", resetValue: 1,
            reservesSwatchSlot: true,
-           customLabel: AnyView(Text("Spread across").font(.panelLabel).lineLimit(1).minimumScaleFactor(0.8)),
-           compactValue: true)
+                      compactValue: true)
     }
 }
 
@@ -566,9 +565,16 @@ struct ModernSlider: View {
         if step > 0 { v = (v / step).rounded() * step }
         v = min(max(v, range.lowerBound), range.upperBound)
         if v != value {
+            let old = value
             value = v
             #if canImport(UIKit)
-            UISelectionFeedbackGenerator().selectionChanged()
+            // A firmer tick on reaching (or passing over) the default, felt
+            // the moment the knob turns back into a ring.
+            if let r = resetValue, (old - r) * (v - r) <= 0 {
+                UIImpactFeedbackGenerator(style: .medium).impactOccurred()
+            } else {
+                UISelectionFeedbackGenerator().selectionChanged()
+            }
             #endif
         }
     }
@@ -1051,7 +1057,7 @@ struct ArrangePanel: View {
 /// color, style, position) and "Canvas" (margin, rotation).
 struct LayoutPanel: View {
     @EnvironmentObject var state: CollageState
-    enum Page: String, CaseIterable { case layout = "Layout", border = "Border", canvas = "Canvas", arrange = "Arrange" }
+    enum Page: String, CaseIterable { case layout = "Grid", border = "Border", canvas = "Canvas", arrange = "Arrange" }
     /// Spacing's range (the iPad sidebar keeps a shorter one).
     var spacingRange: ClosedRange<Double> = 0...70
 

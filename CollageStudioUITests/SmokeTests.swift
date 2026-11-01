@@ -17,7 +17,7 @@ final class SmokeTests: CollageUITestCase {
     func testEveryTabOpens() {
         launch()
         newCollage()
-        for tab in ["Layout", "Frames", "Overlay", "Style", "Content"] {
+        for tab in ["Layout", "Frame", "Texture", "Style", "Content"] {
             openTab(tab)
         }
     }
@@ -194,7 +194,7 @@ final class SmokeTests: CollageUITestCase {
         for round in 0..<8 {
             pickFilter()
             drag(app.sliders["Strength"], to: CGFloat(round % 4) / 4 + 0.1)
-            openTab(["Layout", "Frames", "Overlay", "Content"][round % 4])
+            openTab(["Layout", "Frame", "Texture", "Content"][round % 4])
             peak = max(peak, int("mem"))
         }
         // Every step above waited on the app; now it settles.

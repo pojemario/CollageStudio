@@ -81,9 +81,9 @@ final class IPadTests: CollageUITestCase {
         XCTAssertTrue(isOpen("Edit Photo"))
         snapshot("sideways-edit-photo")
         // Another section ends the editing.
-        tap(section("Frames"))
+        tap(section("Frame"))
         wait("photoedit", is: 0)
-        XCTAssertTrue(isOpen("Frames"))
+        XCTAssertTrue(isOpen("Frame"))
         XCTAssertFalse(section("Edit Photo").exists)
 
         // Leaving the photo (a tap beside the collage) ends its editing
@@ -94,7 +94,7 @@ final class IPadTests: CollageUITestCase {
         wait("selected", is: 0)
         wait("photoedit", is: 0)
         XCTAssertFalse(section("Edit Photo").exists)
-        for title in ["Canvas Ratio", "Content", "Layout", "Frames", "Overlay", "Style"] {
+        for title in ["Canvas Ratio", "Content", "Layout", "Frame", "Texture", "Style"] {
             XCTAssertFalse(isOpen(title), "\(title) stayed open")
         }
 

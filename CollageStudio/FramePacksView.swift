@@ -19,7 +19,7 @@ struct FramesPanel: View {
             // While the slider moves, only it shows (the collage in view).
             Group {
                 if state.slides > 1 {
-                    Label("Frames are off on a spread page. Set Spread across to 1 post (Layout) to see them.",
+                    Label("Frames are off on a spread page. Set Posts to 1 (Layout) to see them.",
                           systemImage: "rectangle.split.3x1")
                         .font(.footnote)
                         .foregroundStyle(.secondary)
@@ -43,7 +43,7 @@ struct FramesPanel: View {
                 // Room around the frame, or (negative) the whole framed
                 // canvas zoomed in so the frame's outer part goes past the
                 // edges and the photos get more room.
-                LabeledSlider(label: "Frame margin", value: $state.frameMargin, range: -100...100, step: 1,
+                LabeledSlider(label: "Margin", value: $state.frameMargin, range: -100...100, step: 1,
                               format: "%.0f", resetValue: 0)
                     .swipeNumbersToReset(canReset: state.frameMargin != 0) { state.frameMargin = 0 }
             }
@@ -120,9 +120,9 @@ struct PackChip: View {
                 .frame(maxWidth: fillsWidth ? .infinity : nil)
                 .padding(.vertical, 7)
                 .foregroundColor(isActive ? .white : .primary)
-                // Unselected chips: just a soft fill, no outline.
-                .background(RoundedRectangle(cornerRadius: ButtonStyleGuide.cornerRadius, style: .continuous)
-                    .fill(isActive ? Color.accentColor : ColorManager.systemFill))
+                // Capsules, like every other selection: white on the accent
+                // when chosen, just a soft fill otherwise.
+                .background(Capsule().fill(isActive ? Color.accentColor : ColorManager.systemFill))
                 .overlay(alignment: .topTrailing) {
                     if marked {
                         Circle()

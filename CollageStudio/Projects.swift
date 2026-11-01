@@ -1005,9 +1005,15 @@ struct CollagesHome: View {
 
     var body: some View {
         ScrollView {
-            LazyVGrid(columns: columns, spacing: 18) {
-                ForEach(store.summaries) { p in
-                    tile(p)
+            // The latest collage leads, to pick up where it was left (not
+            // while selecting: then they're all alike, in the grid).
+            let hero = selecting ? nil : store.summaries.first
+            VStack(spacing: 18) {
+                if let hero { heroCard(hero) }
+                LazyVGrid(columns: columns, spacing: 18) {
+                    ForEach(hero == nil ? store.summaries : Array(store.summaries.dropFirst())) { p in
+                        tile(p)
+                    }
                 }
             }
             .padding(.horizontal, 16)
@@ -1120,6 +1126,16 @@ struct CollagesHome: View {
     private var newPill: some View {
         Button(action: onNewCollage) { pillLabel }
             .buttonStyle(PressInButtonStyle())
+            // Hold: start in a chosen size, straight from here.
+            .contextMenu {
+                ForEach([(CanvasRatio.portrait916, "Story · 9:16"), (.portrait45, "Post · 4:5"),
+                         (.portrait34, "Tall post · 3:4"), (.square, "Square · 1:1")], id: \.0) { ratio, title in
+                    Button {
+                        state.setRatio(ratio)
+                        onNewCollage()
+                    } label: { Label(title, systemImage: "rectangle.portrait") }
+                }
+            }
             // Soon after the screen shows, then every 20 seconds while it's
             // up and the app is in front: the task ends when the screen goes
             // and when the app is sent away (and starts again on return).
@@ -1183,6 +1199,47 @@ struct CollagesHome: View {
             .ignoresSafeArea(edges: .bottom)
     }
 
+    /// The latest collage, large: its picture beside its name, when and
+    /// what, and Continue editing.
+    private func heroCard(_ p: ProjectSummary) -> some View {
+        Button { state.openProject(p.id) } label: {
+            HStack(spacing: 16) {
+                Color.clear
+                    .aspectRatio(1, contentMode: .fit)
+                    .frame(width: 150)
+                    .overlay { ProjectThumb(url: p.thumbURL, version: p.modified) }
+                VStack(alignment: .leading, spacing: 6) {
+                    Text(p.name)
+                        .font(.headline)
+                        .foregroundColor(.primary)
+                        .lineLimit(2)
+                    Text("\(p.modified.formatted(.relative(presentation: .named))) · \(p.contentsLabel)")
+                        .font(.caption)
+                        .foregroundColor(.secondary)
+                        .lineLimit(1)
+                    Spacer(minLength: 6)
+                    Label("Continue editing", systemImage: "arrow.right")
+                        .labelStyle(TrailingIconLabelStyle())
+                        .font(.subheadline.weight(.bold))
+                        .foregroundColor(.white)
+                        .padding(.horizontal, 14)
+                        .frame(height: 36)
+                        .background(Capsule().fill(Color.accentColor))
+                }
+                .padding(.vertical, 8)
+                Spacer(minLength: 0)
+            }
+            .padding(10)
+            .background(RoundedRectangle(cornerRadius: 20, style: .continuous).fill(Color.primary.opacity(0.06)))
+            .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
+        .contextMenu { menu(p) }
+        .accessibilityLabel("\(p.name), \(p.contentsLabel)")
+        .accessibilityIdentifier("collage.\(p.id.uuidString)")
+        .accessibilityHint("Continue editing")
+    }
+
     private func tile(_ p: ProjectSummary) -> some View {
         let isSelected = selected.contains(p.id)
         return Button {
@@ -1232,20 +1289,31 @@ struct CollagesHome: View {
             .contentShape(Rectangle())
         }
         .buttonStyle(.plain)
-        .contextMenu {
-            Button { selecting = true; selected.insert(p.id) } label: { Label("Select", systemImage: "checkmark.circle") }
-            Button { newName = ""; renaming = p } label: { Label("Rename", systemImage: "pencil") }
-            Button { store.duplicate(p.id) } label: { Label("Duplicate", systemImage: "plus.square.on.square") }
-            // Straight to Export Options (the collage opens behind it).
-            Button {
-                state.exportAfterOpening = true
-                state.openProject(p.id)
-            } label: { Label("Export…", systemImage: "square.and.arrow.up") }
-            Button(role: .destructive) { removing = p } label: { Label("Remove", systemImage: "trash") }
-        }
+        .contextMenu { menu(p) }
         .accessibilityLabel("\(p.name), \(p.contentsLabel)")
         .accessibilityIdentifier("collage.\(p.id.uuidString)")
         .accessibilityAddTraits(isSelected ? .isSelected : [])
+    }
+
+    /// A saved collage's long-press menu (the latest's card has it too).
+    @ViewBuilder
+    private func menu(_ p: ProjectSummary) -> some View {
+        Button { selecting = true; selected.insert(p.id) } label: { Label("Select", systemImage: "checkmark.circle") }
+        Button { newName = ""; renaming = p } label: { Label("Rename", systemImage: "pencil") }
+        Button { store.duplicate(p.id) } label: { Label("Duplicate", systemImage: "plus.square.on.square") }
+        // Straight to Export Options (the collage opens behind it).
+        Button {
+            state.exportAfterOpening = true
+            state.openProject(p.id)
+        } label: { Label("Export…", systemImage: "square.and.arrow.up") }
+        Button(role: .destructive) { removing = p } label: { Label("Remove", systemImage: "trash") }
+    }
+}
+
+/// A label with its icon after the title ("Continue editing →").
+private struct TrailingIconLabelStyle: LabelStyle {
+    func makeBody(configuration: Configuration) -> some View {
+        HStack(spacing: 6) { configuration.title; configuration.icon }
     }
 }
 

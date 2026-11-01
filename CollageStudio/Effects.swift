@@ -804,9 +804,12 @@ extension View {
                         .hidden()
                         .overlay(alignment: .topTrailing) {
                             if i < marked.count, marked[i] {
+                                // White ringed in the accent: shows on the
+                                // chosen (accent) segment as on the others.
                                 Circle()
-                                    .fill(Color.accentColor)
-                                    .frame(width: 6, height: 6)
+                                    .fill(Color.white)
+                                    .overlay(Circle().strokeBorder(Color.accentColor, lineWidth: 1.5))
+                                    .frame(width: 7, height: 7)
                                     .offset(x: 9, y: -2)
                                     .transition(.scale.combined(with: .opacity))
                             }
@@ -842,13 +845,13 @@ private struct SegmentDoubleTap: ViewModifier {
     }
 }
 
-/// The Looks tab: a filter, then fine-tuning — "Filter" (the filter
-/// tiles), "Effects", "Edit" (light, color, HSL, calibration) and
-/// "Detail" (texture, clarity, sharpening…).
+/// The Style tab, by intent: pick a look ("Filter"), fine-tune it
+/// ("Adjust": light, color, HSL, calibration and detail), then add to it
+/// ("Effects": grain, vignette, fade…).
 struct LooksPanel: View {
     @EnvironmentObject var state: CollageState
     enum Page: String, CaseIterable {
-        case filter = "Filter", effects = "Effects", edit = "Edit", detail = "Detail"
+        case filter = "Filter", edit = "Adjust", effects = "Effects"
     }
 
     var body: some View {
@@ -859,16 +862,15 @@ struct LooksPanel: View {
             .pickerStyle(.segmented)
             // A dot by each part whose settings are changed.
             .segmentDots(Page.allCases.map(\.rawValue), marked: Page.allCases.map(isChanged))
-            // Double-tapping a part resets it: Filter to none, Effects to
-            // zero, Edit everything under it (Light, Color, HSL, CC), Detail
-            // its sliders.
+            // Double-tapping a part resets it: Filter to none, Adjust
+            // everything under it (Light, Color, HSL, CC, Detail), Effects
+            // to zero.
             .doubleTapSegment(Page.allCases.count) { reset(Page.allCases[$0]) }
             .panelChrome(state)
             switch state.looksPage {
             case .filter: FilterControls()
             case .effects: EffectsPanel(only: .effects)
-            case .edit: EffectsPanel(withoutDetail: true)
-            case .detail: EffectsPanel(only: .detail)
+            case .edit: EffectsPanel()
             }
         }
     }
@@ -879,8 +881,8 @@ struct LooksPanel: View {
         switch page {
         case .filter: return state.colorFilter != .none
         case .effects: return state.hasEffects(in: CollageEffect.looks)
-        case .edit: return state.hasEffects(in: Self.edits) || !state.hsl.isIdentity || !state.calibration.isIdentity
-        case .detail: return state.hasEffects(in: CollageEffect.detail)
+        case .edit: return state.hasEffects(in: Self.edits + CollageEffect.detail) || !state.hsl.isIdentity
+            || !state.calibration.isIdentity
         }
     }
 
@@ -892,11 +894,9 @@ struct LooksPanel: View {
         case .effects:
             state.resetEffects(in: CollageEffect.looks)
         case .edit:
-            state.resetEffects(in: Self.edits)
+            state.resetEffects(in: Self.edits + CollageEffect.detail)
             state.resetHSL()
             state.calibration = CameraCalibration()
-        case .detail:
-            state.resetEffects(in: CollageEffect.detail)
         }
     }
 }
@@ -963,8 +963,13 @@ struct FilterControls: View {
         // changes); groups already seen keep theirs.
         .task(id: PreviewKey(sample: sample.map(ObjectIdentifier.init), group: shownGroup?.name)) {
             guard let sample else { previews = [:]; return }
-            let missing = shownFilters.filter { previews[$0] == nil || previewSource != ObjectIdentifier(sample) }
-            if previewSource != ObjectIdentifier(sample) { previews = [:]; previewSource = ObjectIdentifier(sample) }
+            if previewSource != ObjectIdentifier(sample) {
+                // Coming back to the tab (or to the same photo): the tiles
+                // made before are reused at once.
+                previews = Self.cachedSample == ObjectIdentifier(sample) ? Self.cache : [:]
+                previewSource = ObjectIdentifier(sample)
+            }
+            let missing = shownFilters.filter { previews[$0] == nil }
             guard !missing.isEmpty else { return }
             // One tile at a time, stopping as soon as the row goes away or
             // the group changes (cancellation doesn't reach a detached task
@@ -975,11 +980,23 @@ struct FilterControls: View {
                     ContentGrader.apply(ContentGrade(filter: f), to: sample, preview: true)
                 }.value
                 previews[f] = tile
+                if Self.cachedSample != ObjectIdentifier(sample) {
+                    Self.cache = [:]
+                    Self.cachedSample = ObjectIdentifier(sample)
+                    Self.cachedSampleImage = sample
+                }
+                Self.cache[f] = tile
             }
         }
     }
 
     @State private var previewSource: ObjectIdentifier?
+    /// The tiles made for the last sample photo, kept across visits to the
+    /// tab (one photo's worth, so it stays small).
+    private static var cache: [ColorFilter: PlatformImage] = [:]
+    private static var cachedSample: ObjectIdentifier?
+    /// Held, so its identity can't pass to another picture while cached.
+    private static var cachedSampleImage: PlatformImage?
 
     private struct PreviewKey: Equatable {
         let sample: ObjectIdentifier?

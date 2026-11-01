@@ -28,7 +28,7 @@ struct FloatingTabBar: View {
     @State private var gliding = false
     @State private var glideToken = 0
 
-    static let tabs = ["Content", "Layout", "Frames", "Overlay", "Style"]
+    static let tabs = ["Content", "Layout", "Frame", "Texture", "Style"]
     static let icons = ["photo.on.rectangle.angled", "square.grid.2x2",
                         "photo.artframe", "sparkles", "camera.filters"]
     /// Vertical room the pill takes at the bottom of the screen (pill +
@@ -566,7 +566,6 @@ struct BottomPanelView: View {
         if state.selectedPanelTab == 4 && state.looksPage != .filter {
             switch state.looksPage {
             case .edit: return 14
-            case .detail: return 16
             default: return 15
             }
         }
@@ -696,11 +695,7 @@ struct BottomPanelView: View {
         // Floating glass card. Fades while adjusting a slider so the collage
         // shows through; lives here so the drag offset moves it with the content.
         .background {
-            card
-                .fill(.ultraThinMaterial)
-                // 10% darker than the bare glass.
-                .overlay(card.fill(Color.black.opacity(0.10)))
-                .overlay(card.strokeBorder(ColorManager.glassStroke, lineWidth: 0.8))
+            PanelGlass(card: card)
                 .shadow(color: .black.opacity(0.12), radius: 18, y: 6)
                 .padding(.bottom, merged ? -(FloatingTabBar.zoneHeight - FloatingTabBar.bottomMargin + FloatingTabBar.openLift) : 0)
                 .animation(.easeInOut(duration: 0.25), value: merged)
@@ -801,15 +796,19 @@ struct BottomPanelView: View {
                 // Back to the Collages screen (the open one is saved).
                 ToolbarTile(sf: "square.stack", title: "Collages", prominent: false) { state.goToCollages() }
 
-                AddPageTile { state.addPage() }
-                    .disabled(!state.canAddPost)
-                    .opacity(!state.canAddPost ? 0.5 : 1)
-
-                // Adds a transparent placeholder — an intentional empty slot.
-                ToolbarTile(sf: "rectangle.dashed.badge.record", title: "Empty Box") { state.addEmptyImage() }
-
-                // Adds an editable text box rendered as an image.
-                ToolbarTile(sf: "character.textbox", title: "Text Box") { state.addTextImage() }
+                // Everything that adds to the collage, in one menu: a text
+                // box, a spacer (an intentional empty slot), a page.
+                Menu {
+                    Button { state.addTextImage() } label: { Label("Text Box", systemImage: "character.textbox") }
+                    Button { state.addEmptyImage() } label: { Label("Spacer", systemImage: "rectangle.dashed") }
+                    Button { state.addPage() } label: { Label("Page", systemImage: "doc.badge.plus") }
+                        .disabled(!state.canAddPost)
+                } label: {
+                    ToolbarTileLabel(prominent: true, title: "Add") { Image(systemName: "plus") }
+                }
+                .buttonStyle(.plain)
+                .accessibilityLabel("Add")
+                .accessibilityHint("A text box, a spacer or a page")
             }
 
             // The page list at its full height: the panel can grow up to the
@@ -830,6 +829,23 @@ struct BottomPanelView: View {
         OverlayPanel()
     }
 
+}
+
+/// The panel's glass, 10% darker than bare: Liquid Glass (like the tab bar)
+/// where there is some, a thin material before.
+private struct PanelGlass: View {
+    let card: RoundedRectangle
+
+    var body: some View {
+        if #available(iOS 26, macOS 26, *) {
+            Color.clear.glassEffect(.regular.tint(Color.black.opacity(0.45)), in: card)
+        } else {
+            card
+                .fill(.ultraThinMaterial)
+                .overlay(card.fill(Color.black.opacity(0.10)))
+                .overlay(card.strokeBorder(ColorManager.glassStroke, lineWidth: 0.8))
+        }
+    }
 }
 
 /// Sizes the panel's scroll view to its content's own height, up to `cap`,

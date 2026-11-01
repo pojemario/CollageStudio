@@ -14,7 +14,7 @@ struct TextEditPanel: View {
     /// The options in three tabs under the text: the face and its size, the
     /// look (style, colors), and where the text sits in its box. The last
     /// one chosen comes back for the next text box.
-    enum Page: String, CaseIterable { case font = "Font", style = "Style", align = "Align" }
+    enum Page: String, CaseIterable { case font = "Font", style = "Look", align = "Align" }
     private static var lastPage: Page = .font
     @State private var page: Page = TextEditPanel.lastPage
 
@@ -44,7 +44,7 @@ struct TextEditPanel: View {
                 switch page {
                 case .font:
                     fontRow.panelChrome(state)
-                    LabeledSlider(label: "Text size",
+                    LabeledSlider(label: "Size",
                                   value: Binding(get: { Double(style.wrappedValue.fontSize) },
                                                  set: { style.wrappedValue.fontSize = CGFloat($0) }),
                                   range: 30...400, step: 2, format: "%.0f", resetValue: 120)

@@ -48,9 +48,22 @@ struct SavingOverlay: View {
 /// A pill at the top of the screen while canvas touches edit the overlay,
 /// not the collage — so photos that won't move never look broken. Purely
 /// informational: touches pass through.
+/// The glass behind the toolbar's controls: Liquid Glass where there is
+/// some, a thin material before.
+private struct ToolbarPillGlass: View {
+    var body: some View {
+        if #available(iOS 26, macOS 26, *) {
+            Color.clear.glassEffect(.regular, in: Capsule())
+        } else {
+            Capsule().fill(.ultraThinMaterial)
+                .overlay(Capsule().strokeBorder(ColorManager.glassStroke, lineWidth: 0.8))
+        }
+    }
+}
+
 struct OverlayModeLabel: View {
-    private static let title = "OVERLAY MODE"
-    private static let note = "Gestures move overlays, not photos"
+    private static let title = "TEXTURE MODE"
+    private static let note = "Gestures move textures, not photos"
     /// Letter spacing that makes the title as wide as the note under it.
     /// Tracking also follows the last letter, so the title is nudged back
     /// by half of it to stay centered.
@@ -609,7 +622,9 @@ struct ContentView: View {
                 }
             }
             .padding(.horizontal, 5)
-            .frame(height: 44)
+            .frame(height: 40)
+            // The controls gathered in one compact glass pill.
+            .background { ToolbarPillGlass() }
         }
         // Fixed height so the bar doesn't collapse before any images are
         // added (the icons only appear once images exist) — keeps the logo

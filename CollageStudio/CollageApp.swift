@@ -15,6 +15,19 @@ struct CollageApp: App {
         UITest.prepare()
         #endif
         CollageTips.configure()
+        #if canImport(UIKit)
+        // One look for "selected" everywhere: segmented switches show the
+        // chosen part white on the accent, like the chips and captions.
+        let segments = UISegmentedControl.appearance()
+        // (The accent's own values: looking it up by name this early knocks
+        // the app's tint back to the system blue.)
+        segments.selectedSegmentTintColor = UIColor { traits in
+            traits.userInterfaceStyle == .dark
+                ? UIColor(red: 0.69, green: 0.41, blue: 0.21, alpha: 1)
+                : UIColor(red: 0.62, green: 0.36, blue: 0.18, alpha: 1)
+        }
+        segments.setTitleTextAttributes([.foregroundColor: UIColor.white], for: .selected)
+        #endif
     }
 
     var body: some Scene {
