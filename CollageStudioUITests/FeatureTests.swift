@@ -53,7 +53,7 @@ final class FeatureTests: CollageUITestCase {
         launch(photos: 12)
         newCollage(photos: 12)
         wait("pages") { (Int($0) ?? 0) >= 2 }
-        let allPages = app.buttons.matching(NSPredicate(format: "label BEGINSWITH 'Apply Looks settings'")).firstMatch
+        let allPages = app.buttons.matching(NSPredicate(format: "label BEGINSWITH 'Apply Style settings'")).firstMatch
         // Every page looks the same: nothing to apply, no button.
         openTab("Style")
         XCTAssertFalse(allPages.waitForExistence(timeout: 2), "All Pages shown with nothing to apply")
