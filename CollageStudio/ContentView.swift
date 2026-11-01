@@ -62,8 +62,8 @@ private struct ToolbarPillGlass: View {
 }
 
 struct OverlayModeLabel: View {
-    private static let title = "TEXTURE MODE"
-    private static let note = "Gestures move textures, not photos"
+    private static let title = "OVERLAY MODE"
+    private static let note = "Gestures move overlays, not photos"
     /// Letter spacing that makes the title as wide as the note under it.
     /// Tracking also follows the last letter, so the title is nudged back
     /// by half of it to stay centered.

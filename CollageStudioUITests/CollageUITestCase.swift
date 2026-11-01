@@ -112,7 +112,7 @@ class CollageUITestCase: XCTestCase {
 
     /// Opens a tab's panel: Images, Layout, Frames, Overlay or Looks.
     func openTab(_ name: String, file: StaticString = #filePath, line: UInt = #line) {
-        let index = ["Content", "Layout", "Frame", "Texture", "Style"].firstIndex(of: name)!
+        let index = ["Content", "Layout", "Frame", "Overlays", "Style"].firstIndex(of: name)!
         // Already open: a tap would put it away.
         if int("tab") == index && int("panel") == 1 && int("tabshown") == 1 && int("photoedit") == 0
             && int("cutoutedit") == 0 { return }

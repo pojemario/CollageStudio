@@ -19,9 +19,9 @@ struct SidebarView: View {
     }
 
     /// (Old names, still remembered on some iPads: Images is now Content,
-    /// Looks Style, Frames Frame, Overlay Texture.)
+    /// Looks Style, Frames Frame, Overlay and Texture Overlays.)
     private func isOpen(_ title: String) -> Bool {
-        let renamed = ["Images": "Content", "Looks": "Style", "Frames": "Frame", "Overlay": "Texture"]
+        let renamed = ["Images": "Content", "Looks": "Style", "Frames": "Frame", "Overlay": "Overlays", "Texture": "Overlays"]
         return (editor ?? renamed[openSection] ?? openSection) == title
     }
 
@@ -63,7 +63,7 @@ struct SidebarView: View {
                 imagesSection
                 section("Layout") { LayoutPanel(spacingRange: 0...40) }
                 section("Frame") { FramesPanel() }
-                section("Texture") { OverlayPanel(inSidebar: true) }
+                section("Overlays") { OverlayPanel(inSidebar: true) }
                 section("Style") { LooksPanel() }
             }
         }

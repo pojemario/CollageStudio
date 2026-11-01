@@ -94,7 +94,7 @@ final class IPadTests: CollageUITestCase {
         wait("selected", is: 0)
         wait("photoedit", is: 0)
         XCTAssertFalse(section("Edit Photo").exists)
-        for title in ["Canvas Ratio", "Content", "Layout", "Frame", "Texture", "Style"] {
+        for title in ["Canvas Ratio", "Content", "Layout", "Frame", "Overlays", "Style"] {
             XCTAssertFalse(isOpen(title), "\(title) stayed open")
         }
 
