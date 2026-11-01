@@ -1918,6 +1918,8 @@ class CollageState: ObservableObject {
     /// guaranteed order. They defer to the next runloop tick and stand down
     /// when the tap just opened a text box.
     private var lastTextTap: Date = .distantPast
+    /// A text box's editor was opened by the tap being handled now.
+    var textEditJustOpened: Bool { Date().timeIntervalSince(lastTextTap) < 0.25 }
 
     /// Canvas taps dismiss whatever is open: text editing, panel, ratio sheet.
     func handleCanvasTap() {
@@ -2476,10 +2478,10 @@ class CollageState: ObservableObject {
     }
 
     func resetStyle() {
-        gap = PageStyle().gap
+        gap = 0
         backgroundColor = .white
         backgroundKind = .color
-        cornerRadius = PageStyle().cornerRadius
+        cornerRadius = 0
         resetBorder()
     }
 

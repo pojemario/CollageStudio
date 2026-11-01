@@ -256,29 +256,41 @@ struct CollageGridView_Grid: View {
                 .blendMode(layer.kind.blendMode)
                 .allowsHitTesting(false)
 
-                // While a finger is on it: a thin dotted outline of the
+                // While its layer is selected: a thin dotted outline of the
                 // overlay's own edges, so it's clear what moves and where.
                 // On screen only.
-                if live && overlayTouching && !state.isRenderingOffscreen && !state.isExporting {
-                    overlayOutline(width: region.width * shown.scale, height: region.height * shown.scale)
+                // The picture fills its region, so a different aspect runs
+                // past it: the outline follows the picture's filled size, and
+                // is clipped where the picture is.
+                if live && !state.isRenderingOffscreen && !state.isExporting {
+                    let fill = Self.filledSize(of: image.size, in: region.size)
+                    overlayOutline(width: fill.width * shown.scale, height: fill.height * shown.scale)
                         .rotationEffect(.radians(shown.rotation))
                         .offset(x: shown.offset.width * scale, y: shown.offset.height * scale)
                         .frame(width: region.width, height: region.height)
+                        .clipped()
                         .offset(x: region.minX)
                         .frame(width: canvasSize.width, height: canvasSize.height, alignment: .topLeading)
+                        .blendMode(.difference)
                         .allowsHitTesting(false)
                 }
             }
         }
     }
 
-    /// Dotted, thin: white dots over a faint dark line, seen on any picture.
+    /// The size `image` takes when scaled to fill `box` (keeping its aspect).
+    private static func filledSize(of image: CGSize, in box: CGSize) -> CGSize {
+        guard image.width > 0, image.height > 0 else { return box }
+        let k = max(box.width / image.width, box.height / image.height)
+        return CGSize(width: image.width * k, height: image.height * k)
+    }
+
+    /// Dotted and thin; drawn in difference mode (see the caller), it
+    /// inverts what's under it, so it reads on light and dark pictures alike.
     private func overlayOutline(width: CGFloat, height: CGFloat) -> some View {
-        ZStack {
-            Rectangle().stroke(Color.black.opacity(0.35), lineWidth: 1.5)
-            Rectangle().stroke(Color.white, style: StrokeStyle(lineWidth: 1, lineCap: .round, dash: [1, 4]))
-        }
-        .frame(width: width, height: height)
+        Rectangle()
+            .stroke(Color.white, style: StrokeStyle(lineWidth: 1.5, lineCap: .round, dash: [1.5, 4]))
+            .frame(width: width, height: height)
     }
 
     /// A move / turn of an overlay with snapping: its center sticks to the

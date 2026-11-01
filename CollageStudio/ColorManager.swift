@@ -17,6 +17,19 @@ extension View {
     }
 }
 
+extension Text {
+    /// A thumbnail's caption: when selected, white on an accent capsule so
+    /// the choice reads at a glance (accent-colored text alone is too faint
+    /// over some backgrounds).
+    func thumbCaption(selected: Bool, unselected: Color = .primary) -> some View {
+        self.lineLimit(1)
+            .foregroundColor(selected ? .white : unselected)
+            .padding(.horizontal, 6)
+            .padding(.vertical, 1.5)
+            .background(Capsule().fill(selected ? Color.accentColor : Color.clear))
+    }
+}
+
 public enum ColorManager {
     /// The grouped background color used in grouped interface styles.
     public static var groupedBackground: Color {

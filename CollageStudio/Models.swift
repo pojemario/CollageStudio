@@ -704,8 +704,10 @@ struct PageStyle: Equatable {
     /// a wide page, exported as that many pictures that join up seamlessly
     /// when swiped (each of the collage's ratio).
     var slides: Int = 1
-    var gap: Double = 5
-    var cornerRadius: Double = 8
+    /// A new page starts with thin spacing and slight rounding; the Layout
+    /// reset takes both to 0.
+    var gap: Double = 2
+    var cornerRadius: Double = 2
     var backgroundColor: Color = .white
     var backgroundKind: BackgroundKind = .color
     /// Bottom color of a gradient background.

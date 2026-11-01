@@ -217,55 +217,25 @@ struct RatioPanelView: View {
 /// one collage posted as several pictures that join up when swiped.
 struct PageWidthRow: View {
     @EnvironmentObject var state: CollageState
+    /// The slider's top: how many posts a page can spread across.
+    static let sliderMax = 3
 
     var body: some View {
-        // Reads as a sentence: Spread across [−] 2 [+] posts.
-        HStack(spacing: 8) {
-            Image(systemName: "arrow.left.and.right.square")
-                .font(.system(size: 14, weight: .medium))
-                .frame(width: 22)
-            Text("Spread across")
-                .font(.panelLabel)
-                .lineLimit(1)
-                .padding(.trailing, 4)
-            stepButton("minus", enabled: state.slides > 1) { state.setSlides(state.slides - 1) }
-            Text("\(state.slides)")
-                .font(.system(size: 15, weight: .bold, design: .rounded))
-                .monospacedDigit()
-                .frame(minWidth: 22)
-                .contentTransition(.numericText())
-            stepButton("plus", enabled: state.slides < CollageState.maxSlides && state.canAddPost) { state.setSlides(state.slides + 1) }
-            Text("posts.")
-                .font(.panelLabel)
-                .lineLimit(1)
-                .lineLimit(1)
-                .padding(.leading, 4)
-            Spacer(minLength: 0)
-        }
-        .padding(.leading, 12)
-        .padding(.trailing, 8)
-        .padding(.vertical, 6)
-        .appButtonBackground(prominent: false)
-        .accessibilityElement(children: .contain)
-    }
-
-    private func stepButton(_ sf: String, enabled: Bool, action: @escaping () -> Void) -> some View {
-        Button {
-            withAnimation(.easeInOut(duration: 0.2)) { action() }
-        } label: {
-            let shape = RoundedRectangle(cornerRadius: 8, style: .continuous)
-            Image(systemName: sf)
-                .font(.system(size: 13, weight: .bold))
-                .foregroundStyle(enabled ? Color.accentColor : Color.secondary.opacity(0.4))
-                .frame(width: 32, height: 28)
-                .background(shape.fill(Color.primary.opacity(0.08)))
-                .overlay(shape.strokeBorder(Color.primary.opacity(0.06), lineWidth: 0.5))
-                // A finger-sized touch area around the small chip.
-                .contentShape(Rectangle().inset(by: -8))
-        }
-        .buttonStyle(.plain)
-        .disabled(!enabled)
-        .accessibilityLabel(sf == "plus" ? "Spread across more posts" : "Spread across fewer posts")
+        // Like the sliders above it: label, slider, number.
+        LabeledSlider(label: "Spread across", value: Binding(
+            get: { Double(min(state.slides, Self.sliderMax)) },
+            set: { v in
+                // One post at a time, and only while there's room for more
+                // pictures (canAddPost).
+                var n = state.slides
+                let target = Int(v.rounded())
+                while n < target && state.canAddPost { n += 1; state.setSlides(n) }
+                while n > target { n -= 1; state.setSlides(n) }
+            }
+        ), range: 1...Double(Self.sliderMax), step: 1, format: "%.0f", resetValue: 1,
+           reservesSwatchSlot: true,
+           customLabel: AnyView(Text("Spread across").font(.panelLabel).lineLimit(1).minimumScaleFactor(0.8)),
+           compactValue: true)
     }
 }
 
@@ -723,8 +693,10 @@ struct LabeledSlider: View {
     private var inlineRow: some View {
         HStack(spacing: 8) {
             if let customLabel {
+                // A custom label also takes a reserved, empty swatch slot.
                 customLabel
-                    .frame(width: labelWidth, alignment: .leading)
+                    .frame(width: labelWidth + (swatchColor == nil && reservesSwatchSlot ? 24 + 8 : 0),
+                           alignment: .leading)
             } else {
                 Text(label)
                     .font(.panelLabel)
@@ -740,7 +712,7 @@ struct LabeledSlider: View {
                                   accessibilityTitle: label == "Spacing" ? "Background color" : "\(label) color")
                     // Pure minimal in focus mode: only label + slider + value.
                     .panelChrome(state)
-            } else if reservesSwatchSlot {
+            } else if reservesSwatchSlot && customLabel == nil {
                 Color.clear.frame(width: 24, height: 24)
             }
             HStack(spacing: Self.valueGap) {
@@ -772,24 +744,37 @@ struct LabeledSlider: View {
 struct LanesSwitch: View {
     @EnvironmentObject var state: CollageState
 
+    /// In the slider's label slot, so short words in a compact switch (a
+    /// segmented picker's own font is too big for it): the chosen one white
+    /// on the accent, like the selected thumbnails.
     var body: some View {
-        Picker("Lanes", selection: Binding(
-            get: { state.lanes },
-            set: { l in withAnimation(.spring(response: 0.35)) { state.setLanes(l) } })) {
-            // Icons: three words don't fit beside the slider.
-            Image(systemName: "square.split.2x1").accessibilityLabel("Columns")
-                .tag(CollageState.Lanes.columns)
-            Image(systemName: "square.split.1x2").accessibilityLabel("Rows")
-                .tag(CollageState.Lanes.rows)
-            // One row of photos at their own shapes — spread pages only.
-            if state.slides > 1 {
-                Image(systemName: "rectangle.split.3x1").accessibilityLabel("Strip")
-                    .tag(CollageState.Lanes.strip)
-            }
+        HStack(spacing: 2) {
+            option("Cols", .columns, accessibility: "Columns")
+            option("Rows", .rows)
         }
-        .pickerStyle(.segmented)
-        .labelsHidden()
-        .controlSize(.small)
+        .padding(2)
+        .background(Capsule().fill(Color.primary.opacity(0.08)))
+    }
+
+    private func option(_ title: String, _ lanes: CollageState.Lanes, accessibility: String? = nil) -> some View {
+        let on = state.lanes == lanes
+        return Button {
+            guard !on else { return }
+            withAnimation(.spring(response: 0.35)) { state.setLanes(lanes) }
+        } label: {
+            Text(title)
+                .font(.system(size: 11, weight: on ? .bold : .medium))
+                .lineLimit(1)
+                .minimumScaleFactor(0.7)
+                .foregroundColor(on ? .white : .primary.opacity(0.75))
+                .padding(.horizontal, 4)
+                .frame(maxWidth: .infinity, minHeight: 22)
+                .background(Capsule().fill(on ? Color.accentColor : Color.clear))
+                .contentShape(Capsule())
+        }
+        .buttonStyle(.plain)
+        .accessibilityLabel(accessibility ?? title)
+        .accessibilityAddTraits(on ? .isSelected : [])
     }
 }
 
@@ -1072,8 +1057,9 @@ struct LayoutPanel: View {
         case .layout:
             state.setLanes(.columns)
             state.numCols = d.numCols
-            state.gap = d.gap
-            state.cornerRadius = d.cornerRadius
+            // A reset takes spacing and rounding to 0 (new pages start at 2).
+            state.gap = 0
+            state.cornerRadius = 0
             state.backgroundColor = d.backgroundColor
             state.rebuildLayout(resetGrows: true)
         case .border: state.resetBorder()
@@ -1112,17 +1098,17 @@ struct LayoutPanel: View {
                     .disabled(state.maxSelectableCols <= 1)
                     .opacity(state.maxSelectableCols <= 1 ? 0.4 : 1)
                 LabeledSlider(label: "Spacing", value: $state.gap, range: spacingRange, step: 1, format: "%.0f",
-                              resetValue: PageStyle().gap, swatchColor: $state.backgroundColor,
+                              resetValue: 0, swatchColor: $state.backgroundColor,
                               compactValue: true)
                 LabeledSlider(label: "Rounding", value: $state.cornerRadius, range: 0...100, step: 1, format: "%.0f",
-                              resetValue: PageStyle().cornerRadius, reservesSwatchSlot: true,
+                              resetValue: 0, reservesSwatchSlot: true,
                               compactValue: true)
             }
             // No Reset button: swipe up or down on the labels or numbers.
-            .swipeNumbersToReset(canReset: state.gap != PageStyle().gap || state.cornerRadius != PageStyle().cornerRadius
+            .swipeNumbersToReset(canReset: state.gap != 0 || state.cornerRadius != 0
                                  || state.backgroundColor != .white) {
-                state.gap = PageStyle().gap
-                state.cornerRadius = PageStyle().cornerRadius
+                state.gap = 0
+                state.cornerRadius = 0
                 state.backgroundColor = .white
             }
             .popoverTip(ResetSwipeTip(), arrowEdge: .bottom)

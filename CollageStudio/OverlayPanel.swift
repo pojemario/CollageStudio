@@ -99,7 +99,7 @@ struct OverlayPanel: View {
                             }
                         Text(OverlayPack.label(forAsset: asset))
                             .font(.system(size: 11, weight: isPreviewed ? .bold : .regular))
-                            .foregroundColor(isPreviewed ? .accentColor : .primary.opacity(0.75))
+                            .thumbCaption(selected: isPreviewed, unselected: .primary.opacity(0.75))
                     }
                     .id(asset)
                 }

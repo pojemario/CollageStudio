@@ -240,8 +240,19 @@ struct ImageBoxView: View {
                             return
                         }
                         // Otherwise it selects the box: the tab bar
-                        // becomes its tools (tap again to let go).
-                        state.toggleSelection(imageId)
+                        // becomes its tools (tap again to let go). A tap on a
+                        // text box's pencil reaches here too, in no set
+                        // order: on the next tick, it stands down if that
+                        // tap just opened the editor (else it would let the
+                        // box go and close the editor it opened).
+                        if imgData?.isText == true {
+                            DispatchQueue.main.async {
+                                guard !state.textEditJustOpened else { return }
+                                state.toggleSelection(imageId)
+                            }
+                        } else {
+                            state.toggleSelection(imageId)
+                        }
                     }
                 )
                 // Drive the global "an image is being pinched" flag from the
@@ -346,8 +357,10 @@ struct ImageBoxView: View {
 
         var body: some View {
             Button(action: action) {
-                Image(systemName: "pencil")
-                    .font(.system(size: 13, weight: .semibold))
+                // The compose mark (a plain pencil reads as a slash this small).
+                Image(systemName: "square.and.pencil")
+                    .font(.system(size: 14, weight: .semibold))
+                    .offset(x: 1, y: -1)
                     .foregroundColor(active ? .white : .primary)
                     .frame(width: 30, height: 30)
                     .background(Circle().fill(active ? AnyShapeStyle(Color.accentColor) : AnyShapeStyle(.ultraThinMaterial)))

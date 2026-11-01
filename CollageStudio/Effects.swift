@@ -1015,7 +1015,7 @@ struct FilterControls: View {
                                         lineWidth: selected ? 3 : 1))
             Text(filter.title)
                 .font(.system(size: 11, weight: selected ? .semibold : .medium))
-                .foregroundColor(selected ? .accentColor : .primary)
+                .thumbCaption(selected: selected)
         }
         .contentShape(Rectangle())
         // Tap picks the filter. The built-in tap / long-press handlers (not a

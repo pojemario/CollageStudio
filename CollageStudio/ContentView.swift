@@ -49,15 +49,39 @@ struct SavingOverlay: View {
 /// not the collage — so photos that won't move never look broken. Purely
 /// informational: touches pass through.
 struct OverlayModeLabel: View {
+    private static let title = "OVERLAY MODE"
+    private static let note = "Gestures move overlays, not photos"
+    /// Letter spacing that makes the title as wide as the note under it.
+    /// Tracking also follows the last letter, so the title is nudged back
+    /// by half of it to stay centered.
+    private static let tracking: CGFloat = {
+        #if canImport(UIKit)
+        func width(_ text: String, _ size: CGFloat, _ weight: UIFont.Weight) -> CGFloat {
+            (text as NSString).size(withAttributes: [.font: UIFont.systemFont(ofSize: size, weight: weight)]).width
+        }
+        #else
+        func width(_ text: String, _ size: CGFloat, _ weight: NSFont.Weight) -> CGFloat {
+            (text as NSString).size(withAttributes: [.font: NSFont.systemFont(ofSize: size, weight: weight)]).width
+        }
+        #endif
+        let gaps = CGFloat(title.count - 1)
+        return max((width(note, 13, .medium) - width(title, 20, .heavy)) / gaps, 0)
+    }()
+
+    /// The first time overlay mode turns on after launch, a light sweeps
+    /// across the band once to draw the eye; after that it just appears.
+    private static var introduced = false
+    @State private var sweep: CGFloat = 0
+    @State private var glow = false
+
     var body: some View {
-        HStack(spacing: 7) {
-            Image(systemName: "sparkles")
-                .font(.system(size: 12, weight: .bold))
-            Text("OVERLAY MODE")
-                .font(.system(size: 13, weight: .heavy))
-                .tracking(0.8)
-            Text("· gestures move the overlay, not photos")
-                .font(.system(size: 12, weight: .medium))
+        VStack(spacing: 0) {
+            Text(Self.title)
+                .font(.system(size: 20, weight: .heavy))
+                .tracking(Self.tracking)
+                .offset(x: Self.tracking / 2)
+            Text(Self.note)
+                .font(.system(size: 13, weight: .medium))
                 .opacity(0.85)
         }
         .lineLimit(1)
@@ -65,9 +89,25 @@ struct OverlayModeLabel: View {
         .foregroundColor(.white)
         .padding(.horizontal, 14)
         .frame(maxWidth: .infinity, minHeight: 32, maxHeight: .infinity)
-        // A band from edge to edge: the accent, deepened, so the white
-        // letters stand out.
-        .background(Color.accentColor.overlay(Color.black.opacity(0.45)))
+        // A band from edge to edge: the accent, a little deeper, so the
+        // white letters stand out.
+        .background(Color.accentColor.overlay(Color.black.opacity(glow ? 0 : 0.25)))
+        .overlay {
+            GeometryReader { g in
+                let band = g.size.width * 0.4
+                LinearGradient(colors: [.clear, .white.opacity(0.55), .clear], startPoint: .leading, endPoint: .trailing)
+                    .frame(width: band)
+                    .offset(x: -band + sweep * (g.size.width + band))
+            }
+        }
+        .clipShape(UnevenRoundedRectangle(topLeadingRadius: 12, topTrailingRadius: 12, style: .continuous))
+        .onAppear {
+            guard !Self.introduced else { return }
+            Self.introduced = true
+            withAnimation(.easeInOut(duration: 0.9).delay(0.25)) { sweep = 1 }
+            withAnimation(.easeOut(duration: 0.35).delay(0.25)) { glow = true }
+            withAnimation(.easeIn(duration: 0.5).delay(0.9)) { glow = false }
+        }
         .allowsHitTesting(false)
         .accessibilityElement(children: .combine)
     }
@@ -459,7 +499,7 @@ struct ContentView: View {
     var iPadLayout: some View {
         HStack(spacing: 0) {
             VStack(spacing: 0) {
-                overlayModeRow.frame(height: 36)
+                overlayModeRow.frame(height: 44)
                 PageTabBar()
                 CanvasContainerView()
                     .frame(maxWidth: .infinity, maxHeight: .infinity)

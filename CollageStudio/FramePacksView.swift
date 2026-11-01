@@ -206,8 +206,8 @@ struct FramePickerRow: View {
                         .stroke(isSelected ? Color.accentColor : .clear, lineWidth: 2)
                 )
                 Text(label)
-                    .font(.caption2)
-                    .foregroundColor(isSelected ? .accentColor : .secondary)
+                    .font(.caption2.weight(isSelected ? .semibold : .regular))
+                    .thumbCaption(selected: isSelected, unselected: .secondary)
             }
         }
         .buttonStyle(.plain)
