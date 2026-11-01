@@ -90,7 +90,8 @@ struct ActionBar: View {
                             }
                             if state.canRedo { historyButton("arrow.uturn.forward", "Redo") { state.redo() } }
                         }
-                        .padding(.horizontal, 3)
+                        // No side padding: one button alone sits in a
+                        // perfect circle (40 × 40).
                         .frame(height: 40)
                         .background { ToolbarPillGlass() }
                         .transition(.opacity.combined(with: .scale(scale: 0.8)))
@@ -132,7 +133,7 @@ struct ActionBar: View {
             Image(systemName: sf)
                 .font(.system(size: 15, weight: .medium))
                 .foregroundColor(.primary)
-                .frame(width: 40, height: 44)
+                .frame(width: 40, height: 40)
                 .contentShape(Rectangle())
         }
         .buttonStyle(.plain)
