@@ -184,8 +184,9 @@ class CollageUITestCase: XCTestCase {
         XCTFail("the share sheet didn't close · \(probeText)", file: file, line: line)
     }
 
-    /// Back to the Collages screen (the logo).
+    /// Back to the Collages screen (the Collages tile in Content).
     func goToCollages(file: StaticString = #filePath, line: UInt = #line) {
+        openTab("Content", file: file, line: line)
         tap(button("Collages"), file: file, line: line)
         wait("photos", is: 0, file: file, line: line)
         XCTAssertTrue(button("New collage").waitForExistence(timeout: 10), file: file, line: line)

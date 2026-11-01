@@ -70,8 +70,9 @@ final class FeatureTests: CollageUITestCase {
     func testThreeByFourCanvas() {
         launch(photos: 3)
         newCollage(photos: 3)
+        openTab("Content")
         tap(app.buttons.matching(NSPredicate(format: "label BEGINSWITH 'Canvas ratio'")).firstMatch)
-        tap(button("3×4"))
+        tap(button("3 × 4"))
         wait("ratio", is: "3:4")
     }
 
