@@ -714,13 +714,15 @@ struct PageStyle: Equatable {
     var backgroundKind: BackgroundKind = .color
     /// Bottom color of a gradient background.
     var backgroundColor2: Color = Color(.sRGB, red: 0.85, green: 0.87, blue: 0.93, opacity: 1)
-    var borderColor: Color = .white
+    /// The opposite of the spacing (background) color, white → black; it
+    /// follows the background while the border is off (CollageState).
+    var borderColor: Color = .black
     var borderThickness: Double = 0
     /// A new border starts dashed and inside the photos (and, see
     /// CollageState.borderThickness, in the spacing color's opposite).
     var borderStyle: BorderStyle = .dashed
     var borderPlacement: BorderPlacement = .inner
-    var linkBorderToBackground: Bool = true
+    var linkBorderToBackground: Bool = false
 }
 
 extension PageStyle {
@@ -761,6 +763,17 @@ extension Color {
         guard let c = NSColor(self).usingColorSpace(.sRGB) else { return [1, 1, 1, 1] }
         return [c.redComponent, c.greenComponent, c.blueComponent, c.alphaComponent].map(Double.init)
         #endif
+    }
+
+    /// The opposite color (1 − each sRGB channel), fully opaque.
+    var inverted: Color {
+        let c = srgbComponents
+        return Color(.sRGB, red: 1 - c[0], green: 1 - c[1], blue: 1 - c[2], opacity: 1)
+    }
+
+    /// The same color to within rounding, whatever way each was made.
+    func matches(_ other: Color) -> Bool {
+        zip(srgbComponents, other.srgbComponents).allSatisfy { abs($0 - $1) < 0.004 }
     }
 
     /// WCAG relative luminance (0 = black, 1 = white).

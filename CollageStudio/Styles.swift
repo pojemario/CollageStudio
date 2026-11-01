@@ -33,8 +33,8 @@ struct StylePreset: Identifiable, Codable, Equatable {
         s.backgroundColor = background
         s.backgroundKind = kind
         if let second { s.backgroundColor2 = second }
-        s.borderColor = borderColor ?? background
-        s.linkBorderToBackground = borderColor == nil
+        s.borderColor = borderColor ?? background.inverted
+        s.linkBorderToBackground = false
         s.gap = gap
         s.cornerRadius = rounding
         s.borderThickness = border

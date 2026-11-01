@@ -29,6 +29,12 @@ extension PageStyle: Codable {
         linkBorderToBackground = try c.decodeIfPresent(Bool.self, forKey: .linkBorderToBackground) ?? linkBorderToBackground
         if let v = try c.decodeIfPresent(String.self, forKey: .backgroundKind), let k = BackgroundKind(rawValue: v) { backgroundKind = k }
         if let v = try c.decodeIfPresent([Double].self, forKey: .backgroundColor2), let col = Color(srgbComponents: v) { backgroundColor2 = col }
+        // No border: its color is the background's opposite, as in a new
+        // collage (older ones saved white, linked to the background).
+        if borderThickness <= 0 {
+            borderColor = backgroundColor.inverted
+            linkBorderToBackground = false
+        }
     }
 
     func encode(to encoder: Encoder) throws {

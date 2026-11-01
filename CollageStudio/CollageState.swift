@@ -238,8 +238,15 @@ class CollageState: ObservableObject {
     var backgroundColor: Color {
         get { currentPage.style.backgroundColor }
         set {
+            let oldDefault = defaultBorderColor
             currentPage.style.backgroundColor = newValue
             syncLinkedBorderColor()
+            // No border yet (or one still in its default color): the border
+            // color stays the background's opposite, so it's set before the
+            // Border page is ever shown and never counts as a change.
+            if !linkBorderToBackground, borderThickness <= 0 || borderColor.matches(oldDefault) {
+                currentPage.style.borderColor = defaultBorderColor
+            }
         }
     }
     /// True while a potentially slow operation is running (image import,
@@ -327,12 +334,13 @@ class CollageState: ObservableObject {
             // color's opposite, so it shows.
             let turningOn = currentPage.style.borderThickness <= 0 && newValue > 0
             currentPage.style.borderThickness = newValue
-            if turningOn && (linkBorderToBackground || borderColor == PageStyle().borderColor) {
-                let c = backgroundColor.srgbComponents
-                borderColor = Color(.sRGB, red: 1 - c[0], green: 1 - c[1], blue: 1 - c[2], opacity: 1)
+            if turningOn && (linkBorderToBackground || borderColor.matches(.white)) {
+                borderColor = defaultBorderColor
             }
         }
     }
+    /// A border's starting color: the spacing (background) color's opposite.
+    var defaultBorderColor: Color { backgroundColor.inverted }
     var borderStyle: BorderStyle {
         get { currentPage.style.borderStyle }
         set { currentPage.style.borderStyle = newValue }
@@ -2537,7 +2545,7 @@ class CollageState: ObservableObject {
     /// Whether the Layout settings differ from their defaults.
     var hasStyleChanges: Bool {
         gap != PageStyle().gap || cornerRadius != PageStyle().cornerRadius || borderThickness != 0 || borderStyle != PageStyle().borderStyle
-            || backgroundColor != .white || borderColor != .white || backgroundKind != .color
+            || backgroundColor != .white || !borderColor.matches(defaultBorderColor) || backgroundKind != .color
     }
 
     func resetStyle() {
@@ -2552,12 +2560,12 @@ class CollageState: ObservableObject {
     func resetBorder() {
         borderStyle = PageStyle().borderStyle
         borderThickness = 0
-        borderColor = .white
+        borderColor = defaultBorderColor
         borderPlacement = PageStyle().borderPlacement
     }
 
     var hasBorderChanges: Bool {
-        borderThickness != 0 || borderStyle != PageStyle().borderStyle || borderColor != .white || borderPlacement != PageStyle().borderPlacement
+        borderThickness != 0 || borderStyle != PageStyle().borderStyle || !borderColor.matches(defaultBorderColor) || borderPlacement != PageStyle().borderPlacement
     }
 
     /// Empties the canvas for a new collage, which starts from the default
