@@ -2025,6 +2025,19 @@ class CollageState: ObservableObject {
     /// A text box's editor was opened by the tap being handled now.
     var textEditJustOpened: Bool { Date().timeIntervalSince(lastTextTap) < 0.4 }
 
+    /// Before / after pressed: a clean view of the canvas — the open panel
+    /// put away, its tab let go, nothing selected.
+    func clearViewForCompare() {
+        endTextEditing()
+        endProtrusionEditing()
+        endPhotoEditing()
+        closeRatio()
+        selectImage(nil)
+        selectedOverlayId = nil
+        collapsePanel()
+        withAnimation(.easeInOut(duration: 0.25)) { panelTabShown = false }
+    }
+
     /// Canvas taps dismiss whatever is open: text editing, panel, ratio sheet.
     func handleCanvasTap() {
         DispatchQueue.main.async { [self] in
@@ -2165,8 +2178,9 @@ class CollageState: ObservableObject {
             }
             guard !remaining.isEmpty else { break }
             guard canAddPost else { break }
-            // Spill pages inherit the style of the page being filled
-            pages.append(CollagePage(style: pages[pi].style.single, look: pages[pi].look))
+            // Spill pages start fresh, like a new collage (only the
+            // collage's ratio is shared).
+            pages.append(CollagePage())
             pi = pages.count - 1
         }
 
@@ -2196,7 +2210,7 @@ class CollageState: ObservableObject {
     func importPendingSharedAsNewPage() {
         guard !pendingSharedImages.isEmpty, canAddPost else { return }
         let shared = takePendingShared()
-        pages.append(CollagePage(style: currentPage.style.single, look: currentPage.look))
+        pages.append(CollagePage())
         currentPageIndex = pages.count - 1
         addPreparedImages(shared)
     }
@@ -2272,16 +2286,10 @@ class CollageState: ObservableObject {
 
     func addPage() {
         guard canAddPost else { return }
-        // New pages start with the current page's style, canvas and frame;
-        // overlays and Looks (filter, effects, edits, detail) start clean.
-        var look = currentPage.look
-        look.overlayLayers = []
-        look.effects = [:]
-        look.hsl = HSLAdjustments()
-        look.calibration = CameraCalibration()
-        look.colorFilter = .none
-        look.filterStrength = 100
-        pages.append(CollagePage(style: currentPage.style.single, look: look))
+        // A new page starts fresh, like a new collage: default layout,
+        // border, canvas, frame, overlays and style. Only the ratio (the
+        // collage's) is shared.
+        pages.append(CollagePage())
         currentPageIndex = pages.count - 1
     }
 
@@ -2341,7 +2349,7 @@ class CollageState: ObservableObject {
 
     func moveImageToNewPage(id: UUID) {
         guard canAddPost else { return }
-        pages.append(CollagePage(style: currentPage.style.single, look: currentPage.look))
+        pages.append(CollagePage())   // fresh, as any new page
         moveImage(id: id, toPage: pages.count - 1)
     }
 

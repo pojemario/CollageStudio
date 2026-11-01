@@ -394,6 +394,7 @@ private struct CompareButton: View {
                     .updating($holding) { _, holding, _ in holding = true }
             )
             .onChange(of: holding) { _, down in
+                if down { state.clearViewForCompare() }
                 state.compareOriginal = down
                 #if canImport(UIKit)
                 if down { UIImpactFeedbackGenerator(style: .light).impactOccurred() }
