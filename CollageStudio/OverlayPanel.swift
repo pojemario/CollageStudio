@@ -137,25 +137,15 @@ struct OverlayPanel: View {
     }
 
     /// One layer in the stack: tap to select (which ends any preview), tap
-    /// again to deselect; the selected one can be removed. A long press
-    /// hides the layer (dimmed, with a crossed-out eye) or shows it again.
+    /// again to deselect; the selected one can be removed. Pressing and
+    /// holding hides the layer until the finger lifts.
     private func layerChip(_ layer: OverlayLayer) -> some View {
         let isSelected = state.overlayPreview == nil && state.selectedOverlayId == layer.id
         return HStack(spacing: 6) {
             OverlayThumbnail(asset: layer.asset, height: 32)
-                .opacity(layer.isHidden ? 0.35 : 1)
-                .overlay {
-                    if layer.isHidden {
-                        Image(systemName: "eye.slash.fill")
-                            .font(.system(size: 13, weight: .semibold))
-                            .foregroundStyle(.white)
-                            .shadow(color: .black.opacity(0.6), radius: 2)
-                    }
-                }
             Text(layer.label)
                 .font(.system(size: 12, weight: .medium))
                 .lineLimit(1)
-                .opacity(layer.isHidden ? 0.55 : 1)
             // Which slide of a strip it's on.
             if state.slides > 1, let slide = layer.slide {
                 Text("\(min(slide, state.slides - 1) + 1)")
@@ -182,14 +172,16 @@ struct OverlayPanel: View {
         .foregroundColor(isSelected ? .white : .primary)
         .appButtonBackground(prominent: isSelected)
         .contentShape(Rectangle())
-        .onLongPressGesture(minimumDuration: 0.45) {
+        .opacity(state.heldHiddenOverlayId == layer.id ? 0.5 : 1)
+        .onLongPressGesture(minimumDuration: 0.3, maximumDistance: 12) {
             #if canImport(UIKit)
-            UIImpactFeedbackGenerator(style: .medium).impactOccurred()
+            UIImpactFeedbackGenerator(style: .light).impactOccurred()
             #endif
-            withAnimation(.easeInOut(duration: 0.18)) { state.toggleOverlayHidden(id: layer.id) }
+            state.heldHiddenOverlayId = layer.id
+        } onPressingChanged: { pressing in
+            if !pressing, state.heldHiddenOverlayId == layer.id { state.heldHiddenOverlayId = nil }
         }
-        .accessibilityValue(layer.isHidden ? "hidden" : "")
-        .accessibilityAction(named: layer.isHidden ? "Show" : "Hide") { state.toggleOverlayHidden(id: layer.id) }
+        .onDisappear { if state.heldHiddenOverlayId == layer.id { state.heldHiddenOverlayId = nil } }
         .onTapGesture {
             // Tapping the selected layer deselects it (in the sidebar that
             // also hands the canvas back to the collage).

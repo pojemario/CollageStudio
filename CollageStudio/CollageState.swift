@@ -564,18 +564,16 @@ class CollageState: ObservableObject {
         return CGRect(x: CGFloat(min(max(s, 0), slides - 1)) * w, y: 0, width: w, height: size.height)
     }
 
+    /// The layer whose chip is being pressed and held: hidden from the
+    /// canvas until the finger lifts, to see the collage without it.
+    @Published var heldHiddenOverlayId: UUID?
+
     func visibleOverlays(aboveFrame: Bool) -> [OverlayLayer] {
-        var layers = overlayLayers.filter { $0.aboveFrame == aboveFrame && !$0.isHidden }
+        var layers = overlayLayers.filter { $0.aboveFrame == aboveFrame && $0.id != heldHiddenOverlayId }
         if let preview = overlayPreview, preview.aboveFrame == aboveFrame, !isExporting {
             layers.append(preview)
         }
         return layers
-    }
-
-    /// A long press on a layer hides it, or shows it again.
-    func toggleOverlayHidden(id: UUID) {
-        guard let idx = overlayLayers.firstIndex(where: { $0.id == id }) else { return }
-        overlayLayers[idx].isHidden.toggle()
     }
 
     /// Tapping a texture adds it as a layer right away (and selects it for

@@ -317,8 +317,6 @@ struct ProjectFile: Codable {
         var offset: [Double]
         /// The slide of a carousel strip it fills (missing: the whole canvas).
         var slide: Int? = nil
-        /// Hidden by a long press on its layer (missing: shown).
-        var hidden: Bool? = nil
     }
 
     var imageCount: Int { pages.reduce(0) { $0 + $1.images.count } }
@@ -336,8 +334,7 @@ extension PageLook {
             overlays: overlayLayers.map {
                 ProjectFile.Overlay(asset: $0.asset, kind: $0.kind.rawValue, opacity: $0.opacity, blur: $0.blur,
                                     aboveFrame: $0.aboveFrame, scale: Double($0.scale), rotation: Double($0.rotation),
-                                    offset: [Double($0.offset.width), Double($0.offset.height)], slide: $0.slide,
-                                    hidden: $0.isHidden ? true : nil)
+                                    offset: [Double($0.offset.width), Double($0.offset.height)], slide: $0.slide)
             },
             effects: effects.storage, hsl: hsl.storage, calibration: calibration.storage,
             filter: colorFilter.storageKey, filterStrength: filterStrength)
@@ -360,7 +357,6 @@ extension PageLook {
                 layer.rotation = CGFloat(o.rotation)
                 if o.offset.count == 2 { layer.offset = CGSize(width: o.offset[0], height: o.offset[1]) }
                 layer.slide = o.slide.map { max($0, 0) }
-                layer.isHidden = o.hidden ?? false
                 return layer
             },
             effects: effectsFromStorage(f.effects), hsl: HSLAdjustments(storage: f.hsl),
