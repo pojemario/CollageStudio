@@ -796,19 +796,21 @@ struct BottomPanelView: View {
                 // Back to the Collages screen (the open one is saved).
                 ToolbarTile(sf: "square.stack", title: "Collages", prominent: false) { state.goToCollages() }
 
-                // Everything that adds to the collage, in one menu: a text
-                // box, a spacer (an intentional empty slot), a page.
+                // Everything that adds to the collage, in one menu: a page, a
+                // text box, a spacer (an intentional empty slot) — top to
+                // bottom whichever way the menu opens.
                 Menu {
-                    Button { state.addTextImage() } label: { Label("Text Box", systemImage: "character.textbox") }
-                    Button { state.addEmptyImage() } label: { Label("Spacer", systemImage: "rectangle.dashed") }
                     Button { state.addPage() } label: { Label("Page", systemImage: "doc.badge.plus") }
                         .disabled(!state.canAddPost)
+                    Button { state.addTextImage() } label: { Label("Text Box", systemImage: "character.textbox") }
+                    Button { state.addEmptyImage() } label: { Label("Spacer", systemImage: "rectangle.dashed") }
                 } label: {
                     ToolbarTileLabel(prominent: true, title: "Add") { Image(systemName: "plus") }
                 }
+                .menuOrder(.fixed)
                 .buttonStyle(.plain)
                 .accessibilityLabel("Add")
-                .accessibilityHint("A text box, a spacer or a page")
+                .accessibilityHint("A page, a text box or a spacer")
             }
 
             // The page list at its full height: the panel can grow up to the
