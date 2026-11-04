@@ -164,6 +164,11 @@ struct CollageGridView_Grid: View {
 
                         overlayLayers(aboveFrame: true, canvasSize: canvasSize)
 
+                        // Floating text, over everything (still under the
+                        // overlay-mode surface, which freezes it too).
+                        FloatingTextLayer(canvasSize: canvasSize)
+                            .allowsHitTesting(!state.overlayModeActive)
+
                         // Overlay mode: a touch surface above everything freezes
                         // the collage and steers the edited overlay instead.
                         if state.overlayModeActive && !state.isExporting {

@@ -31,6 +31,7 @@
 		AA000009 /* BottomPanelView.swift in Sources */ = {isa = PBXBuildFile; fileRef = AA100009 /* BottomPanelView.swift */; };
 		AA000010 /* Assets.xcassets in Resources */ = {isa = PBXBuildFile; fileRef = AA100010 /* Assets.xcassets */; };
 		AA0000F2 /* TextEditPanel.swift in Sources */ = {isa = PBXBuildFile; fileRef = AA0000F1 /* TextEditPanel.swift */; };
+		5E7A11C0A1B2C3D4E5F60004 /* FloatingTextLayer.swift in Sources */ = {isa = PBXBuildFile; fileRef = 5E7A11C0A1B2C3D4E5F60003 /* FloatingTextLayer.swift */; };
 		AA0000F4 /* FramePacksView.swift in Sources */ = {isa = PBXBuildFile; fileRef = AA0000F3 /* FramePacksView.swift */; };
 		AA0000F6 /* OverlayPanel.swift in Sources */ = {isa = PBXBuildFile; fileRef = AA0000F5 /* OverlayPanel.swift */; };
 		AA0000F8 /* Effects.swift in Sources */ = {isa = PBXBuildFile; fileRef = AA0000F7 /* Effects.swift */; };
@@ -92,6 +93,7 @@
 		8938F040B5DC40AE4ECC73B0 /* Foundation.framework */ = {isa = PBXFileReference; lastKnownFileType = wrapper.framework; name = Foundation.framework; path = Platforms/iPhoneOS.platform/Developer/SDKs/iPhoneOS18.0.sdk/System/Library/Frameworks/Foundation.framework; sourceTree = DEVELOPER_DIR; };
 		9AF5A09792B9DE8D5B561DE5 /* CollageUITestCase.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = CollageUITestCase.swift; sourceTree = "<group>"; };
 		AA0000F1 /* TextEditPanel.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TextEditPanel.swift; sourceTree = "<group>"; };
+		5E7A11C0A1B2C3D4E5F60003 /* FloatingTextLayer.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = FloatingTextLayer.swift; sourceTree = "<group>"; };
 		AA0000F3 /* FramePacksView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = FramePacksView.swift; sourceTree = "<group>"; };
 		AA0000F5 /* OverlayPanel.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = OverlayPanel.swift; sourceTree = "<group>"; };
 		AA0000F7 /* Effects.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Effects.swift; sourceTree = "<group>"; };
@@ -210,6 +212,7 @@
 				AA100011 /* Info.plist */,
 				225F1A5E2FEB91D500BFD410 /* ColorManager.swift */,
 				AA0000F1 /* TextEditPanel.swift */,
+				5E7A11C0A1B2C3D4E5F60003 /* FloatingTextLayer.swift */,
 				AA0000F3 /* FramePacksView.swift */,
 				AA0000F5 /* OverlayPanel.swift */,
 				AA0000F7 /* Effects.swift */,
@@ -481,6 +484,7 @@
 				AA000001 /* CollageApp.swift in Sources */,
 				225F1A5F2FEB91D500BFD410 /* ColorManager.swift in Sources */,
 				AA0000F2 /* TextEditPanel.swift in Sources */,
+				5E7A11C0A1B2C3D4E5F60004 /* FloatingTextLayer.swift in Sources */,
 				AA0000F4 /* FramePacksView.swift in Sources */,
 				AA0000F6 /* OverlayPanel.swift in Sources */,
 				AA0000F8 /* Effects.swift in Sources */,

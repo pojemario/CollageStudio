@@ -13,6 +13,7 @@ struct SidebarView: View {
     /// section until it's done.
     private var editor: String? {
         if state.textEditTargetId != nil { return "Text Box" }
+        if state.selectedText != nil { return "Text" }
         if state.protrusionTargetId != nil { return "Cutout" }
         if state.photoEditTargetId != nil { return "Edit Photo" }
         return nil
@@ -53,6 +54,8 @@ struct SidebarView: View {
                 section("Canvas Ratio") { RatioPanelView() }
                 if let textId = state.textEditTargetId {
                     section("Text Box") { TextEditPanel(imageId: textId) }
+                } else if let floatingId = state.selectedText?.id {
+                    section("Text") { TextEditPanel(textId: floatingId) }
                 }
                 if let protrudeId = state.protrusionTargetId {
                     section("Cutout") { ProtrusionPanel(imageId: protrudeId) }
@@ -133,7 +136,7 @@ struct SidebarView: View {
                 ToolbarTile(sf: "rectangle.dashed.badge.record", title: "Spacer") { state.addEmptyImage() }
 
                 // Adds an editable text box rendered as an image.
-                ToolbarTile(sf: "character.textbox", title: "Text Box") { state.addTextImage() }
+                ToolbarTile(sf: "textformat", title: "Text") { state.addFloatingText() }
             }
 
             PageGroupsView()

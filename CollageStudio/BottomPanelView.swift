@@ -318,6 +318,7 @@ struct FloatingTabBar: View {
     private func isOpen(_ i: Int) -> Bool {
         i == activeTab && state.panelTabShown && state.isPanelOpen
             && state.textEditTargetId == nil && state.protrusionTargetId == nil && state.photoEditTargetId == nil
+            && state.selectedText == nil
     }
 
     /// Second tap on the open tab: panel down, no tab chosen.
@@ -340,8 +341,10 @@ struct FloatingTabBar: View {
         state.closeRatio()
         // Nothing chosen yet (a saved collage just opened): open this tab.
         state.panelTabShown = true
-        if state.textEditTargetId != nil || state.protrusionTargetId != nil || state.photoEditTargetId != nil {
+        if state.textEditTargetId != nil || state.protrusionTargetId != nil || state.photoEditTargetId != nil
+            || state.selectedTextId != nil {
             // Any tab leaves text / cutout / photo editing and shows that tab.
+            state.selectText(nil, keepTab: true)
             state.endTextEditing()
             state.endProtrusionEditing()
             state.endPhotoEditing()
@@ -562,7 +565,8 @@ struct BottomPanelView: View {
     /// What "All Pages" copies from this tab, when it shows (more than one
     /// page, a tab's own settings, no editor open).
     private var allPagesParts: Set<PageLookPart>? {
-        guard state.pages.count > 1, state.textEditTargetId == nil, state.protrusionTargetId == nil,
+        guard state.pages.count > 1, state.textEditTargetId == nil, state.selectedText == nil,
+              state.protrusionTargetId == nil,
               state.photoEditTargetId == nil, state.panelTabShown else { return nil }
         switch state.selectedPanelTab {
         case 1: return state.layoutPage == .arrange ? nil : [.layout, .background, .border, .canvas]
@@ -582,6 +586,7 @@ struct BottomPanelView: View {
     /// not resized yet shows at full height.
     private var capKey: Int {
         if state.textEditTargetId != nil { return -1 }
+        if state.selectedText != nil { return -4 }
         if state.protrusionTargetId != nil { return -2 }
         if state.photoEditTargetId != nil { return -3 }
         // Layout's and Looks' pages each keep their own size.
@@ -747,6 +752,9 @@ struct BottomPanelView: View {
             // Editing a text box takes over the panel until it's done.
             if let textId = state.textEditTargetId {
                 TextEditPanel(imageId: textId)
+            } else if let floatingId = state.selectedText?.id {
+                // So does the floating text selected on the collage.
+                TextEditPanel(textId: floatingId)
             } else if let protrudeId = state.protrusionTargetId {
                 // So does a photo's cutout (photo toolbar → Cutout).
                 ProtrusionPanel(imageId: protrudeId)
@@ -844,7 +852,7 @@ struct BottomPanelView: View {
                 Menu {
                     Button { state.addPage() } label: { Label("Page", systemImage: "doc.badge.plus") }
                         .disabled(!state.canAddPost)
-                    Button { state.addTextImage() } label: { Label("Text Box", systemImage: "character.textbox") }
+                    Button { state.addFloatingText() } label: { Label("Text", systemImage: "textformat") }
                     Button { state.addEmptyImage() } label: { Label("Spacer", systemImage: "rectangle.dashed") }
                 } label: {
                     ToolbarTileLabel(prominent: true, title: "Add") { Image(systemName: "plus") }

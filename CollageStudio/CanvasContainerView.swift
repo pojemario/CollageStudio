@@ -63,13 +63,18 @@ struct CanvasContainerView: View {
             // keep that box in the part of the screen the panel (and
             // keyboard) leave free, so every change is seen live.
             let textShift: CGFloat = {
-                guard let id = state.textEditTargetId, let box = state.imageFrame(for: id) else { return 0 }
+                let midY: CGFloat
+                if let id = state.editingTextId, let t = state.texts.first(where: { $0.id == id }) {
+                    midY = t.center.y * displayH
+                } else if let id = state.textEditTargetId, let box = state.imageFrame(for: id) {
+                    midY = box.midY
+                } else { return 0 }
                 let top = geo.frame(in: .global).minY
                 let visible: CGFloat = state.isPanelOpen && state.panelTopGlobalY > top
                     ? max(state.panelTopGlobalY - top, 120)
                     : max(geo.size.height - FloatingTabBar.zoneHeight, 120)
                 guard displayH > visible else { return 0 }
-                let wanted = visible / 2 - box.midY
+                let wanted = visible / 2 - midY
                 return min(max(wanted, -(displayH - visible)), 0)
             }()
 

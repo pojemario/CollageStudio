@@ -108,6 +108,28 @@ extension TextBoxStyle {
     }
 }
 
+extension TextBoxStyle {
+    private static let lastFloatingKey = "lastFloatingTextStyle"
+
+    /// The look of the floating text edited last, for new text to start
+    /// from; at first white with a soft shadow, to read over any photo.
+    static var lastFloating: TextBoxStyle {
+        get {
+            if let data = UserDefaults.standard.data(forKey: lastFloatingKey),
+               var style = try? JSONDecoder().decode(TextBoxStyle.self, from: data) {
+                style.text = TextBoxStyle().text
+                return style
+            }
+            var style = TextBoxStyle()
+            style.fontSize = FloatingText.defaultFontSize
+            style.textColor = .white
+            style.effect = .shadow
+            return style
+        }
+        set { UserDefaults.standard.set(try? JSONEncoder().encode(newValue), forKey: lastFloatingKey) }
+    }
+}
+
 extension TextBoxStyle: Codable {
     private enum CodingKeys: String, CodingKey {
         case text, fontChoice, fontSize, hAlignment, vAlignment, textColor, backgroundColor
@@ -258,6 +280,15 @@ struct ProjectFile: Codable {
         var style: PageStyle
         /// Missing in files from before per-page looks.
         var look: Look?
+        /// Floating text (missing: none, and in files before build 150).
+        var texts: [FloatingTextFile]? = nil
+    }
+
+    struct FloatingTextFile: Codable {
+        var style: TextBoxStyle
+        var center: [Double]
+        var width: Double?
+        var rotation: Double
     }
 
     /// A page's margin, rotation, frame, overlays, edits and filter.
@@ -708,7 +739,11 @@ extension CollageState {
                 columns: page.layout.columns.map { $0.map(\.imageId) },
                 colGrows: page.layout.colGrows.map(Double.init),
                 boxGrows: page.layout.boxGrows.map { $0.map(Double.init) },
-                style: page.style, look: page.look.file)
+                style: page.style, look: page.look.file,
+                texts: page.texts.isEmpty ? nil : page.texts.map {
+                    ProjectFile.FloatingTextFile(style: $0.style, center: [Double($0.center.x), Double($0.center.y)],
+                                                 width: $0.width.map(Double.init), rotation: Double($0.rotation))
+                })
         }
         // Forget pictures no longer in the collage (their files go too).
         savedImageFiles = savedImageFiles.filter { used.contains($0.key) }
@@ -921,6 +956,15 @@ extension CollageState {
             var page = CollagePage(style: p.style, look: p.look.map { PageLook(file: $0) } ?? collageLook)
             if legacySlides > 1 && page.style.slides == 1 { page.style.slides = legacySlides }
             if p.look != nil { halveFade(&page.look) }
+            page.texts = (p.texts ?? []).map { t in
+                var text = FloatingText(style: t.style)
+                if t.center.count == 2 {
+                    text.center = CGPoint(x: min(max(t.center[0], 0), 1), y: min(max(t.center[1], 0), 1))
+                }
+                text.width = t.width.map { CGFloat($0) }
+                text.rotation = CGFloat(t.rotation)
+                return text
+            }
             page.images = p.images.compactMap { images[$0.id] }
             let present = Set(page.images.map(\.id))
             page.order = p.order.filter { present.contains($0) }
@@ -1639,6 +1683,16 @@ extension CollageState {
         }
         // `-addText` adds a text box (opened in the panel) after the seed;
         // `-textAt N` puts it at position N (and closes the panel).
+        // `-floatingText` adds floating text (typing); `-floatingSelected`
+        // leaves it selected, done typing.
+        if args.contains("-floatingText") {
+            DispatchQueue.main.asyncAfter(deadline: .now() + 2.5) {
+                self.addFloatingText()
+                if args.contains("-floatingSelected") {
+                    DispatchQueue.main.asyncAfter(deadline: .now() + 1) { self.endEditingText() }
+                }
+            }
+        }
         if args.contains("-addText") {
             DispatchQueue.main.asyncAfter(deadline: .now() + 2.5) {
                 self.addTextImage()
