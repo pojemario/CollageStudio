@@ -17,6 +17,8 @@ struct FloatingTextLayer: View {
     @GestureState private var pinch: CGFloat = 1
     @GestureState private var twist: Angle = .zero
     @GestureState private var resize = Resize()
+    /// A finger is moving, pinching or turning the text: only the text shows.
+    @GestureState private var handling = false
     @FocusState private var typing: UUID?
 
     /// A handle being dragged: the size (corners) or wrap width (sides)
@@ -76,10 +78,13 @@ struct FloatingTextLayer: View {
                 FloatingTextLabel(style: t.style, pointSize: pt, width: width)
             }
         }
+        // A touch a little off the letters still takes the text.
+        .contentShape(Rectangle().inset(by: -10))
+        // (After the text's own shape: the handles sit outside it and
+        // must take their touches, not the photo under them.)
         .overlay {
-            if selected && !editing { adorner(stored) }
+            if selected && !editing && !handling { adorner(stored) }
         }
-        .contentShape(Rectangle())
         .rotationEffect(.radians(t.rotation))
         .gesture(editing || !onScreen ? nil : moveGesture(stored))
         .simultaneousGesture(editing || !onScreen ? nil : pinchGesture(stored))
@@ -126,7 +131,8 @@ struct FloatingTextLayer: View {
     // MARK: - Handles
 
     /// Dotted edges (inverting what's under them, like a selected photo's)
-    /// with round handles: corners resize, sides set the wrap width.
+    /// with a round handle at each corner: dragged, the text grows or
+    /// shrinks (its letters and the width it wraps at alike).
     private func adorner(_ t: FloatingText) -> some View {
         GeometryReader { g in
             let pad: CGFloat = 12
@@ -146,14 +152,6 @@ struct FloatingTextLayer: View {
                         .gesture(resizeGesture(t, corner: true))
                         .accessibilityLabel("Resize text")
                         .accessibilityIdentifier("textHandle.corner\(i)")
-                }
-                ForEach(Array([CGPoint(x: r.minX, y: r.midY), CGPoint(x: r.maxX, y: r.midY)].enumerated()),
-                        id: \.offset) { i, p in
-                    handle(corner: false)
-                        .position(p)
-                        .gesture(resizeGesture(t, corner: false))
-                        .accessibilityLabel("Text width")
-                        .accessibilityIdentifier("textHandle.side\(i)")
                 }
             }
         }
@@ -214,8 +212,11 @@ struct FloatingTextLayer: View {
     }
 
     private func moveGesture(_ t: FloatingText) -> some Gesture {
-        DragGesture(minimumDistance: 4)
+        // In the canvas's space: measured in the text's own, the text moving
+        // under the finger would feed back into the drag (and flicker).
+        DragGesture(minimumDistance: 4, coordinateSpace: .named(Self.space))
             .updating($move) { v, s, _ in s = v.translation }
+            .updating($handling) { _, s, _ in s = true }
             .onChanged { _ in
                 state.touchFloatingText()
                 if state.selectedTextId != t.id { state.selectText(t.id) }
@@ -229,6 +230,7 @@ struct FloatingTextLayer: View {
     private func pinchGesture(_ t: FloatingText) -> some Gesture {
         MagnifyGesture()
             .updating($pinch) { v, s, _ in s = v.magnification }
+            .updating($handling) { _, s, _ in s = true }
             .onChanged { _ in
                 state.touchFloatingText()
                 if state.selectedTextId != t.id { state.selectText(t.id) }
