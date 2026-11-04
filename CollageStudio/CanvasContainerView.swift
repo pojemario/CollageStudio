@@ -20,6 +20,11 @@ struct CanvasContainerView: View {
     @State private var photoItems: [PhotosPickerItem] = []
     @State private var replaceItems: [PhotosPickerItem] = []
     @State private var showAddPicker = false
+    /// The text shift once the panel and keyboard have settled: typing
+    /// starts with the panel rising, shrinking to its tools and riding up
+    /// on the keyboard, and following each step made the canvas bounce.
+    @State private var settledTextShift: CGFloat = 0
+    @State private var textShiftTask: Task<Void, Never>?
     /// The page bar's height over the canvas (PageTabBar plus its margin).
     static let pagerHeight: CGFloat = 50
 
@@ -171,8 +176,16 @@ struct CanvasContainerView: View {
                     }
                 }
                 .frame(width: contentW, height: contentH)
-                .offset(y: textShift)
-                .animation(.easeInOut(duration: 0.3), value: textShift)
+                .offset(y: settledTextShift)
+                .animation(.easeInOut(duration: 0.3), value: settledTextShift)
+                .onChange(of: textShift, initial: true) { _, shift in
+                    textShiftTask?.cancel()
+                    textShiftTask = Task { @MainActor in
+                        try? await Task.sleep(nanoseconds: 350_000_000)
+                        guard !Task.isCancelled else { return }
+                        settledTextShift = shift
+                    }
+                }
                 // (Taps here, gaps between images included, reach the canvas
                 // area's tap handler below — once.)
                 .contentShape(Rectangle())
