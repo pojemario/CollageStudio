@@ -67,19 +67,26 @@ struct CanvasContainerView: View {
             // While a text box is edited, the canvas slides up just enough to
             // keep that box in the part of the screen the panel (and
             // keyboard) leave free, so every change is seen live.
+            let isFloatingEdit = state.editingTextId != nil
             let textShift: CGFloat = {
-                let midY: CGFloat
+                // The part that must stay in view: floating text's middle
+                // with room for a line or two, or the whole text box.
+                let midY: CGFloat, bottom: CGFloat
                 if let id = state.editingTextId, let t = state.texts.first(where: { $0.id == id }) {
                     midY = t.center.y * displayH
+                    bottom = midY + max(t.style.fontSize * FloatingText.unit(for: CGSize(width: displayW, height: displayH)), 30)
                 } else if let id = state.textEditTargetId, let box = state.imageFrame(for: id) {
                     midY = box.midY
+                    bottom = box.maxY
                 } else { return 0 }
                 let top = geo.frame(in: .global).minY
                 let visible: CGFloat = state.isPanelOpen && state.panelTopGlobalY > top
                     ? max(state.panelTopGlobalY - top, 120)
                     : max(geo.size.height - FloatingTabBar.zoneHeight, 120)
                 guard displayH > visible else { return 0 }
-                let wanted = visible / 2 - midY
+                // Already in view: the canvas stays put.
+                if bottom + 12 <= visible { return 0 }
+                let wanted = isFloatingEdit ? visible - 12 - bottom : visible / 2 - midY
                 return min(max(wanted, -(displayH - visible)), 0)
             }()
 
