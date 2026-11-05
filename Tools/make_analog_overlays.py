@@ -200,6 +200,9 @@ BLAZE = [(0, (232, 64, 22)), (.25, (240, 120, 40)), (.5, (244, 196, 110)), (.7, 
          (.88, (252, 250, 214)), (1, (255, 255, 238))]
 # Coral (from a reference scan): an even coral-red veil, pale pink where it flares
 CORAL = [(0, (196, 44, 30)), (.55, (226, 92, 62)), (.8, (240, 150, 132)), (1, (250, 226, 226))]
+# Ember: deep red at the faint edge, red-orange body, an orange-peach hot core
+EMBER = [(0, (186, 28, 16)), (.4, (226, 58, 28)), (.7, (244, 104, 46)), (.9, (250, 146, 80)),
+         (1, (255, 190, 130))]
 GOLD = [(0, (240, 96, 10)), (.45, (254, 152, 30)), (.8, (255, 214, 120)), (1, (255, 250, 228))]
 
 
@@ -294,7 +297,23 @@ def leak_coral(rng):        # coral-red veil over the right quarter, flaring pal
     return leak_image(rng, f, CORAL, strength=1.0)
 
 
-LEAKS = [("Edge", 201, leak_edge), ("Corner", 203, leak_corner), ("Band", 207, leak_band),
+def leak_ember(rng):        # red-orange glow down the right side, a stray streak across it low
+    # Glow: a soft inner edge ~72% across, wandering a little; strongest in
+    # the upper half, gone by the bottom fifth. Its core runs orange, never white.
+    edge = .72 + .025 * lnoise(rng, 90) + .015 * np.sin(V * 7)
+    side = .5 + .5 * np.tanh((U - edge) / .085)
+    height = np.exp(-((V - .3) / .26) ** 2) * .85 + .15 * np.exp(-((V - .55) / .2) ** 2)
+    veil = side * height * .62
+    core = np.exp(-(((U - .9) / .11) ** 2 + ((V - .28) / .2) ** 2)) * .82
+    # A thin horizontal streak a little below the middle, from ~55% across
+    # to the edge, brightest where it meets the glow.
+    sy = .535 + .006 * lnoise(rng, 120)
+    streak = np.exp(-((V - sy) / .013) ** 2) * (.5 + .5 * np.tanh((U - .58) / .06)) * .72
+    f = np.maximum(np.maximum(veil, core * side), streak) * wobble(rng, 90, .85, 1.05)
+    return leak_image(rng, f, EMBER, strength=.95)
+
+
+LEAKS = [("Ember", 239, leak_ember), ("Edge", 201, leak_edge), ("Corner", 203, leak_corner), ("Band", 207, leak_band),
          ("Burn", 211, leak_burn), ("Magenta", 223, leak_magenta), ("Streaks", 227, leak_streaks),
          ("Blaze", 229, leak_blaze), ("Coral", 233, leak_coral)]
 

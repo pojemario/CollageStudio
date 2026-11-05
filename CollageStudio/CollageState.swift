@@ -528,7 +528,7 @@ class CollageState: ObservableObject {
     /// Assets.xcassets/Overlays/ and listing them here.
     static let overlayPacks: [OverlayPack] = [
         OverlayPack(name: "Light Leaks", kind: .leak, assets: [
-            "Leak916_Edge", "Leak916_Corner", "Leak916_Band",
+            "Leak916_Ember", "Leak916_Edge", "Leak916_Corner", "Leak916_Band",
             "Leak916_Burn", "Leak916_Magenta", "Leak916_Streaks",
             "Leak916_Blaze", "Leak916_Coral",
         ]),
