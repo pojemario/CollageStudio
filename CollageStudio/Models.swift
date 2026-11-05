@@ -813,6 +813,34 @@ struct CollagePage: Identifiable {
     var layout: CollageLayout = CollageLayout()
     var style: PageStyle = PageStyle()
     var look: PageLook = PageLook()
+    /// Text floating over the collage, drawn above everything, in order.
+    var texts: [FloatingText] = []
+}
+
+// MARK: - Floating text
+
+/// Text placed freely over the collage (not in a box of the layout): moved
+/// by finger, resized by its handles, typed right where it sits. Sizes are
+/// in points on a canvas whose short edge is 1200, so the text keeps its
+/// proportions whatever the canvas size.
+struct FloatingText: Identifiable, Equatable {
+    var id = UUID()
+    /// The look (font, size, colors, effect, spacing, alignment).
+    var style: TextBoxStyle
+    /// Its center, as a fraction of the canvas (0…1 each way).
+    var center = CGPoint(x: 0.5, y: 0.5)
+    /// Wrap width in the same units; nil: as wide as its longest line.
+    var width: CGFloat? = nil
+    /// Radians.
+    var rotation: CGFloat = 0
+
+    static let fontSizeRange: ClosedRange<CGFloat> = 16...600
+    static let defaultFontSize: CGFloat = 110
+
+    /// Points per unit on a canvas of this size.
+    static func unit(for canvas: CGSize) -> CGFloat {
+        max(min(canvas.width, canvas.height), 1) / 1200
+    }
 }
 
 /// How a page is finished: canvas margin and rotation, frame, overlays,

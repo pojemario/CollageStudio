@@ -1504,6 +1504,8 @@ class CollageState: ObservableObject {
             textEditTargetId = nil
             protrusionTargetId = nil
             photoEditTargetId = nil
+            selectedTextId = nil
+            editingTextId = nil
             panelDrag = 0
             isPanelDragging = false
         }
@@ -1779,6 +1781,122 @@ class CollageState: ObservableObject {
         withAnimation(.easeInOut(duration: 0.2)) { textEditTargetId = nil }
     }
 
+    // MARK: - Floating text
+
+    /// The floating text with its handles showing (its options in the panel).
+    @Published var selectedTextId: UUID? = nil
+    /// The floating text being typed in, right on the collage.
+    @Published var editingTextId: UUID? = nil
+    /// When a floating text last took a touch: the canvas-wide tap handler
+    /// sees the same tap and must leave it be.
+    private var lastFloatingTextTouch: Date = .distantPast
+    var floatingTextJustTouched: Bool { Date().timeIntervalSince(lastFloatingTextTouch) < 0.45 }
+
+    /// This page's floating text.
+    var texts: [FloatingText] {
+        get { currentPage.texts }
+        set { currentPage.texts = newValue }
+    }
+
+    var selectedText: FloatingText? {
+        selectedTextId.flatMap { id in texts.first { $0.id == id } }
+    }
+
+    /// Text over the middle of the collage (of the picture zoomed to, on a
+    /// wide page), in the last used look, ready to type.
+    func addFloatingText() {
+        var style = TextBoxStyle.lastFloating
+        style.text = TextBoxStyle.nextGreeting()
+        var text = FloatingText(style: style)
+        if let slide = focusedSlide {
+            text.center.x = (CGFloat(slide) + 0.5) / CGFloat(max(slides, 1))
+        }
+        texts.append(text)
+        Diagnostics.log("add text")
+        selectText(text.id)
+        beginEditingText(text.id)
+    }
+
+    /// Selects a floating text (nil: none): its handles show and its options
+    /// take the panel. Letting it go puts the panel away, unless `keepTab`
+    /// (a tab is opening instead).
+    func selectText(_ id: UUID?, keepTab: Bool = false) {
+        touchFloatingText()
+        if editingTextId != nil && editingTextId != id { endEditingText() }
+        guard id != selectedTextId else { return }
+        let was = selectedTextId != nil
+        if id != nil {
+            selectImage(nil, keepTab: true)
+            endTextEditing()
+            endProtrusionEditing()
+            endPhotoEditing()
+            closeRatio()
+        }
+        withAnimation(.spring(response: 0.3, dampingFraction: 0.85)) { selectedTextId = id }
+        if id != nil {
+            withAnimation(.easeInOut(duration: 0.25)) {
+                chromeHidden = false
+                isPanelOpen = true
+            }
+        } else if was && !keepTab {
+            collapsePanel()
+            withAnimation(.easeInOut(duration: 0.25)) { panelTabShown = false }
+        }
+    }
+
+    func touchFloatingText() { lastFloatingTextTouch = Date() }
+
+    /// Typing in place: the text's own field takes the keyboard.
+    func beginEditingText(_ id: UUID) {
+        touchFloatingText()
+        if selectedTextId != id { selectText(id) }
+        editingTextId = id
+    }
+
+    /// Done typing; a text left empty goes.
+    func endEditingText() {
+        guard let id = editingTextId else { return }
+        editingTextId = nil
+        if let t = texts.first(where: { $0.id == id }),
+           t.style.text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+            removeText(id)
+        }
+    }
+
+    func updateText(_ id: UUID, _ change: (inout FloatingText) -> Void) {
+        guard let i = texts.firstIndex(where: { $0.id == id }) else { return }
+        var t = texts[i]
+        change(&t)
+        t.style.fontSize = min(max(t.style.fontSize, FloatingText.fontSizeRange.lowerBound),
+                               FloatingText.fontSizeRange.upperBound)
+        t.center = CGPoint(x: min(max(t.center.x, 0), 1), y: min(max(t.center.y, 0), 1))
+        if let w = t.width { t.width = max(w, 40) }
+        t.rotation = atan2(sin(t.rotation), cos(t.rotation))
+        guard t != texts[i] else { return }
+        texts[i] = t
+    }
+
+    func removeText(_ id: UUID) {
+        if editingTextId == id { editingTextId = nil }
+        if selectedTextId == id { selectText(nil) }
+        texts.removeAll { $0.id == id }
+    }
+
+    /// A copy a little down and to the right, selected.
+    func duplicateText(_ id: UUID) {
+        guard var copy = texts.first(where: { $0.id == id }) else { return }
+        copy.id = UUID()
+        copy.center = CGPoint(x: min(copy.center.x + 0.04, 1), y: min(copy.center.y + 0.04, 1))
+        texts.append(copy)
+        selectText(copy.id)
+    }
+
+    /// Brings it in front of the other text on the page.
+    func bringTextToFront(_ id: UUID) {
+        guard let i = texts.firstIndex(where: { $0.id == id }), i != texts.count - 1 else { return }
+        texts.append(texts.remove(at: i))
+    }
+
     // MARK: - Protrusion
 
     /// The photo whose protrusion settings fill the panel (long-press menu →
@@ -2033,6 +2151,7 @@ class CollageState: ObservableObject {
         endPhotoEditing()
         closeRatio()
         selectImage(nil)
+        selectText(nil)
         selectedOverlayId = nil
         collapsePanel()
         withAnimation(.easeInOut(duration: 0.25)) { panelTabShown = false }
@@ -2041,7 +2160,11 @@ class CollageState: ObservableObject {
     /// Canvas taps dismiss whatever is open: text editing, panel, ratio sheet.
     func handleCanvasTap() {
         DispatchQueue.main.async { [self] in
-            guard !textEditJustOpened else { return }
+            guard !textEditJustOpened, !floatingTextJustTouched else { return }
+            if selectedTextId != nil {
+                selectText(nil)
+                return
+            }
             // A tab's panel put away this way lets go of the tab too, as a
             // second tap on the tab does.
             let tabPanel = isPanelOpen && textEditTargetId == nil && protrusionTargetId == nil
@@ -2054,7 +2177,7 @@ class CollageState: ObservableObject {
         // A box's own tap comes a moment later (it first waits to see if
         // it's a double tap): only a tap no box took lets the selection go.
         DispatchQueue.main.asyncAfter(deadline: .now() + 0.4) { [self] in
-            guard Date().timeIntervalSince(lastBoxTap) > 0.6 else { return }
+            guard Date().timeIntervalSince(lastBoxTap) > 0.6, !floatingTextJustTouched else { return }
             selectImage(nil)
         }
     }

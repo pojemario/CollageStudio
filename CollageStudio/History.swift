@@ -35,7 +35,7 @@ struct CollageSnapshot {
 
 extension CollagePage {
     func sameContent(as o: CollagePage) -> Bool {
-        id == o.id && order == o.order && style == o.style && look == o.look
+        id == o.id && order == o.order && style == o.style && look == o.look && texts == o.texts
             && images.count == o.images.count
             && zip(images, o.images).allSatisfy { $0.sameContent(as: $1) }
             && layout.sameContent(as: o.layout)
@@ -153,6 +153,7 @@ extension CollageState {
 
     private func restoreHistory(_ target: CollageSnapshot, from current: CollageSnapshot) {
         endTextEditing()
+        editingTextId = nil
         endProtrusionEditing()
         clearSwapDrag()
         overlayPreview = nil
