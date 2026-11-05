@@ -1882,13 +1882,20 @@ class CollageState: ObservableObject {
         texts.removeAll { $0.id == id }
     }
 
-    /// A copy a little down and to the right, selected.
-    func duplicateText(_ id: UUID) {
-        guard var copy = texts.first(where: { $0.id == id }) else { return }
-        copy.id = UUID()
-        copy.center = CGPoint(x: min(copy.center.x + 0.04, 1), y: min(copy.center.y + 0.04, 1))
-        texts.append(copy)
-        selectText(copy.id)
+    /// Undoes what was done to it on the collage (where it is, how big,
+    /// how turned and how wide), keeping its words and look: back to the
+    /// middle of the picture it is on, at the size new text starts with.
+    func resetText(_ id: UUID) {
+        let n = CGFloat(max(slides, 1))
+        withAnimation(.spring(response: 0.35, dampingFraction: 0.85)) {
+            updateText(id) { text in
+                let slide = min(max(floor(text.center.x * n), 0), n - 1)
+                text.center = CGPoint(x: (slide + 0.5) / n, y: 0.5)
+                text.style.fontSize = FloatingText.defaultFontSize
+                text.rotation = 0
+                text.width = nil
+            }
+        }
     }
 
     /// Brings it in front of the other text on the page.

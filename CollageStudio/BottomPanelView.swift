@@ -824,8 +824,11 @@ struct BottomPanelView: View {
 
     var imagesTab: some View {
         VStack(spacing: 10) {
-            // Fixed button bar — does not scroll with the page list
-            HStack(spacing: 8) {
+            // Fixed button bar — does not scroll with the page list. Two
+            // groups: the collage itself (Collages, Ratio) and what adds to
+            // it (Text, Spacer), set apart by a divider.
+            HStack(spacing: 10) {
+              HStack(spacing: 6) {
                 // Back to the Collages screen (the open one is saved).
                 ToolbarTile(sf: "square.stack", title: "Collages", prominent: false) { state.goToCollages() }
 
@@ -845,27 +848,21 @@ struct BottomPanelView: View {
                 .menuOrder(.fixed)
                 .buttonStyle(.plain)
                 .accessibilityLabel("Canvas ratio, \(state.ratio.rawValue.replacingOccurrences(of: ":", with: " by "))")
+              }
 
-                // Everything that adds to the collage, in one menu: a page, a
-                // text box, a spacer (an intentional empty slot) — top to
-                // bottom whichever way the menu opens.
-                Menu {
-                    Button { state.addPage() } label: { Label("Page", systemImage: "doc.badge.plus") }
-                        .disabled(!state.canAddPost)
-                    Button { state.addFloatingText() } label: { Label("Text", systemImage: "textformat") }
-                    Button { state.addEmptyImage() } label: { Label("Spacer", systemImage: "rectangle.dashed") }
-                } label: {
-                    ToolbarTileLabel(prominent: true, title: "Add") { Image(systemName: "plus") }
-                }
-                .menuOrder(.fixed)
-                .buttonStyle(.plain)
-                .accessibilityLabel("Add")
-                .accessibilityHint("A page, a text box or a spacer")
+              Divider().frame(height: 32)
+
+              HStack(spacing: 6) {
+                // What adds to the collage: free text over it, a spacer (an
+                // intentional empty slot). Pages are added under the page list.
+                ToolbarTile(sf: "textformat", title: "Text") { state.addFloatingText() }
+                ToolbarTile(sf: "rectangle.dashed", title: "Spacer") { state.addEmptyImage() }
+              }
             }
 
             // The page list at its full height: the panel can grow up to the
-            // pager to show it, and scrolls past that.
-            PageGroupsView()
+            // pager to show it, and scrolls past that; Add Page under it.
+            PageGroupsView(showsAddPage: true)
         }
     }
 

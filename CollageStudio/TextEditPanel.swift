@@ -7,7 +7,7 @@ import SwiftUI
 /// keyboard is up only the text row stays, keeping the collage in view.
 ///
 /// Floating text uses it too: typed in place on the collage, so its panel
-/// has the text's tools (Edit, Duplicate, Remove) instead of the text row.
+/// has the text's tools (Edit, Reset, Remove) instead of the text row.
 struct TextEditPanel: View {
     @EnvironmentObject var state: CollageState
     let target: Target
@@ -168,7 +168,8 @@ struct TextEditPanel: View {
 
     // MARK: - Floating text tools
 
-    /// Edit (types on the collage) or Done while typing, Duplicate, Remove.
+    /// Edit (types on the collage) or Done while typing, Reset (place, size and
+    /// turn back to how new text starts; the words and look stay), Remove.
     private var floatingTools: some View {
         HStack(spacing: 8) {
             if typingInPlace {
@@ -176,7 +177,7 @@ struct TextEditPanel: View {
             } else {
                 toolButton("Edit", sf: "pencil") { state.beginEditingText(imageId) }
             }
-            toolButton("Duplicate", sf: "plus.square.on.square") { state.duplicateText(imageId) }
+            toolButton("Reset", sf: "arrow.counterclockwise") { state.resetText(imageId) }
             Spacer(minLength: 0)
             toolButton("Remove", sf: "trash") { state.removeText(imageId) }
         }

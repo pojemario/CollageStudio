@@ -1668,11 +1668,29 @@ struct PageGroupsView: View {
     /// swap them), and the one under the finger.
     @State private var thumbFrames: [UUID: CGRect] = [:]
     @State private var dropTargetThumb: UUID? = nil
+    /// An Add Page button under the last page (the bottom panel; the
+    /// sidebar has its own tile).
+    var showsAddPage = false
 
     var body: some View {
         VStack(spacing: 8) {
             ForEach(Array(state.pages.enumerated()), id: \.element.id) { pi, page in
                 pageRow(pi: pi, page: page)
+            }
+            if showsAddPage {
+                Button { withAnimation { state.addPage() } } label: {
+                    Label("Add Page", systemImage: "plus")
+                        .font(.system(size: 15, weight: .semibold))
+                        .foregroundColor(.white)
+                        .padding(.horizontal, 16)
+                        .frame(height: 40)
+                        .appButtonBackground(prominent: true)
+                }
+                .buttonStyle(.plain)
+                .disabled(!state.canAddPost)
+                .opacity(state.canAddPost ? 1 : 0.4)
+                .frame(maxWidth: .infinity)
+                .padding(.top, 4)
             }
         }
         .coordinateSpace(name: "pageGroups")
@@ -1946,7 +1964,8 @@ struct PageAddPhotosButton: View {
                     .lineLimit(1)
             }
                 .foregroundColor(.white)
-                .frame(width: size, height: size)
+                // Narrower than a thumbnail: just room for its label.
+                .frame(width: max(size * 0.72, 44), height: size)
                 .appButtonBackground(prominent: true)
                 .padding(.vertical, 2)
         }
