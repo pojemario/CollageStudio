@@ -41,6 +41,11 @@ struct FloatingTextLayer: View {
         }
         .frame(width: canvasSize.width, height: canvasSize.height)
         .coordinateSpace(name: Self.space)
+        // The panel steps aside while the text is being handled.
+        .onChange(of: handling || resize != Resize()) { _, on in
+            if onScreen { state.setFloatingTextHandled(on) }
+        }
+        .onDisappear { if onScreen { state.setFloatingTextHandled(false) } }
         .onChange(of: state.editingTextId, initial: true) { _, id in
             guard onScreen else { return }
             typing = id

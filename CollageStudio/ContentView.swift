@@ -874,6 +874,9 @@ struct ContentView: View {
                                      + (state.isPanelOpen && state.panelDrag == 0 ? FloatingTabBar.openLift : 0))
                             .animation(.easeInOut(duration: 0.25), value: state.isPanelOpen)
                             .offset(y: state.panelOffset)
+                            // Out of the way while floating text is moved.
+                            .opacity(state.panelTuckedForText ? 0 : 1)
+                            .allowsHitTesting(!state.panelTuckedForText)
                             .padding(.top, 40)      // room for the card's shadow inside the clip
                             // The clip follows the pill's rounded bottom
                             // corners, so nothing shows past them; above the

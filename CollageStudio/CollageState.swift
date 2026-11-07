@@ -1846,6 +1846,26 @@ class CollageState: ObservableObject {
 
     func touchFloatingText() { lastFloatingTextTouch = Date() }
 
+    /// A finger is moving, pinching, turning or resizing floating text: the
+    /// panel steps aside so the collage shows, and comes back a moment
+    /// after the finger lets go.
+    @Published private(set) var panelTuckedForText = false
+    private var panelReturnTask: Task<Void, Never>?
+
+    func setFloatingTextHandled(_ on: Bool) {
+        panelReturnTask?.cancel()
+        if on {
+            guard !panelTuckedForText else { return }
+            withAnimation(.easeOut(duration: 0.15)) { panelTuckedForText = true }
+        } else if panelTuckedForText {
+            panelReturnTask = Task { @MainActor [weak self] in
+                try? await Task.sleep(nanoseconds: 450_000_000)
+                guard !Task.isCancelled else { return }
+                withAnimation(.easeInOut(duration: 0.25)) { self?.panelTuckedForText = false }
+            }
+        }
+    }
+
     /// Typing in place: the text's own field takes the keyboard.
     func beginEditingText(_ id: UUID) {
         touchFloatingText()
